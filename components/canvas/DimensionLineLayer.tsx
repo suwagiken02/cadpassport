@@ -409,7 +409,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       stage.off('pointermove.dimensiondrag');
       stage.off('pointerup.dimensiondrag');
     };
-  }, [setDimensionOffsetMm]);
+  }, [canvasData, zoom, panX, panY, setDimensionOffsetMm]);
 
   // Effective offsets (= stored + drag preview)
   const effectiveOffsetMm: DimensionOffsetsMm = useMemo(() => {
