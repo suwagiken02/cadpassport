@@ -133,23 +133,6 @@ export default function DimensionLayer() {
     const face2Dist = mmToGrid(scaffoldStart.face2DistanceMm);
     const pts = edges.map(e => e.p1);
 
-    // 各手摺端点の最寄り corner を集計 (= 凹形で遠い角への描画を防ぐ + 全 edge 対象化)
-    const cornerHasNearestEp = new Set<string>();
-    for (const ep of eps) {
-      let minDist = Infinity;
-      let nearestCorner: { x: number; y: number } | null = null;
-      for (const c of pts) {
-        const d = Math.hypot(ep.x - c.x, ep.y - c.y);
-        if (d < minDist) {
-          minDist = d;
-          nearestCorner = c;
-        }
-      }
-      if (nearestCorner) {
-        cornerHasNearestEp.add(`${nearestCorner.x},${nearestCorner.y}`);
-      }
-    }
-
     // コーナー頂点（巡回開始点）
     const startIdx = scaffoldStart.startVertexIndex != null
       ? scaffoldStart.startVertexIndex % n
@@ -351,11 +334,14 @@ export default function DimensionLayer() {
       const colorOther = remainOtherMm >= 0 ? COLOR_OK : COLOR_WARN;
 
       // ── ガイド描画: farEnd 側 ──
-      // 最寄り corner フィルタ (= Task #7 訂正版を置換、 各 ep の最寄り corner のみ
-      // Guide 表示 → 凹形で遠い角 bug 解消 + 全 edge 対象化)
-      const farEndIsNearest = cornerHasNearestEp.has(`${farEnd.x},${farEnd.y}`);
-      const otherEndIsNearest = cornerHasNearestEp.has(`${otherEnd.x},${otherEnd.y}`);
-      if (farEndIsNearest) {
+      // scaffoldStart 角フィルタ (= Task #7 訂正版):
+      // 辺が scaffoldStart 頂点を含む step (= 隣接 2 辺) のみ、
+      // 両端 (= farEnd + otherEnd) のガイドを描画。
+      const startVertex = pts[startIdx];
+      const edgeContainsStart =
+        (Math.abs(farEnd.x - startVertex.x) < 1e-6 && Math.abs(farEnd.y - startVertex.y) < 1e-6) ||
+        (Math.abs(otherEnd.x - startVertex.x) < 1e-6 && Math.abs(otherEnd.y - startVertex.y) < 1e-6);
+      if (edgeContainsStart) {
         if (isH) {
           const x1 = Math.min(lead, guideEnd.x);
           const x2 = Math.max(lead, guideEnd.x);
@@ -378,8 +364,9 @@ export default function DimensionLayer() {
       }
 
       // ── ガイド描画: otherEnd 側（反対方向の残り） ──
-      // 最寄り corner フィルタ (= farEnd 側と独立判定、 otherEndIsNearest は farEnd 側で計算済み)
-      if (otherEndIsNearest) {
+      // scaffoldStart 角フィルタ (= Task #7 訂正版、
+      // edgeContainsStart は farEnd 側で計算済み)
+      if (edgeContainsStart) {
         if (isH) {
           const leadOther = progressDx > 0 ? Math.min(...coords) : Math.max(...coords);
           const ox1 = Math.min(leadOther, otherEnd.x);
