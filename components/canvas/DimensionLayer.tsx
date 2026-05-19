@@ -333,64 +333,52 @@ export default function DimensionLayer() {
       const remainOtherMm = Math.round(gridToMm(remainOtherGrid));
       const colorOther = remainOtherMm >= 0 ? COLOR_OK : COLOR_WARN;
 
-      // ── ガイド描画: farEnd 側 ──
-      // scaffoldStart 角フィルタ (= Task #7 訂正版):
-      // 辺が scaffoldStart 頂点を含む step (= 隣接 2 辺) のみ、
-      // 両端 (= farEnd + otherEnd) のガイドを描画。
-      const startVertex = pts[startIdx];
-      const edgeContainsStart =
-        (Math.abs(farEnd.x - startVertex.x) < 1e-6 && Math.abs(farEnd.y - startVertex.y) < 1e-6) ||
-        (Math.abs(otherEnd.x - startVertex.x) < 1e-6 && Math.abs(otherEnd.y - startVertex.y) < 1e-6);
-      if (edgeContainsStart) {
-        if (isH) {
-          const x1 = Math.min(lead, guideEnd.x);
-          const x2 = Math.max(lead, guideEnd.x);
-          elements.push(
-            <Guide key={`guide-${edge.label}`}
-              x1={gx(x1)} y1={gy(scaffoldCoord)}
-              x2={gx(x2)} y2={gy(scaffoldCoord)}
-              label={`${remainMm}`} zoom={zoom} color={color} />,
-          );
-        } else {
-          const y1 = Math.min(lead, guideEnd.y);
-          const y2 = Math.max(lead, guideEnd.y);
-          elements.push(
-            <Guide key={`guide-${edge.label}`}
-              x1={gx(scaffoldCoord)} y1={gy(y1)}
-              x2={gx(scaffoldCoord)} y2={gy(y2)}
-              label={`${remainMm}`} zoom={zoom} color={color} />,
-          );
-        }
+      // ── ガイド描画: farEnd 側 (= scaffoldStart 制約完全撤回、 全 edge 表示) ──
+      if (isH) {
+        const x1 = Math.min(lead, guideEnd.x);
+        const x2 = Math.max(lead, guideEnd.x);
+        elements.push(
+          <Guide key={`guide-${edge.label}`}
+            x1={gx(x1)} y1={gy(scaffoldCoord)}
+            x2={gx(x2)} y2={gy(scaffoldCoord)}
+            label={`${remainMm}`} zoom={zoom} color={color} />,
+        );
+      } else {
+        const y1 = Math.min(lead, guideEnd.y);
+        const y2 = Math.max(lead, guideEnd.y);
+        elements.push(
+          <Guide key={`guide-${edge.label}`}
+            x1={gx(scaffoldCoord)} y1={gy(y1)}
+            x2={gx(scaffoldCoord)} y2={gy(y2)}
+            label={`${remainMm}`} zoom={zoom} color={color} />,
+        );
       }
 
       // ── ガイド描画: otherEnd 側（反対方向の残り） ──
-      // scaffoldStart 角フィルタ (= Task #7 訂正版、
-      // edgeContainsStart は farEnd 側で計算済み)
-      if (edgeContainsStart) {
-        if (isH) {
-          const leadOther = progressDx > 0 ? Math.min(...coords) : Math.max(...coords);
-          const ox1 = Math.min(leadOther, otherEnd.x);
-          const ox2 = Math.max(leadOther, otherEnd.x);
-          if (Math.abs(ox2 - ox1) > 0) {
-            elements.push(
-              <Guide key={`guide-${edge.label}-o`}
-                x1={gx(ox1)} y1={gy(scaffoldCoord)}
-                x2={gx(ox2)} y2={gy(scaffoldCoord)}
-                label={`${remainOtherMm}`} zoom={zoom} color={colorOther} />,
-            );
-          }
-        } else {
-          const leadOther = progressDy > 0 ? Math.min(...coords) : Math.max(...coords);
-          const oy1 = Math.min(leadOther, otherEnd.y);
-          const oy2 = Math.max(leadOther, otherEnd.y);
-          if (Math.abs(oy2 - oy1) > 0) {
-            elements.push(
-              <Guide key={`guide-${edge.label}-o`}
-                x1={gx(scaffoldCoord)} y1={gy(oy1)}
-                x2={gx(scaffoldCoord)} y2={gy(oy2)}
-                label={`${remainOtherMm}`} zoom={zoom} color={colorOther} />,
-            );
-          }
+      // (scaffoldStart 制約完全撤回、 全 edge 表示)
+      if (isH) {
+        const leadOther = progressDx > 0 ? Math.min(...coords) : Math.max(...coords);
+        const ox1 = Math.min(leadOther, otherEnd.x);
+        const ox2 = Math.max(leadOther, otherEnd.x);
+        if (Math.abs(ox2 - ox1) > 0) {
+          elements.push(
+            <Guide key={`guide-${edge.label}-o`}
+              x1={gx(ox1)} y1={gy(scaffoldCoord)}
+              x2={gx(ox2)} y2={gy(scaffoldCoord)}
+              label={`${remainOtherMm}`} zoom={zoom} color={colorOther} />,
+          );
+        }
+      } else {
+        const leadOther = progressDy > 0 ? Math.min(...coords) : Math.max(...coords);
+        const oy1 = Math.min(leadOther, otherEnd.y);
+        const oy2 = Math.max(leadOther, otherEnd.y);
+        if (Math.abs(oy2 - oy1) > 0) {
+          elements.push(
+            <Guide key={`guide-${edge.label}-o`}
+              x1={gx(scaffoldCoord)} y1={gy(oy1)}
+              x2={gx(scaffoldCoord)} y2={gy(oy2)}
+              label={`${remainOtherMm}`} zoom={zoom} color={colorOther} />,
+          );
         }
       }
     }
