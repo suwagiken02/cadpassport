@@ -874,14 +874,18 @@ export default function GridCanvas({ width, height }: Props) {
                 const maxGY = Math.ceil((height - panY) / gridPx) + 1;
 
                 const markers: { x: number; y: number }[] = [];
-                // guideXs × guideYs の全組み合わせ（現在位置のみ除外）
+                // cursor 軸上のみ (= 仮説 2、 直線方向ガイドに絞る、 曲がり後の方向への候補確保)
+                // cursor.x 列 (= 同じ X、 ↑↓ 方向 candidate)
+                for (const y of guideYs) {
+                  if (y === cy) continue;
+                  if (y < minGY || y > maxGY) continue;
+                  markers.push({ x: cx, y });
+                }
+                // cursor.y 行 (= 同じ Y、 ←→ 方向 candidate)
                 for (const x of guideXs) {
+                  if (x === cx) continue;
                   if (x < minGX || x > maxGX) continue;
-                  for (const y of guideYs) {
-                    if (y < minGY || y > maxGY) continue;
-                    if (x === cx && y === cy) continue;
-                    markers.push({ x, y });
-                  }
+                  markers.push({ x, y: cy });
                 }
                 // 密集対策: 300個超えたら非表示
                 if (markers.length > 300) return null;
