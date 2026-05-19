@@ -609,25 +609,27 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
     };
   };
 
-  if (!visible || elements.length === 0) return <Layer listening={false} />;
-
   return (
-    <Layer ref={layerRef}>
-      {elements}
-      {dragInfos.map((info) => (
-        <Line
-          key={`hit-${info.key}-${info.face}`}
-          points={info.isH
-            ? [info.lineStart, info.axis, info.lineEnd, info.axis]
-            : [info.axis, info.lineStart, info.axis, info.lineEnd]}
-          stroke="transparent"
-          strokeWidth={1}
-          hitStrokeWidth={HIT_WIDTH}
-          listening={true}
-          onMouseDown={(e) => onHitDown(e, info)}
-          onTouchStart={(e) => onHitDown(e, info)}
-        />
-      ))}
+    <Layer ref={layerRef} listening={visible}>
+      {visible && elements.length > 0 && (
+        <>
+          {elements}
+          {dragInfos.map((info) => (
+            <Line
+              key={`hit-${info.key}-${info.face}`}
+              points={info.isH
+                ? [info.lineStart, info.axis, info.lineEnd, info.axis]
+                : [info.axis, info.lineStart, info.axis, info.lineEnd]}
+              stroke="transparent"
+              strokeWidth={1}
+              hitStrokeWidth={HIT_WIDTH}
+              listening={true}
+              onMouseDown={(e) => onHitDown(e, info)}
+              onTouchStart={(e) => onHitDown(e, info)}
+            />
+          ))}
+        </>
+      )}
     </Layer>
   );
 }
