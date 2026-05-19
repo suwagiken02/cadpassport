@@ -13,7 +13,7 @@ const GUIDE_OPACITY = 0.3;
 const COLOR_OK = '#888780';
 const COLOR_WARN = '#E85D3A';
 const ARROW = 4;
-const TOL = 15;
+const TOL = 50;
 
 /** ガイド線 + ラベル */
 function Guide({
