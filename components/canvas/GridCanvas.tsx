@@ -59,7 +59,7 @@ export default function GridCanvas({ width, height }: Props) {
     verts.push(...directionPoints);
     verts.push(...(canvasData.magnetPins ?? []));
     return Array.from(new Set(verts.map(v => v.x)));
-  }, [showDirectionGuide, buildingInputMethod, directionPoints, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
+  }, [showDirectionGuide, buildingInputMethod, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
 
   const guideYs = useMemo(() => {
     if (!showDirectionGuide || buildingInputMethod !== 'direction' || directionPoints.length === 0) return [];
@@ -67,7 +67,7 @@ export default function GridCanvas({ width, height }: Props) {
     verts.push(...directionPoints);
     verts.push(...(canvasData.magnetPins ?? []));
     return Array.from(new Set(verts.map(v => v.y)));
-  }, [showDirectionGuide, buildingInputMethod, directionPoints, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
+  }, [showDirectionGuide, buildingInputMethod, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
   const lastPanPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // グリッド描画（キャンバス全体に広がる無限グリッド）
