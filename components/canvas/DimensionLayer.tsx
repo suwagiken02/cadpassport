@@ -213,25 +213,7 @@ export default function DimensionLayer() {
       let edgeMinY = Math.min(edge.p1.y, edge.p2.y) - TOL;
       let edgeMaxY = Math.max(edge.p1.y, edge.p2.y) + TOL;
 
-      // 水平辺: 前の垂直辺のscaffoldX方向に加え、全端点Xの範囲まで拡張
-      if (isH) {
-        // 前ステップのscaffoldX方向への拡張（既存）
-        if (prevScaffoldX !== null) {
-          edgeMinX = Math.min(edgeMinX, prevScaffoldX - TOL);
-          edgeMaxX = Math.max(edgeMaxX, prevScaffoldX + TOL);
-        }
-        // scaffoldCoord付近の全端点Xも範囲に含める
-        const nearYeps = eps.filter(ep => Math.abs(ep.y - scaffoldCoord) < TOL);
-        for (const ep of nearYeps) {
-          edgeMinX = Math.min(edgeMinX, ep.x - TOL);
-          edgeMaxX = Math.max(edgeMaxX, ep.x + TOL);
-        }
-      }
-      // 垂直辺: 前の水平辺のscaffoldY方向への拡張
-      if (!isH && prevScaffoldY !== null) {
-        edgeMinY = Math.min(edgeMinY, prevScaffoldY - TOL);
-        edgeMaxY = Math.max(edgeMaxY, prevScaffoldY + TOL);
-      }
+      // (拡張ロジック撤回: edge 幾何境界 ± TOL のみで coords 収集、 L字凹形で他 edge の ep 混入を防ぐ)
 
       // L字内側辺スキップ: 足場ラインに手摺がない辺
       // scaffoldCoordと全端点の最小距離を計算し、離れ距離の2倍より遠ければ内側辺と判断
