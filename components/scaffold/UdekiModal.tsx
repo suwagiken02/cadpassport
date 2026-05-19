@@ -45,9 +45,30 @@ export default function UdekiModal({ onClose }: Props) {
       canvasData.handrails.map(h => `${h.x},${h.y},${h.direction},${h.lengthMm}`)
     );
 
+    // 部分的重なり判定 (= 同 direction + 同 axis + range overlap、 既存配置を優先)
+    const isOverlappingExisting = (
+      x: number,
+      y: number,
+      dir: 'horizontal' | 'vertical',
+      lenMm: number
+    ): boolean => {
+      const newStart = dir === 'horizontal' ? x : y;
+      const newEnd = newStart + lenMm / 10;
+      const axisVal = dir === 'horizontal' ? y : x;
+      return canvasData.handrails.some((h) => {
+        if (h.direction !== dir) return false;
+        const hAxis = dir === 'horizontal' ? h.y : h.x;
+        if (hAxis !== axisVal) return false;
+        const hStart = dir === 'horizontal' ? h.x : h.y;
+        const hEnd = hStart + h.lengthMm / 10;
+        return newStart < hEnd && newEnd > hStart;
+      });
+    };
+
     const tryAdd = (x: number, y: number, dir: 'horizontal' | 'vertical') => {
       const key = `${x},${y},${dir},${lengthMm}`;
       if (existingSet.has(key)) return;
+      if (isOverlappingExisting(x, y, dir, lengthMm)) return;
       newHandrails.push({ id: uuidv4(), x, y, lengthMm, direction: dir, color: getHandrailColor(lengthMm) });
       existingSet.add(key);
     };
