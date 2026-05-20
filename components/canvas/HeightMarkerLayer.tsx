@@ -88,29 +88,48 @@ export default function HeightMarkerLayer() {
         const projected = projectPointToOutline(pointGrid, building);
         const snapToleranceGrid = SNAP_PX / gridPx;
         const snapped = snapToCorners(projected.edgeIndex, projected.t, outline, snapToleranceGrid);
-        // 追い越し禁止: 同 buildingId + 同 edgeIndex の他マーカーを clamp 限界に (= 余裕 0.01)
-        let clampedT = snapped.t;
-        if (snapped.edgeIndex === marker.edgeIndex) {
-          const startT = marker.t;
-          const sameEdgeOthers = (canvasData.heightMarkers ?? []).filter(
-            (m) => m.id !== marker.id && m.buildingId === marker.buildingId && m.edgeIndex === marker.edgeIndex
-          );
-          const MARGIN = 0.01;
-          if (clampedT > startT) {
-            const upperOthers = sameEdgeOthers.filter((m) => m.t > startT);
-            if (upperOthers.length > 0) {
-              const upper = Math.min(...upperOthers.map((m) => m.t)) - MARGIN;
-              clampedT = Math.min(clampedT, upper);
-            }
-          } else if (clampedT < startT) {
-            const lowerOthers = sameEdgeOthers.filter((m) => m.t < startT);
-            if (lowerOthers.length > 0) {
-              const lower = Math.max(...lowerOthers.map((m) => m.t)) + MARGIN;
-              clampedT = Math.max(clampedT, lower);
+        // 追い越し禁止: 建物外周全体で衝突止め (= 周長 s ベース、 edge 跨ぎ対応)
+        const edgeLens: number[] = [];
+        const cumDist: number[] = [0];
+        for (let i = 0; i < outline.length; i++) {
+          const p1 = outline[i];
+          const p2 = outline[(i + 1) % outline.length];
+          const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+          edgeLens.push(len);
+          cumDist.push(cumDist[i] + len);
+        }
+        const totalPerimeter = cumDist[outline.length];
+        const tToS = (ei: number, t: number) => cumDist[ei] + t * edgeLens[ei];
+        const sToT = (s: number): { edgeIndex: number; t: number } => {
+          for (let i = 0; i < outline.length; i++) {
+            if (s >= cumDist[i] && s <= cumDist[i + 1]) {
+              return { edgeIndex: i, t: edgeLens[i] > 0 ? (s - cumDist[i]) / edgeLens[i] : 0 };
             }
           }
+          return { edgeIndex: outline.length - 1, t: 1 };
+        };
+        const startS = tToS(marker.edgeIndex, marker.t);
+        const proposedS = tToS(snapped.edgeIndex, snapped.t);
+        const MARGIN = totalPerimeter * 0.01;
+        const otherS = (canvasData.heightMarkers ?? [])
+          .filter((m) => m.id !== marker.id && m.buildingId === marker.buildingId)
+          .map((m) => tToS(m.edgeIndex, m.t));
+        let clampedS = proposedS;
+        if (proposedS > startS) {
+          const upperOthers = otherS.filter((s) => s > startS && s <= proposedS);
+          if (upperOthers.length > 0) {
+            const upper = Math.min(...upperOthers) - MARGIN;
+            clampedS = Math.min(clampedS, Math.max(startS, upper));
+          }
+        } else if (proposedS < startS) {
+          const lowerOthers = otherS.filter((s) => s < startS && s >= proposedS);
+          if (lowerOthers.length > 0) {
+            const lower = Math.max(...lowerOthers) + MARGIN;
+            clampedS = Math.max(clampedS, Math.min(startS, lower));
+          }
         }
-        updateDragInfo({ markerId: marker.id, edgeIndex: snapped.edgeIndex, t: clampedT });
+        const clamped = sToT(clampedS);
+        updateDragInfo({ markerId: marker.id, edgeIndex: clamped.edgeIndex, t: clamped.t });
       }
     };
 
@@ -173,6 +192,14 @@ export default function HeightMarkerLayer() {
     const stage = e.target.getStage();
     const pointer = stage?.getPointerPosition();
     if (pointer) pressStartPosRef.current = { x: pointer.x, y: pointer.y };
+    // PC マウスは即ドラッグ、 タッチは長押し閾値で誤タップ防止
+    const isTouch = 'touches' in e.evt;
+    if (!isTouch) {
+      isDraggingRef.current = true;
+      dragMarkerIdRef.current = marker.id;
+      updateDragInfo({ markerId: marker.id, edgeIndex: marker.edgeIndex, t: marker.t });
+      return;
+    }
     longPressTimerRef.current = setTimeout(() => {
       // 長押し成立 → ドラッグ可能化 + 視覚フィードバック開始
       isDraggingRef.current = true;
