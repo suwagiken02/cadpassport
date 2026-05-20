@@ -383,6 +383,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
                 if (m === 'direction') {
                   useCanvasStore.getState().setPendingBuildingFloor(floor || 1);
                   useCanvasStore.getState().setMode('building');
+                  useCanvasStore.getState().setHeightMarkerMode(false);
                   useCanvasStore.getState().clearDirectionPoints();
                   onClose();
                 }
