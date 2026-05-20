@@ -88,26 +88,33 @@ export function findHostBuilding(
 
   for (const b of candidates) {
     const outline = getOutlinePolygon(b);
-    const projected = projectPointToOutline(midPoint, b);
-    if (projected.edgeIndex < 0 || projected.edgeIndex >= outline.length) continue;
-    const ep1 = outline[projected.edgeIndex];
-    const ep2 = outline[(projected.edgeIndex + 1) % outline.length];
-    const projX = ep1.x + projected.t * (ep2.x - ep1.x);
-    const projY = ep1.y + projected.t * (ep2.y - ep1.y);
-    const dist = Math.hypot(midPoint.x - projX, midPoint.y - projY);
-    // edge direction と handrail direction の一致判定 (= 対面 m² 不一致解消)
-    const edgeIsHorizontal = Math.abs(ep2.y - ep1.y) < 0.01;
-    const handrailIsHorizontal = handrail.direction === 'horizontal';
-    const isAligned = edgeIsHorizontal === handrailIsHorizontal;
-    // alignment 一致を優先、 同条件なら距離で判定
-    const isBetter = isAligned && !bestEdgeIsAligned
-      ? true
-      : isAligned === bestEdgeIsAligned ? dist < bestDist : false;
-    if (isBetter) {
-      bestDist = dist;
-      bestBuilding = b;
-      bestEdgeIndex = projected.edgeIndex;
-      bestEdgeIsAligned = isAligned;
+    // 全 edge を評価 (= alignment 判定が単一建物で機能するように、 projectPointToOutline 最近接 1 個では不十分)
+    for (let i = 0; i < outline.length; i++) {
+      const ep1 = outline[i];
+      const ep2 = outline[(i + 1) % outline.length];
+      // 点-線分距離を inline 計算 (= t を clamp、 projectPointToOutline と同等)
+      const dx = ep2.x - ep1.x;
+      const dy = ep2.y - ep1.y;
+      const lenSq = dx * dx + dy * dy;
+      let t = lenSq > 0 ? ((midPoint.x - ep1.x) * dx + (midPoint.y - ep1.y) * dy) / lenSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      const projX = ep1.x + t * dx;
+      const projY = ep1.y + t * dy;
+      const dist = Math.hypot(midPoint.x - projX, midPoint.y - projY);
+      // edge direction と handrail direction の一致判定
+      const edgeIsHorizontal = Math.abs(dy) < 0.01;
+      const handrailIsHorizontal = handrail.direction === 'horizontal';
+      const isAligned = edgeIsHorizontal === handrailIsHorizontal;
+      // alignment 一致を優先、 同条件なら距離で判定
+      const isBetter = isAligned && !bestEdgeIsAligned
+        ? true
+        : isAligned === bestEdgeIsAligned ? dist < bestDist : false;
+      if (isBetter) {
+        bestDist = dist;
+        bestBuilding = b;
+        bestEdgeIndex = i;
+        bestEdgeIsAligned = isAligned;
+      }
     }
   }
 
