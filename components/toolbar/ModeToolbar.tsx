@@ -13,7 +13,7 @@ export default function ModeToolbar() {
   const [showNoScaffoldConfirm, setShowNoScaffoldConfirm] = useState(false);
 
   // 躯体グループ（建物・障害物・高さマーカー）
-  const isKutaiMode = mode === 'building' || mode === 'obstacle' || isHeightMarkerMode;
+  const isKutaiMode = mode === 'building' || mode === 'obstacle' || mode === 'roof' || isHeightMarkerMode;
 
   const mainButtons = [
     { id: 'select' as const, label: '選択', icon: '↖', color: '#378ADD' },
@@ -146,6 +146,16 @@ export default function ModeToolbar() {
             >
               <span className="text-3xl mb-1">↕</span>
               <span className="text-sm font-bold">高さ</span>
+            </button>
+            <button
+              onClick={() => {
+                setMode('roof');
+                setShowKutaiMenu(false);
+              }}
+              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
+            >
+              <span className="text-3xl mb-1">⌒</span>
+              <span className="text-sm font-bold">屋根</span>
             </button>
           </div>
         </>

@@ -63,7 +63,7 @@ export default function BuildingLayer() {
         );
       })}
 
-      {/* 屋根の出幅（建物本体の上に描画） */}
+      {/* 屋根の出幅（建物本体の上に描画、 mode='roof' で tap 再編集可) */}
       {canvasData.buildings.map((building) => {
         if (!building.roof || building.roof.roofType === 'none') return null;
         const overhangs = getEdgeOverhangs(building, building.roof);
@@ -75,6 +75,10 @@ export default function BuildingLayer() {
           p.y * gridPx + panY,
         ]);
 
+        const handleRoofTap = () => {
+          useCanvasStore.getState().setSelectedIds([building.id]);
+          useCanvasStore.getState().setAutoOpenRoofForBuildingId(building.id);
+        };
         return (
           <Line
             key={`roof-${building.id}`}
@@ -83,7 +87,10 @@ export default function BuildingLayer() {
             stroke="#888780"
             strokeWidth={1}
             dash={[6, 4]}
-            listening={false}
+            hitStrokeWidth={mode === 'roof' ? 12 : 0}
+            listening={mode === 'roof'}
+            onClick={handleRoofTap}
+            onTap={handleRoofTap}
           />
         );
       })}
