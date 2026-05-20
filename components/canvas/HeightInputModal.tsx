@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import NumInput from '@/components/ui/NumInput';
 
@@ -16,6 +16,17 @@ export default function HeightInputModal() {
   const marker = heightInputMarkerId
     ? (canvasData.heightMarkers ?? []).find((m) => m.id === heightInputMarkerId)
     : null;
+
+  // 削除ボタンの誤タップ防止 (= モーダル mount 直後の touchend → click 合成で
+  // 漏れタップが削除ボタンに到達するのを 250ms ガード)
+  const [deleteEnabled, setDeleteEnabled] = useState(false);
+  useEffect(() => {
+    if (marker) {
+      setDeleteEnabled(false);
+      const timer = setTimeout(() => setDeleteEnabled(true), 250);
+      return () => clearTimeout(timer);
+    }
+  }, [marker?.id]);
 
   // marker が消えた場合 (= 削除直後の race フォールバック) は閉じる
   useEffect(() => {
@@ -54,7 +65,8 @@ export default function HeightInputModal() {
         <div className="flex gap-2">
           <button
             onClick={handleDelete}
-            className="flex-1 py-2 bg-red-500 text-white rounded-xl text-sm font-bold"
+            disabled={!deleteEnabled}
+            className="flex-1 py-2 bg-red-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             削除
           </button>
