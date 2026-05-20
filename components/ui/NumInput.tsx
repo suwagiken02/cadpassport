@@ -37,7 +37,7 @@ export default function NumInput({ value, onChange, min = 0, step, className, on
       onChange={(e) => setText(e.target.value)}
       onFocus={onFocus}
       onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') { commit(); e.currentTarget.blur(); } }}
       step={step}
       className={className || 'w-full bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm'}
     />
