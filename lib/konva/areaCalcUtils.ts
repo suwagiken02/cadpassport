@@ -84,6 +84,7 @@ export function findHostBuilding(
   let bestBuilding: BuildingShape | null = null;
   let bestDist = Infinity;
   let bestEdgeIndex = -1;
+  let bestEdgeIsAligned = false;
 
   for (const b of candidates) {
     const outline = getOutlinePolygon(b);
@@ -94,10 +95,19 @@ export function findHostBuilding(
     const projX = ep1.x + projected.t * (ep2.x - ep1.x);
     const projY = ep1.y + projected.t * (ep2.y - ep1.y);
     const dist = Math.hypot(midPoint.x - projX, midPoint.y - projY);
-    if (dist < bestDist) {
+    // edge direction と handrail direction の一致判定 (= 対面 m² 不一致解消)
+    const edgeIsHorizontal = Math.abs(ep2.y - ep1.y) < 0.01;
+    const handrailIsHorizontal = handrail.direction === 'horizontal';
+    const isAligned = edgeIsHorizontal === handrailIsHorizontal;
+    // alignment 一致を優先、 同条件なら距離で判定
+    const isBetter = isAligned && !bestEdgeIsAligned
+      ? true
+      : isAligned === bestEdgeIsAligned ? dist < bestDist : false;
+    if (isBetter) {
       bestDist = dist;
       bestBuilding = b;
       bestEdgeIndex = projected.edgeIndex;
+      bestEdgeIsAligned = isAligned;
     }
   }
 
