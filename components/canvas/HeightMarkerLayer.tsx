@@ -88,7 +88,29 @@ export default function HeightMarkerLayer() {
         const projected = projectPointToOutline(pointGrid, building);
         const snapToleranceGrid = SNAP_PX / gridPx;
         const snapped = snapToCorners(projected.edgeIndex, projected.t, outline, snapToleranceGrid);
-        updateDragInfo({ markerId: marker.id, edgeIndex: snapped.edgeIndex, t: snapped.t });
+        // 追い越し禁止: 同 buildingId + 同 edgeIndex の他マーカーを clamp 限界に (= 余裕 0.01)
+        let clampedT = snapped.t;
+        if (snapped.edgeIndex === marker.edgeIndex) {
+          const startT = marker.t;
+          const sameEdgeOthers = (canvasData.heightMarkers ?? []).filter(
+            (m) => m.id !== marker.id && m.buildingId === marker.buildingId && m.edgeIndex === marker.edgeIndex
+          );
+          const MARGIN = 0.01;
+          if (clampedT > startT) {
+            const upperOthers = sameEdgeOthers.filter((m) => m.t > startT);
+            if (upperOthers.length > 0) {
+              const upper = Math.min(...upperOthers.map((m) => m.t)) - MARGIN;
+              clampedT = Math.min(clampedT, upper);
+            }
+          } else if (clampedT < startT) {
+            const lowerOthers = sameEdgeOthers.filter((m) => m.t < startT);
+            if (lowerOthers.length > 0) {
+              const lower = Math.max(...lowerOthers.map((m) => m.t)) + MARGIN;
+              clampedT = Math.max(clampedT, lower);
+            }
+          }
+        }
+        updateDragInfo({ markerId: marker.id, edgeIndex: snapped.edgeIndex, t: clampedT });
       }
     };
 
