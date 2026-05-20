@@ -27,7 +27,7 @@ import { useCanvasInteraction } from '@/lib/konva/useCanvasInteraction';
 import { mmToGrid } from '@/lib/konva/gridUtils';
 import { getAllExistingVertices } from '@/lib/konva/snapUtils';
 import { getPrintAreaGrid } from '@/lib/export/pdfExport';
-import { findClosestOutlineEdge, snapToMidpointIfNear } from '@/lib/konva/heightMarkerUtils';
+import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon } from '@/lib/konva/heightMarkerUtils';
 
 type Props = {
   width: number;
@@ -353,9 +353,14 @@ export default function GridCanvas({ width, height }: Props) {
                 const initialHeightMm = useCanvasStore.getState().lastHeightInputMm;
                 // 中点スナップ (= ポインタが中点 ◇ から 10px 以内なら t=0.5 補正)
                 const placementBuilding = canvasData.buildings.find((b) => b.id === result.buildingId);
-                const finalT = placementBuilding
+                let finalT = placementBuilding
                   ? snapToMidpointIfNear(result.edgeIndex, result.t, pointer.x, pointer.y, placementBuilding, INITIAL_GRID_PX * zoom, panX, panY, 10)
                   : result.t;
+                // 角スナップ (= t=0 or t=1 に吸着、 既存 snapToCorners 流用、 設置時の角への吸着強化)
+                if (placementBuilding) {
+                  const outline = getOutlinePolygon(placementBuilding);
+                  finalT = snapToCorners(result.edgeIndex, finalT, outline, thresholdGrid).t;
+                }
                 useCanvasStore.getState().addHeightMarker({
                   id: newId,
                   buildingId: result.buildingId,
@@ -419,9 +424,14 @@ export default function GridCanvas({ width, height }: Props) {
                 const initialHeightMm = useCanvasStore.getState().lastHeightInputMm;
                 // 中点スナップ (= ポインタが中点 ◇ から 10px 以内なら t=0.5 補正)
                 const placementBuilding = canvasData.buildings.find((b) => b.id === result.buildingId);
-                const finalT = placementBuilding
+                let finalT = placementBuilding
                   ? snapToMidpointIfNear(result.edgeIndex, result.t, pointer.x, pointer.y, placementBuilding, INITIAL_GRID_PX * zoom, panX, panY, 10)
                   : result.t;
+                // 角スナップ (= t=0 or t=1 に吸着、 既存 snapToCorners 流用、 設置時の角への吸着強化)
+                if (placementBuilding) {
+                  const outline = getOutlinePolygon(placementBuilding);
+                  finalT = snapToCorners(result.edgeIndex, finalT, outline, thresholdGrid).t;
+                }
                 useCanvasStore.getState().addHeightMarker({
                   id: newId,
                   buildingId: result.buildingId,
