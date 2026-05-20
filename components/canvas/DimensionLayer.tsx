@@ -225,14 +225,25 @@ export default function DimensionLayer() {
         if (minDistX > face2Dist * 2) continue;
       }
 
-      // 足場ライン付近 かつ 拡張済み範囲内 の手摺端点を収集
+      // edge 上の手摺を identify、 両端点を coords に追加 (= コーナーはみ出しも検出、 L字凹形混入も防ぐ)
+      // 「同 direction + axis 座標一致 + いずれかの端点が edge 直線方向範囲内」 で edge 所属判定
+      const edgeRangeMin = isH ? Math.min(edge.p1.x, edge.p2.x) : Math.min(edge.p1.y, edge.p2.y);
+      const edgeRangeMax = isH ? Math.max(edge.p1.x, edge.p2.x) : Math.max(edge.p1.y, edge.p2.y);
       const coords: number[] = [];
-      for (const ep of eps) {
-        if (isH && Math.abs(ep.y - scaffoldCoord) < TOL && ep.x >= edgeMinX && ep.x <= edgeMaxX) {
-          coords.push(ep.x);
-        }
-        if (!isH && Math.abs(ep.x - scaffoldCoord) < TOL && ep.y >= edgeMinY && ep.y <= edgeMaxY) {
-          coords.push(ep.y);
+      const targetDir = isH ? 'horizontal' : 'vertical';
+      for (const h of canvasData.handrails) {
+        if ((h.floor ?? 1) !== targetFloor) continue;
+        if (h.direction !== targetDir) continue;
+        const [hp1, hp2] = getHandrailEndpoints(h);
+        const axisCoord = isH ? hp1.y : hp1.x;
+        if (Math.abs(axisCoord - scaffoldCoord) >= TOL) continue;
+        const c1 = isH ? hp1.x : hp1.y;
+        const c2 = isH ? hp2.x : hp2.y;
+        const inRange1 = c1 >= edgeRangeMin && c1 <= edgeRangeMax;
+        const inRange2 = c2 >= edgeRangeMin && c2 <= edgeRangeMax;
+        if (inRange1 || inRange2) {
+          coords.push(c1);
+          coords.push(c2);
         }
       }
 
