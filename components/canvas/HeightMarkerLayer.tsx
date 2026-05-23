@@ -110,7 +110,7 @@ export default function HeightMarkerLayer() {
         };
         const startS = tToS(marker.edgeIndex, marker.t);
         const proposedS = tToS(snapped.edgeIndex, snapped.t);
-        const MARGIN = totalPerimeter * 0.01;
+        const MARGIN = 10;  // = 10 grid (= 100mm = 10cm)、 建物サイズ非依存の固定値
         const otherS = (canvasData.heightMarkers ?? [])
           .filter((m) => m.id !== marker.id && m.buildingId === marker.buildingId)
           .map((m) => tToS(m.edgeIndex, m.t));
