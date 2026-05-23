@@ -200,10 +200,9 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
   const [dims, setDims] = useState<Record<string, number>>({});
   const [step, setStep] = useState<'select' | 'dims'>('select');
   const [focusedDimKey, setFocusedDimKey] = useState<string | null>(null);
-  const [roofType, setRoofType] = useState<RoofType>('yosemune');
+  const [roofNone, setRoofNone] = useState(false);
   const [roofOverhangMm, setRoofOverhangMm] = useState(600);
-  const [katanagareDir, setKatanagareDir] = useState<'north' | 'south' | 'east' | 'west'>('south');
-  const [kirizumaGable, setKirizumaGable] = useState<'ew' | 'ns'>('ew');
+  const FIXED_ROOF_TYPE: RoofType = 'yosemune';  // 種類概念廃止、 内部固定値
   const [autoCalc, setAutoCalc] = useState(true);
   const [unit, setUnit] = useState<'m' | 'mm'>('mm');
   const [uniformRoof, setUniformRoof] = useState(true);
@@ -272,13 +271,17 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
     const points = buildFromTemplate(selectedTemplate, dims, centerX, centerY);
     if (points.length === 0) { onClose(); return; }
 
-    const roof: RoofConfig | undefined = roofType !== 'none' ? {
-      roofType, uniformMm: uniformRoof ? roofOverhangMm : 600,
+    // 屋根なし時も roof データは生成 (= overhang 全 0、 後で 高さマーカー設置 + 再編集可)
+    const roof: RoofConfig = roofNone ? {
+      roofType: FIXED_ROOF_TYPE,
+      uniformMm: 0,
+      northMm: null, southMm: null, eastMm: null, westMm: null,
+    } : {
+      roofType: FIXED_ROOF_TYPE,
+      uniformMm: uniformRoof ? roofOverhangMm : 600,
       northMm: null, southMm: null, eastMm: null, westMm: null,
       edgeOverhangsMm: uniformRoof ? undefined : edgeOverhangs,
-      katanagareDirection: roofType === 'katanagare' ? katanagareDir : undefined,
-      kirizumaGableFace: roofType === 'kirizuma' ? kirizumaGable : undefined,
-    } : undefined;
+    };
 
     // 2F建物は仮配置モードで配置
     if (floor === 2) {
@@ -488,45 +491,18 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
               )}
             </div>
 
-            {/* Roof config */}
+            {/* Roof config (= 種類概念廃止、 「屋根なし」 チェックで内部 overhang 0 化) */}
             <div className="mt-4 pt-3 border-t border-dark-border">
-              <p className="text-sm text-dimension mb-2">屋根形状</p>
-              <div className="flex gap-2 mb-3">
-                {([['yosemune', '寄棟'], ['kirizuma', '切妻'], ['katanagare', '片流れ'], ['none', 'なし']] as [RoofType, string][]).map(([id, label]) => (
-                  <button key={id} onClick={() => setRoofType(id)}
-                    className={`flex-1 py-1.5 rounded-lg text-xs border transition-colors ${
-                      roofType === id ? 'border-accent bg-accent/15 text-accent' : 'border-dark-border text-dimension'
-                    }`}>{label}</button>
-                ))}
-              </div>
-              {roofType === 'kirizuma' && (
-                <div className="mb-3">
-                  <p className="text-xs text-dimension mb-1">妻面の方向</p>
-                  <div className="flex gap-2">
-                    {([['ew', '東西面が妻面'], ['ns', '南北面が妻面']] as const).map(([id, label]) => (
-                      <button key={id} onClick={() => setKirizumaGable(id)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs border transition-colors ${
-                          kirizumaGable === id ? 'border-accent bg-accent/15 text-accent' : 'border-dark-border text-dimension'
-                        }`}>{label}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {roofType === 'katanagare' && (
-                <div className="mb-3">
-                  <p className="text-xs text-dimension mb-1">水下方向（軒側）</p>
-                  <div className="flex gap-2">
-                    {([['north', '北'], ['south', '南'], ['east', '東'], ['west', '西']] as const).map(([id, label]) => (
-                      <button key={id} onClick={() => setKatanagareDir(id)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs border transition-colors ${
-                          katanagareDir === id ? 'border-accent bg-accent/15 text-accent' : 'border-dark-border text-dimension'
-                        }`}>{label}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {roofType !== 'none' && (
-                <div className="space-y-2 mt-2">
+              <p className="text-sm text-dimension mb-2">屋根</p>
+              <div className="flex items-center gap-4 mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={roofNone}
+                    onChange={(e) => setRoofNone(e.target.checked)}
+                    className="w-4 h-4 rounded border-dark-border accent-accent"
+                  />
+                  <span className="text-xs text-dimension">屋根なし</span>
+                </label>
+                {!roofNone && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={uniformRoof}
                       onChange={(e) => setUniformRoof(e.target.checked)}
@@ -534,6 +510,10 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
                     />
                     <span className="text-xs text-dimension">全面同じ出幅</span>
                   </label>
+                )}
+              </div>
+              {!roofNone && (
+                <div className="space-y-2 mt-2">
 
                   {uniformRoof ? (
                     <div className="flex items-center gap-3">

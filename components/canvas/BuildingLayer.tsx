@@ -51,14 +51,21 @@ export default function BuildingLayer() {
         const fillColor = is2F ? '#A0A0A0' : (isDarkMode ? '#555555' : '#3d3d3a');
         const strokeColor = isSelected ? '#FF6B35' : (is2F ? '#888888' : (isDarkMode ? '#888888' : '#1a1a18'));
 
+        // mode='roof' 時の屋根再編集 (= 屋根なし状態でも building 本体 tap で開く、 #5 仕様)
+        const handleBuildingRoofTap = () => {
+          useCanvasStore.getState().setSelectedIds([building.id]);
+          useCanvasStore.getState().setAutoOpenRoofForBuildingId(building.id);
+        };
         return (
           <Line key={building.id} points={flatPoints} closed
             fill={fillColor}
             opacity={is2F ? 0.6 : 1}
             stroke={strokeColor}
             strokeWidth={isSelected ? 3 : 2}
-            listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
+            listening={mode === 'select' || mode === 'erase' || mode === 'move-select' || mode === 'roof'}
             id={building.id}
+            onClick={mode === 'roof' ? handleBuildingRoofTap : undefined}
+            onTap={mode === 'roof' ? handleBuildingRoofTap : undefined}
           />
         );
       })}
