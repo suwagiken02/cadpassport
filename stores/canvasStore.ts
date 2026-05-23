@@ -151,6 +151,9 @@ type CanvasStore = {
   setNoWallMode: (v: boolean) => void;
   lastMoveDirection: 'up' | 'down' | 'left' | 'right';
   setLastMoveDirection: (dir: 'up' | 'down' | 'left' | 'right') => void;
+  /** 方向入力モーダル 距離プリセット履歴 (= 直近 10 件 LRU、 hardcode 10 個で seed、 セッション内のみ) */
+  directionDistanceHistory: number[];
+  addDirectionDistanceHistory: (mm: number) => void;
   showDirectionGuide: boolean;
   toggleDirectionGuide: () => void;
 
@@ -543,6 +546,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setPendingDirectionTarget: (p) => set({ pendingDirectionTarget: p }),
   lastMoveDirection: 'down',
   setLastMoveDirection: (dir) => set({ lastMoveDirection: dir }),
+  directionDistanceHistory: [1000, 1800, 2000, 3000, 3640, 4000, 5000, 6000, 7280, 9100],
+  addDirectionDistanceHistory: (mm) => set((state) => {
+    const filtered = state.directionDistanceHistory.filter((v) => v !== mm);
+    return { directionDistanceHistory: [mm, ...filtered].slice(0, 10) };
+  }),
   showDirectionGuide: true,
   toggleDirectionGuide: () => set({ showDirectionGuide: !get().showDirectionGuide }),
 

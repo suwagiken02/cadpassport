@@ -21,6 +21,7 @@ export default function DirectionInputModal({ onClose }: Props) {
     pendingDirectionTarget, setPendingDirectionTarget,
     directionCursor, setDirectionCursor,
     noWallMode, setNoWallMode,
+    directionDistanceHistory, addDirectionDistanceHistory,
   } = useCanvasStore();
 
   // 交点タップ時はターゲットから距離を算出して初期値にする
@@ -36,6 +37,11 @@ export default function DirectionInputModal({ onClose }: Props) {
 
   const handleConfirm = () => {
     if (directionPoints.length === 0 || !pendingDirection) return;
+
+    // 4 方向ボタン入力時のみ履歴追加 (= 交点タップは距離計算値で「ユーザ入力」 ではない)
+    if (!pendingDirectionTarget) {
+      addDirectionDistanceHistory(distanceMm);
+    }
 
     let next: { x: number; y: number };
 
@@ -146,10 +152,10 @@ export default function DirectionInputModal({ onClose }: Props) {
           <span className="text-xs text-dimension">mm</span>
         </div>
 
-        {/* よく使う距離プリセット */}
+        {/* 距離プリセット (= ユーザ入力履歴、 直近 10 件 LRU、 hardcode 10 個で seed) */}
         {!pendingDirectionTarget && (
           <div className="flex flex-wrap gap-1.5">
-            {[1000, 1800, 2000, 3000, 3640, 4000, 5000, 6000, 7280, 9100].map(mm => (
+            {directionDistanceHistory.map(mm => (
               <button key={mm} onClick={() => setDistanceMm(mm)}
                 className={`px-2 py-1 rounded text-xs font-mono border transition-colors ${
                   distanceMm === mm ? 'bg-accent text-white border-accent' : 'border-dark-border text-dimension'
