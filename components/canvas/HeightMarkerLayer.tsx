@@ -115,14 +115,15 @@ export default function HeightMarkerLayer() {
           .filter((m) => m.id !== marker.id && m.buildingId === marker.buildingId)
           .map((m) => tToS(m.edgeIndex, m.t));
         let clampedS = proposedS;
+        // 進行方向側の他マーカーで常時 clamp (= 到達前から制限適用、 jump back 回避)
         if (proposedS > startS) {
-          const upperOthers = otherS.filter((s) => s > startS && s <= proposedS);
+          const upperOthers = otherS.filter((s) => s > startS);
           if (upperOthers.length > 0) {
             const upper = Math.min(...upperOthers) - MARGIN;
             clampedS = Math.min(clampedS, Math.max(startS, upper));
           }
         } else if (proposedS < startS) {
-          const lowerOthers = otherS.filter((s) => s < startS && s >= proposedS);
+          const lowerOthers = otherS.filter((s) => s < startS);
           if (lowerOthers.length > 0) {
             const lower = Math.max(...lowerOthers) + MARGIN;
             clampedS = Math.max(clampedS, Math.min(startS, lower));
