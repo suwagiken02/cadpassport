@@ -26,7 +26,7 @@ function Guide({
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 2) return null;
   const a = ARROW * zoom;
-  const fs = Math.max(12, 14 * zoom);
+  const fs = Math.min(14, Math.max(12, 14 * zoom));  // 上限 14 で zoom 暴走抑制 (= PDF 紙上で太く見えない)
   const isV = Math.abs(dx) < Math.abs(dy);
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
   const tw = label.length * fs * 0.65 + 6, th = fs + 4;
