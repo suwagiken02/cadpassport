@@ -114,19 +114,29 @@ export default function HeightMarkerLayer() {
         const otherS = (canvasData.heightMarkers ?? [])
           .filter((m) => m.id !== marker.id && m.buildingId === marker.buildingId)
           .map((m) => tToS(m.edgeIndex, m.t));
+        // 進行方向は周長 cyclic で最短経路判定 (= 角越え wrap でも誤判定なし)
+        const forwardDist = ((proposedS - startS) % totalPerimeter + totalPerimeter) % totalPerimeter;
+        const backwardDist = ((startS - proposedS) % totalPerimeter + totalPerimeter) % totalPerimeter;
         let clampedS = proposedS;
-        // 進行方向側の他マーカーで常時 clamp (= 到達前から制限適用、 jump back 回避)
-        if (proposedS > startS) {
-          const upperOthers = otherS.filter((s) => s > startS);
-          if (upperOthers.length > 0) {
-            const upper = Math.min(...upperOthers) - MARGIN;
-            clampedS = Math.min(clampedS, Math.max(startS, upper));
+        if (forwardDist > 0 && forwardDist <= backwardDist) {
+          // forward (= s 増加方向、 cyclic) の最近マーカーで clamp
+          const others = otherS
+            .map((s) => ((s - startS) % totalPerimeter + totalPerimeter) % totalPerimeter)
+            .filter((d) => d > 0);
+          if (others.length > 0) {
+            const nearest = Math.min(...others) - MARGIN;
+            const clampedD = Math.min(forwardDist, Math.max(0, nearest));
+            clampedS = (startS + clampedD) % totalPerimeter;
           }
-        } else if (proposedS < startS) {
-          const lowerOthers = otherS.filter((s) => s < startS);
-          if (lowerOthers.length > 0) {
-            const lower = Math.max(...lowerOthers) + MARGIN;
-            clampedS = Math.max(clampedS, Math.min(startS, lower));
+        } else if (backwardDist > 0) {
+          // backward (= s 減少方向、 cyclic) の最近マーカーで clamp
+          const others = otherS
+            .map((s) => ((startS - s) % totalPerimeter + totalPerimeter) % totalPerimeter)
+            .filter((d) => d > 0);
+          if (others.length > 0) {
+            const nearest = Math.min(...others) - MARGIN;
+            const clampedD = Math.min(backwardDist, Math.max(0, nearest));
+            clampedS = (startS - clampedD + totalPerimeter) % totalPerimeter;
           }
         }
         const clamped = sToT(clampedS);
