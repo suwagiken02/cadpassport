@@ -397,6 +397,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   // 各辺の離れ（mm）: edgeIndex → number
   const defaultDist = scaffoldStart?.face1DistanceMm ?? 900;
+  const [bulkMm, setBulkMm] = useState(900);  // 一括入力欄の現在値 (= 「全部に適用」 で各辺の離れに一斉コピー)
   const [distances, setDistances] = useState<Record<number, number>>(() => {
     const d: Record<number, number> = {};
     edges.forEach(e => {
@@ -1288,6 +1289,29 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           {/* 各辺の離れ入力 */}
           <div>
             <p className="text-sm text-dimension mb-2">各辺の離れ (mm)</p>
+            {/* 一括入力 (= 全辺に同値を一斉コピー、 locked edge はスキップ) */}
+            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-dark-border/50">
+              <span className="text-[10px] text-dimension w-12 shrink-0">一括</span>
+              <NumInput
+                value={bulkMm}
+                onChange={setBulkMm}
+                min={0} step={1}
+                className="flex-1 bg-dark-bg border border-dark-border rounded-lg px-2 py-1.5 text-sm font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  edges.forEach(edge => {
+                    if (!lockedEdgeIndices.has(edge.index)) {
+                      setDistance(edge.index, bulkMm);
+                    }
+                  });
+                }}
+                className="px-3 py-1.5 bg-accent text-white text-xs font-bold rounded-lg shrink-0"
+              >
+                全部に適用
+              </button>
+            </div>
             <div className="space-y-1.5">
               {edges.map(edge => (
                 <div key={edge.index} className="flex items-center gap-2">
