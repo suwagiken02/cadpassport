@@ -77,7 +77,7 @@ function renderLabel(
       width={w} height={h} fill={BG_FILL} opacity={BG_OPACITY}
       cornerRadius={2} listening={false} />,
     <Text key={`${k}T`} x={cx - w / 2 + PAD_X} y={cy - fs / 2}
-      text={text} fontSize={fs} fontFamily="monospace" fontStyle="bold"
+      text={text} fontSize={fs} fontFamily="monospace"
       fill={color} listening={false} />,
   ];
 }

@@ -53,7 +53,7 @@ function Guide({
       <Rect x={mx - tw / 2} y={my - th / 2} width={tw} height={th}
         fill="white" opacity={0.75} cornerRadius={2} listening={false} />
       <Text x={mx - (label.length * fs * 0.65) / 2} y={my - fs / 2}
-        text={label} fontSize={fs} fontFamily="monospace" fontStyle="bold"
+        text={label} fontSize={fs} fontFamily="monospace"
         fill={color} listening={false} />
     </>
   );
