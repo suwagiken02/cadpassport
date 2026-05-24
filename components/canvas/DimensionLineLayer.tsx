@@ -25,9 +25,9 @@ const COLOR_2F = '#378ADD';
 const DRAG_COLOR = '#f59e0b'; // ドラッグ中ハイライト (= amber、 ★4 確定)
 const BG_FILL = '#ffffff';
 const BG_OPACITY = 0.92;
-const LW = 16;
-const TICK_LEN = 96;
-const FONT_BASE = 256;
+const LW = 8;
+const TICK_LEN = 48;
+const FONT_BASE = 128;
 const PAD_X = 3;
 const PAD_Y = 2;
 const HIT_WIDTH = 20; // 透明ヒット領域 (= ★4 確定)

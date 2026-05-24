@@ -36,7 +36,7 @@ export default function BuildingLayer() {
               (p1.x + nx * g) * gridPx + panX, (p1.y + ny * g) * gridPx + panY,
               (p2.x + nx * g) * gridPx + panX, (p2.y + ny * g) * gridPx + panY,
             ]}
-            stroke="#888780" strokeWidth={16 * zoom} dash={[96 * zoom, 64 * zoom]} listening={false}
+            stroke="#888780" strokeWidth={8 * zoom} dash={[48 * zoom, 32 * zoom]} listening={false}
           />
         );
       })}
@@ -61,7 +61,7 @@ export default function BuildingLayer() {
             fill={fillColor}
             opacity={is2F ? 0.6 : 1}
             stroke={strokeColor}
-            strokeWidth={(isSelected ? 48 : 32) * zoom}
+            strokeWidth={(isSelected ? 24 : 16) * zoom}
             listening={mode === 'select' || mode === 'erase' || mode === 'move-select' || mode === 'roof'}
             id={building.id}
             onClick={mode === 'roof' ? handleBuildingRoofTap : undefined}
@@ -92,8 +92,8 @@ export default function BuildingLayer() {
             points={flatPoints}
             closed
             stroke="#888780"
-            strokeWidth={16 * zoom}
-            dash={[96 * zoom, 64 * zoom]}
+            strokeWidth={8 * zoom}
+            dash={[48 * zoom, 32 * zoom]}
             hitStrokeWidth={mode === 'roof' ? 12 : 0}
             listening={mode === 'roof'}
             onClick={handleRoofTap}

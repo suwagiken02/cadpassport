@@ -90,7 +90,7 @@ export default function ScaffoldLayer() {
               opacity={0.85}
               cornerRadius={2}
               stroke={isSelected ? '#FF6B35' : (anti.width === 400 ? '#B45309' : '#A16207')}
-              strokeWidth={(isSelected ? 32 : 24) * zoom}
+              strokeWidth={(isSelected ? 16 : 12) * zoom}
               listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
               id={anti.id}
               draggable={mode === 'select'}
@@ -139,7 +139,7 @@ export default function ScaffoldLayer() {
           : isHighlighted ? '#FF6B35'
           : isSelected ? '#FF6B35'
           : (lineColor || defaultColor);
-        const strokeWidth = ((isHighlighted ? 80 : lineColor ? 64 : 48) + (is1F ? 16 : 0)) * zoom;  // さらに 4 倍
+        const strokeWidth = ((isHighlighted ? 40 : lineColor ? 32 : 24) + (is1F ? 8 : 0)) * zoom;  // 1/2 縮小
 
         return (
           <React.Fragment key={h.id}>
@@ -177,14 +177,14 @@ export default function ScaffoldLayer() {
             <Circle
               x={start.x * gridPx + panX}
               y={start.y * gridPx + panY}
-              radius={48 * zoom}
+              radius={24 * zoom}
               fill={lineColor || defaultColor}
               listening={false}
             />
             <Circle
               x={end.x * gridPx + panX}
               y={end.y * gridPx + panY}
-              radius={48 * zoom}
+              radius={24 * zoom}
               fill={lineColor || defaultColor}
               listening={false}
             />
@@ -200,7 +200,7 @@ export default function ScaffoldLayer() {
                   x={isH ? midX : midX + offsetPx}
                   y={isH ? midY + offsetPx : midY}
                   text={String(h.lengthMm)}
-                  fontSize={160 * zoom}
+                  fontSize={80 * zoom}
                   fill={lineColor || defaultColor}
                   align={isH ? 'center' : 'right'}
                   offsetX={isH ? 15 : 30}
@@ -220,7 +220,7 @@ export default function ScaffoldLayer() {
             <Circle
               x={p.x * gridPx + panX}
               y={p.y * gridPx + panY}
-              radius={128 * zoom}
+              radius={64 * zoom}
               fill="#2c2c2a"
               stroke={isSelected ? '#FF6B35' : '#2c2c2a'}
               strokeWidth={isSelected ? 2 : 0}
@@ -244,7 +244,7 @@ export default function ScaffoldLayer() {
             <Circle
               x={p.x * gridPx + panX}
               y={p.y * gridPx + panY}
-              radius={48 * zoom}
+              radius={24 * zoom}
               fill="white"
               listening={false}
             />
