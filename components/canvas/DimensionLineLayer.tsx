@@ -33,17 +33,17 @@ const PAD_Y = 2;
 const HIT_WIDTH = 20; // 透明ヒット領域 (= ★4 確定)
 const PX_TO_MM = 10 / INITIAL_GRID_PX; // 10/3 ≈ 3.33 mm/px (zoom 非依存)
 
-// 軸オフセット (= 紙上 mm 単位、 zoom 連動で px 換算、 PDF 印刷範囲内保証)
-const OFF_SCAFFOLD_SOLO_MM = 150;   // ≒ 30 px @ zoom=1 既存互換
-const OFF_WALL_SOLO_MM = 300;       // ≒ 60 px @ zoom=1
-const OFF_ROOF_SOLO_MM = 550;       // ≒ 110 px @ zoom=1
+// 軸オフセット (建物 BBox 端からの距離 px、外向き、 ★1 default 0 で挙動完全維持)
+const OFF_SCAFFOLD_SOLO = 30;
+const OFF_WALL_SOLO = 60;
+const OFF_ROOF_SOLO = 110;
 
-const OFF_SCAFFOLD_2F_BOTH_MM = 100;   // ≒ 20 px @ zoom=1
-const OFF_SCAFFOLD_1F_BOTH_MM = 175;   // ≒ 35 px @ zoom=1
-const OFF_WALL_2F_BOTH_MM = 350;       // ≒ 70 px @ zoom=1
-const OFF_ROOF_2F_BOTH_MM = 600;       // ≒ 120 px @ zoom=1
-const OFF_WALL_1F_BOTH_MM = 900;       // ≒ 180 px @ zoom=1
-const OFF_ROOF_1F_BOTH_MM = 1200;      // ≒ 240 px @ zoom=1
+const OFF_SCAFFOLD_2F_BOTH = 20;
+const OFF_SCAFFOLD_1F_BOTH = 35;
+const OFF_WALL_2F_BOTH = 70;
+const OFF_ROOF_2F_BOTH = 120;
+const OFF_WALL_1F_BOTH = 180;
+const OFF_ROOF_1F_BOTH = 240;
 
 type Face = 'north' | 'south' | 'east' | 'west';
 type BB = { minX: number; minY: number; maxX: number; maxY: number };
@@ -425,7 +425,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       return { elements: [] as React.ReactElement[], dragInfos: [] as DragInfo[] };
     }
 
-    const fs = FONT_BASE * zoom;  // pure proportional (= 建物との比一定)
+    const fs = Math.max(9, FONT_BASE * Math.min(zoom, 1.5));
     const els: React.ReactElement[] = [];
     const infos: DragInfo[] = [];
     const gx = (g: number) => g * gridPx + panX;
@@ -438,18 +438,16 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
     const has2FBuilding = canvasData.buildings.some(b => b.floor === 2);
     const isBothmode = has1FBuilding && has2FBuilding;
 
-    // mm → px 換算 (= mm * gridPx / 10、 INITIAL_GRID_PX=20 で 1 grid=10mm)
-    const mmToPx = (mm: number) => mm * gridPx / 10;
     const offsetsBase = isBothmode
       ? {
-          wall1F: mmToPx(OFF_WALL_1F_BOTH_MM), roof1F: mmToPx(OFF_ROOF_1F_BOTH_MM),
-          wall2F: mmToPx(OFF_WALL_2F_BOTH_MM), roof2F: mmToPx(OFF_ROOF_2F_BOTH_MM),
-          scaffold1F: mmToPx(OFF_SCAFFOLD_1F_BOTH_MM), scaffold2F: mmToPx(OFF_SCAFFOLD_2F_BOTH_MM),
+          wall1F: OFF_WALL_1F_BOTH, roof1F: OFF_ROOF_1F_BOTH,
+          wall2F: OFF_WALL_2F_BOTH, roof2F: OFF_ROOF_2F_BOTH,
+          scaffold1F: OFF_SCAFFOLD_1F_BOTH, scaffold2F: OFF_SCAFFOLD_2F_BOTH,
         }
       : {
-          wall1F: mmToPx(OFF_WALL_SOLO_MM), roof1F: mmToPx(OFF_ROOF_SOLO_MM),
-          wall2F: mmToPx(OFF_WALL_SOLO_MM), roof2F: mmToPx(OFF_ROOF_SOLO_MM),
-          scaffold1F: mmToPx(OFF_SCAFFOLD_SOLO_MM), scaffold2F: mmToPx(OFF_SCAFFOLD_SOLO_MM),
+          wall1F: OFF_WALL_SOLO, roof1F: OFF_ROOF_SOLO,
+          wall2F: OFF_WALL_SOLO, roof2F: OFF_ROOF_SOLO,
+          scaffold1F: OFF_SCAFFOLD_SOLO, scaffold2F: OFF_SCAFFOLD_SOLO,
         };
 
     // ★5 相対 mm delta: base px + mmDelta * 0.3 (zoom 非依存) で px 換算

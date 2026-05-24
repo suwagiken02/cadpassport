@@ -40,7 +40,7 @@ export default function PinAnchorPickerLayer() {
   if (!isMagnetPinMode) return null;
 
   const gridPx = INITIAL_GRID_PX * zoom;
-  const baseRadius = 6 * zoom;  // pure proportional
+  const baseRadius = Math.max(5, Math.min(9, 6 * zoom));
   const activeRadius = baseRadius + 2;
 
   return (

@@ -25,9 +25,9 @@ export default function MagnetPinLayer() {
 
   const gridPx = INITIAL_GRID_PX * zoom;
 
-  // pure proportional (= 建物との比一定)
-  const headRadius = 6 * zoom;
-  const needleLen = 16 * zoom;
+  // ズームに応じてサイズをクランプ
+  const headRadius = Math.max(4, Math.min(8, 6 * zoom));
+  const needleLen = Math.max(12, Math.min(20, 16 * zoom));
   const needleDx = needleLen * 0.5;
   const needleDy = needleLen;
 
