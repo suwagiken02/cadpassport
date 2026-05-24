@@ -25,9 +25,9 @@ const COLOR_2F = '#378ADD';
 const DRAG_COLOR = '#f59e0b'; // ドラッグ中ハイライト (= amber、 ★4 確定)
 const BG_FILL = '#ffffff';
 const BG_OPACITY = 0.92;
-const LW = 4;
-const TICK_LEN = 24;
-const FONT_BASE = 64;
+const LW = 16;
+const TICK_LEN = 96;
+const FONT_BASE = 256;
 const PAD_X = 3;
 const PAD_Y = 2;
 const HIT_WIDTH = 20; // 透明ヒット領域 (= ★4 確定)
@@ -69,14 +69,15 @@ const bbOk = (b: BB) => b.minX < b.maxX && b.minY < b.maxY;
 /* ===== ラベル描画 (白背景 + 指定色文字) ===== */
 function renderLabel(
   cx: number, cy: number, text: string, fs: number, k: string, color: string,
+  padX: number, padY: number,
 ): React.ReactElement[] {
-  const w = text.length * fs * 0.6 + PAD_X * 2;
-  const h = fs + PAD_Y * 2;
+  const w = text.length * fs * 0.6 + padX * 2;
+  const h = fs + padY * 2;
   return [
     <Rect key={`${k}B`} x={cx - w / 2} y={cy - h / 2}
       width={w} height={h} fill={BG_FILL} opacity={BG_OPACITY}
       cornerRadius={2} listening={false} />,
-    <Text key={`${k}T`} x={cx - w / 2 + PAD_X} y={cy - fs / 2}
+    <Text key={`${k}T`} x={cx - w / 2 + padX} y={cy - fs / 2}
       text={text} fontSize={fs} fontFamily="monospace"
       fill={color} listening={false} />,
   ];
@@ -92,6 +93,7 @@ function renderDimLine(
   fs: number,
   color: string,
   lw: number,
+  padX: number, padY: number,
 ): React.ReactElement[] {
   if (!spans.length) return [];
   const els: React.ReactElement[] = [];
@@ -128,7 +130,7 @@ function renderDimLine(
       els.push(...renderLabel(
         isH ? mid : axis + off,
         isH ? axis + off : mid,
-        `${sp.mm}`, fs, `${k}i${i}`, color,
+        `${sp.mm}`, fs, `${k}i${i}`, color, padX, padY,
       ));
     });
   }
@@ -138,7 +140,7 @@ function renderDimLine(
   els.push(...renderLabel(
     isH ? mid : axis + outerOff,
     isH ? axis + outerOff : mid,
-    `${totalMm}`, fs, `${k}O`, color,
+    `${totalMm}`, fs, `${k}O`, color, padX, padY,
   ));
 
   return els;
@@ -200,6 +202,7 @@ function renderOverhangLine(
   fs: number,
   color: string,
   lw: number,
+  padX: number, padY: number,
 ): React.ReactElement[] {
   if (!spans.length) return [];
   const els: React.ReactElement[] = [];
@@ -231,7 +234,7 @@ function renderOverhangLine(
     els.push(...renderLabel(
       isH ? mid : axis + off,
       isH ? axis + off : mid,
-      `${sp.mm}`, fs, `${k}i${i}`, color,
+      `${sp.mm}`, fs, `${k}i${i}`, color, padX, padY,
     ));
   });
 
@@ -240,7 +243,7 @@ function renderOverhangLine(
   els.push(...renderLabel(
     isH ? mid : axis + outerOff,
     isH ? axis + outerOff : mid,
-    `${totalMm}`, fs, `${k}O`, color,
+    `${totalMm}`, fs, `${k}O`, color, padX, padY,
   ));
 
   return els;
@@ -537,7 +540,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const lineColor = previewMm?.key === scaffoldKey ? DRAG_COLOR : color;
           els.push(...renderDimLine(
             `D${floor}S${face}`, isH, axisScaffold, innerDir, spans,
-            spans.length > 1, total, fs, lineColor, LW * zoom,
+            spans.length > 1, total, fs, lineColor, LW * zoom, PAD_X * zoom, PAD_Y * zoom,
           ));
           infos.push({
             key: scaffoldKey, face, isH, axis: axisScaffold,
@@ -559,7 +562,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const lineColor = previewMm?.key === wallKey ? DRAG_COLOR : color;
           els.push(...renderDimLine(
             `D${floor}I${face}`, isH, axisWall, innerDir, spans,
-            spans.length > 1, total, fs, lineColor, LW * zoom,
+            spans.length > 1, total, fs, lineColor, LW * zoom, PAD_X * zoom, PAD_Y * zoom,
           ));
           infos.push({
             key: wallKey, face, isH, axis: axisWall,
@@ -586,7 +589,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const lineColor = previewMm?.key === roofKey ? DRAG_COLOR : color;
           els.push(...renderOverhangLine(
             `D${floor}O${face}`, isH, axisOuter, innerDir,
-            overhangSpans, lineStartPx, lineEndPx, totalMm, fs, lineColor, LW * zoom,
+            overhangSpans, lineStartPx, lineEndPx, totalMm, fs, lineColor, LW * zoom, PAD_X * zoom, PAD_Y * zoom,
           ));
           infos.push({
             key: roofKey, face, isH, axis: axisOuter,
