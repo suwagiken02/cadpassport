@@ -76,18 +76,18 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   // ステップ2: 範囲指定中（モーダルは下部に小さく表示）
   if (step === 'range') {
     return (
-      <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3">
-        <span className="text-sm text-canvas">範囲をドラッグで指定</span>
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-1.5 flex items-center gap-2">
+        <span className="text-xs text-canvas whitespace-nowrap">範囲をドラッグ</span>
         <button type="button" onClick={handleExport}
-          className="px-4 py-2 bg-accent text-white font-bold rounded-lg text-sm">
+          className="px-3 py-1.5 bg-accent text-white font-bold rounded-lg text-xs whitespace-nowrap">
           PDF出力
         </button>
         <button type="button" onClick={() => { setStep('settings'); if (useCanvasStore.getState().showPrintArea) useCanvasStore.getState().toggleShowPrintArea(); }}
-          className="px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-xs text-dimension">
+          className="px-2 py-1.5 bg-dark-bg border border-dark-border rounded-lg text-xs text-dimension whitespace-nowrap">
           戻る
         </button>
         <button type="button" onClick={handleClose}
-          className="px-2 py-2 text-dimension hover:text-canvas text-sm">
+          className="px-1.5 py-1.5 text-dimension hover:text-canvas text-xs">
           ✕
         </button>
       </div>
