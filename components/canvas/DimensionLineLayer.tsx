@@ -27,7 +27,7 @@ const BG_FILL = '#ffffff';
 const BG_OPACITY = 0.92;
 const LW = 1;
 const TICK_LEN = 6;
-const FONT_BASE = 64;
+const FONT_BASE = 16;
 const PAD_X = 3;
 const PAD_Y = 2;
 const HIT_WIDTH = 20; // 透明ヒット領域 (= ★4 確定)
