@@ -12,7 +12,7 @@ const GUIDE_COLOR = '#378ADD';
 const GUIDE_OPACITY = 0.3;
 const COLOR_OK = '#888780';
 const COLOR_WARN = '#E85D3A';
-const ARROW = 4;
+const ARROW = 16;
 const TOL = 50;
 
 /** ガイド線 + ラベル */
@@ -26,7 +26,7 @@ function Guide({
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 2) return null;
   const a = ARROW * zoom;
-  const fs = 20 * zoom;  // 完全 zoom 連動 = pure proportional
+  const fs = 80 * zoom;  // 4 倍拡大
   const isV = Math.abs(dx) < Math.abs(dy);
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
   const tw = label.length * fs * 0.65 + 6, th = fs + 4;
@@ -34,20 +34,20 @@ function Guide({
   return (
     <>
       <Line points={[x1, y1, x2, y2]}
-        stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+        stroke={GUIDE_COLOR} strokeWidth={4 * zoom} opacity={GUIDE_OPACITY} listening={false} />
       {isV ? (
         <>
           <Line points={[x1 - a, y1 + a, x1, y1, x1 + a, y1 + a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={4 * zoom} opacity={GUIDE_OPACITY} listening={false} />
           <Line points={[x2 - a, y2 - a, x2, y2, x2 + a, y2 - a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={4 * zoom} opacity={GUIDE_OPACITY} listening={false} />
         </>
       ) : (
         <>
           <Line points={[x1 + a, y1 - a, x1, y1, x1 + a, y1 + a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={4 * zoom} opacity={GUIDE_OPACITY} listening={false} />
           <Line points={[x2 - a, y2 - a, x2, y2, x2 - a, y2 + a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={4 * zoom} opacity={GUIDE_OPACITY} listening={false} />
         </>
       )}
       <Rect x={mx - tw / 2} y={my - th / 2} width={tw} height={th}
