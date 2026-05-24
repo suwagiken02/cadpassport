@@ -35,7 +35,7 @@ export default function MemoLayer() {
         const isSelected = effectiveSelectedIds.includes(memo.id);
         const screenX = memo.x * gridPx + panX;
         const screenY = memo.y * gridPx + panY;
-        const fontSize = 10;  // zoom 連動完全廃止 (= A4 紙上適正サイズ)
+        const fontSize = Math.max(10, 12 * zoom);
         const scX = memo.scaleX || memo.scale || 1;
         const scY = memo.scaleY || memo.scale || 1;
         const ang = memo.angle || 0;
