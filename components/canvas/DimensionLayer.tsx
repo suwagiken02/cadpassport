@@ -26,7 +26,7 @@ function Guide({
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 2) return null;
   const a = ARROW * zoom;
-  const fs = 20 * zoom;  // pure proportional (= 建物との比一定)
+  const fs = 80 * zoom;  // pure proportional (= 建物との比一定)
   const isV = Math.abs(dx) < Math.abs(dy);
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
   const tw = label.length * fs * 0.65 + 6, th = fs + 4;
