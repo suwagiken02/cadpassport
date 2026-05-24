@@ -70,7 +70,7 @@ export default function GridCanvas({ width, height }: Props) {
   }, [showDirectionGuide, buildingInputMethod, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
   const lastPanPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // グリッド描画（キャンバス全体に広がる無限グリッド）
+  // グリッド描画（ビューポート + 印刷範囲を含む拡張範囲）
   const gridLines = useCallback(() => {
     const lines: React.ReactElement[] = [];
     const gridPx = INITIAL_GRID_PX * zoom;
@@ -84,11 +84,23 @@ export default function GridCanvas({ width, height }: Props) {
     // 100mm (10グリッド) ごとの太線
     const majorStep = 10;
 
-    // ビューポート全体をカバーするグリッド範囲を計算
-    const startCol = Math.floor(-panX / gridPx / step) * step - step;
-    const endCol = Math.ceil((width - panX) / gridPx / step) * step + step;
-    const startRow = Math.floor(-panY / gridPx / step) * step - step;
-    const endRow = Math.ceil((height - panY) / gridPx / step) * step + step;
+    // ビューポート + 印刷範囲を含む拡張範囲 (= PDF キャプチャで端まで描画)
+    let viewMinX = 0, viewMaxX = width, viewMinY = 0, viewMaxY = height;
+    const area = showPrintArea && printAreaCenter ? getPrintAreaGrid(printPaperSize, printScale) : null;
+    if (area && printAreaCenter) {
+      const pw = area.widthGrid * gridPx;
+      const ph = area.heightGrid * gridPx;
+      const rx = printAreaCenter.x * gridPx + panX - pw / 2;
+      const ry = printAreaCenter.y * gridPx + panY - ph / 2;
+      viewMinX = Math.min(viewMinX, rx);
+      viewMaxX = Math.max(viewMaxX, rx + pw);
+      viewMinY = Math.min(viewMinY, ry);
+      viewMaxY = Math.max(viewMaxY, ry + ph);
+    }
+    const startCol = Math.floor((viewMinX - panX) / gridPx / step) * step - step;
+    const endCol = Math.ceil((viewMaxX - panX) / gridPx / step) * step + step;
+    const startRow = Math.floor((viewMinY - panY) / gridPx / step) * step - step;
+    const endRow = Math.ceil((viewMaxY - panY) / gridPx / step) * step + step;
 
     for (let i = startCol; i <= endCol; i += step) {
       const x = i * gridPx + panX;
@@ -96,7 +108,7 @@ export default function GridCanvas({ width, height }: Props) {
       lines.push(
         <Line
           key={`v${i}`}
-          points={[x, 0, x, height]}
+          points={[x, viewMinY, x, viewMaxY]}
           stroke={isMajor ? colorGridMajor : colorGridMinor}
           strokeWidth={isMajor ? 0.5 : 0.25}
           listening={false}
@@ -109,7 +121,7 @@ export default function GridCanvas({ width, height }: Props) {
       lines.push(
         <Line
           key={`h${j}`}
-          points={[0, y, width, y]}
+          points={[viewMinX, y, viewMaxX, y]}
           stroke={isMajor ? colorGridMajor : colorGridMinor}
           strokeWidth={isMajor ? 0.5 : 0.25}
           listening={false}
@@ -117,7 +129,7 @@ export default function GridCanvas({ width, height }: Props) {
       );
     }
     return lines;
-  }, [zoom, panX, panY, width, height, colorGridMajor, colorGridMinor]);
+  }, [zoom, panX, panY, width, height, colorGridMajor, colorGridMinor, showPrintArea, printAreaCenter, printPaperSize, printScale]);
 
   // グリッドガイド（500mm/1000mmライン）
   const gridGuideLines = useCallback(() => {
@@ -515,15 +527,24 @@ export default function GridCanvas({ width, height }: Props) {
       onMouseUp={(e) => { handleMouseUp(e); handleStageMouseUp(e); }}
       style={{ touchAction: 'none', cursor: building2FDraft || memoDraft ? 'crosshair' : isPanning ? 'grab' : 'default' }}
     >
-      {/* キャンバス背景（ビューポート全体） */}
+      {/* キャンバス背景（ビューポート + 印刷範囲を含む拡張範囲、 PDF キャプチャで端まで埋まる） */}
       <Layer listening={false}>
-        <Rect
-          x={0}
-          y={0}
-          width={width}
-          height={height}
-          fill={colorCanvasBg}
-        />
+        {(() => {
+          const gridPx = INITIAL_GRID_PX * zoom;
+          const area = showPrintArea && printAreaCenter ? getPrintAreaGrid(printPaperSize, printScale) : null;
+          if (area && printAreaCenter) {
+            const pw = area.widthGrid * gridPx;
+            const ph = area.heightGrid * gridPx;
+            const rx = printAreaCenter.x * gridPx + panX - pw / 2;
+            const ry = printAreaCenter.y * gridPx + panY - ph / 2;
+            const x0 = Math.min(0, rx);
+            const y0 = Math.min(0, ry);
+            const x1 = Math.max(width, rx + pw);
+            const y1 = Math.max(height, ry + ph);
+            return <Rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill={colorCanvasBg} />;
+          }
+          return <Rect x={0} y={0} width={width} height={height} fill={colorCanvasBg} />;
+        })()}
       </Layer>
 
       {/* グリッド線（キャンバス全体の背景として描画） */}
