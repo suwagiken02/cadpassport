@@ -392,7 +392,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       // 法線方向のみ反映: north/south = Y、 east/west = X、 接線方向の動きは無視
       const pixelDelta = isH ? (pointer.y - startPointer.y) : (pointer.x - startPointer.x);
       // sign で「外向き = mm 増加」に正規化
-      const mmDelta = sign * pixelDelta * PX_TO_MM;
+      const mmDelta = sign * pixelDelta * (10 / (INITIAL_GRID_PX * zoom));  // zoom 依存 = world mm
       setPreviewMm({ key, mm: Math.round(startMm + mmDelta) });
     };
     const onUp = () => {
@@ -418,7 +418,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
   }, [storedOffsets, previewMm]);
 
   // Mm → Px 変換 (zoom 非依存、 既存 hardcoded px 同スケール)
-  const mmDeltaToPx = (mm: number) => Math.round(mm * INITIAL_GRID_PX / 10);
+  const mmDeltaToPx = (mm: number) => mm * gridPx / 10;  // zoom 依存 = 現在 zoom の px
 
   const { elements, dragInfos } = useMemo(() => {
     if (!visible || !canvasData.buildings.length) {
