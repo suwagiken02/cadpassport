@@ -56,6 +56,12 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   // ステップ2: 出力実行
   const handleExport = async () => {
     try {
+      // capture 時に印刷範囲全体が stage canvas 内に収まることを保証
+      // (= Konva stage bitmap 制約で範囲外は透明化、 スマホで画面外グリッド消失対策)
+      const vw = canvasSize.width || window.innerWidth;
+      const vh = canvasSize.height || (window.innerHeight - 120);
+      zoomToFitPrintArea(vw, vh);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await onExport({ format, paperSize, scale });
     } catch (e) {
       console.error('[Export] error:', e);
