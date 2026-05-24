@@ -34,16 +34,16 @@ const HIT_WIDTH = 20; // 透明ヒット領域 (= ★4 確定)
 const PX_TO_MM = 10 / INITIAL_GRID_PX; // 10/3 ≈ 3.33 mm/px (zoom 非依存)
 
 // 軸オフセット (= 紙上 mm 単位、 zoom 連動で px 換算、 PDF 印刷範囲内保証)
-const OFF_SCAFFOLD_SOLO_MM = 150;   // ≒ 30 px @ zoom=1 既存互換
-const OFF_WALL_SOLO_MM = 300;       // ≒ 60 px @ zoom=1
-const OFF_ROOF_SOLO_MM = 550;       // ≒ 110 px @ zoom=1
+const OFF_SCAFFOLD_SOLO_MM = 75;    // 150 → 75 (50% 縮小)
+const OFF_WALL_SOLO_MM = 150;       // 300 → 150
+const OFF_ROOF_SOLO_MM = 300;       // 550 → 300
 
-const OFF_SCAFFOLD_2F_BOTH_MM = 100;   // ≒ 20 px @ zoom=1
-const OFF_SCAFFOLD_1F_BOTH_MM = 175;   // ≒ 35 px @ zoom=1
-const OFF_WALL_2F_BOTH_MM = 350;       // ≒ 70 px @ zoom=1
-const OFF_ROOF_2F_BOTH_MM = 600;       // ≒ 120 px @ zoom=1
-const OFF_WALL_1F_BOTH_MM = 900;       // ≒ 180 px @ zoom=1
-const OFF_ROOF_1F_BOTH_MM = 1200;      // ≒ 240 px @ zoom=1
+const OFF_SCAFFOLD_2F_BOTH_MM = 50;    // 100 → 50
+const OFF_SCAFFOLD_1F_BOTH_MM = 100;   // 175 → 100
+const OFF_WALL_2F_BOTH_MM = 200;       // 350 → 200
+const OFF_ROOF_2F_BOTH_MM = 350;       // 600 → 350
+const OFF_WALL_1F_BOTH_MM = 500;       // 900 → 500
+const OFF_ROOF_1F_BOTH_MM = 700;       // 1200 → 700
 
 type Face = 'north' | 'south' | 'east' | 'west';
 type BB = { minX: number; minY: number; maxX: number; maxY: number };
