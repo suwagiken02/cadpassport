@@ -71,7 +71,7 @@ export default function KidareLayer() {
       const x1 = gx(midX);
       const y1 = gy(wallYcoord);
       const y2 = gy(scaffoldCoord);
-      const a = ARROW * zoom;
+      const a = ARROW;  // zoom 連動完全廃止
 
       elements.push(
         <Line key={`${floorKey}-k-${i}`} points={[x1, y1, x1, y2]}
@@ -113,7 +113,7 @@ export default function KidareLayer() {
       const y1 = gy(midY);
       const x1 = gx(wallXcoord);
       const x2 = gx(scaffoldCoord);
-      const a = ARROW * zoom;
+      const a = ARROW;  // zoom 連動完全廃止
 
       elements.push(
         <Line key={`${floorKey}-k-${i}`} points={[x1, y1, x2, y1]}

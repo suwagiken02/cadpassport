@@ -25,8 +25,8 @@ function Guide({
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 2) return null;
-  const a = ARROW * zoom;
-  const fs = Math.min(14, Math.max(12, 14 * zoom));  // 上限 14 で zoom 暴走抑制 (= PDF 紙上で太く見えない)
+  const a = ARROW;  // 4 固定、 zoom 連動完全廃止
+  const fs = 12;    // 12 固定、 zoom 連動完全廃止 (= A4 紙上適正サイズ)
   const isV = Math.abs(dx) < Math.abs(dy);
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
   const tw = label.length * fs * 0.65 + 6, th = fs + 4;

@@ -224,10 +224,10 @@ export default function ObstacleLayer() {
                     x={cx * gridPx + panX}
                     y={cy * gridPx + panY}
                     text={label}
-                    fontSize={Math.max(8, 9 * zoom)}
+                    fontSize={9}
                     fill="#333"
-                    offsetX={label.length * Math.max(8, 9 * zoom) * 0.3}
-                    offsetY={Math.max(8, 9 * zoom) / 2}
+                    offsetX={label.length * 9 * 0.3}
+                    offsetY={9 / 2}
                     listening={false}
                   />
                 );
@@ -270,7 +270,7 @@ export default function ObstacleLayer() {
                   width={w}
                   align="center"
                   text={label}
-                  fontSize={Math.max(8, 9 * zoom)}
+                  fontSize={9}
                   fill="#333"
                   listening={false}
                 />
@@ -315,7 +315,7 @@ export default function ObstacleLayer() {
                 x={screenX + 2}
                 y={screenY + 2}
                 text={label}
-                fontSize={Math.max(8, 9 * zoom)}
+                fontSize={9}
                 fill="#333"
                 listening={false}
               />

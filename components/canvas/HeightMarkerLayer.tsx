@@ -276,8 +276,8 @@ export default function HeightMarkerLayer() {
         const y = p1.y + tt * (p2.y - p1.y);
         const screenX = x * gridPx + panX;
         const screenY = y * gridPx + panY;
-        const r = Math.max(6, 8 * zoom);
-        const fs = Math.max(11, 13 * zoom);
+        const r = 6;    // zoom 連動完全廃止 (= A4 紙上適正サイズ)
+        const fs = 11;  // zoom 連動完全廃止
         const labelText = marker.heightMm === 0
           ? 'H?'
           : `H${marker.heightMm}mm`;

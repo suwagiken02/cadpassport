@@ -425,7 +425,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       return { elements: [] as React.ReactElement[], dragInfos: [] as DragInfo[] };
     }
 
-    const fs = Math.max(9, FONT_BASE * Math.min(zoom, 1.0));  // 上限 1.0 cap で zoom 大時の太化抑制
+    const fs = FONT_BASE;  // 11 固定、 zoom 連動完全廃止 (= A4 紙上適正サイズ)
     const els: React.ReactElement[] = [];
     const infos: DragInfo[] = [];
     const gx = (g: number) => g * gridPx + panX;

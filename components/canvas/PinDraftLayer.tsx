@@ -35,9 +35,9 @@ export default function PinDraftLayer() {
   const tipX = (pinAnchor.x + dxGrid) * gridPx + panX;
   const tipY = (pinAnchor.y + dyGrid) * gridPx + panY;
 
-  // ズームクランプ
-  const headRadius = Math.max(4, Math.min(8, 6 * zoom));
-  const needleLen = Math.max(12, Math.min(20, 16 * zoom));
+  // zoom 連動完全廃止 (= A4 紙上適正サイズ固定)
+  const headRadius = 6;
+  const needleLen = 16;
   const needleDx = needleLen * 0.5;
   const needleDy = needleLen;
 
