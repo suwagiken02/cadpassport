@@ -44,7 +44,7 @@ export default function MagnetPinLayer() {
             <Line
               points={[-needleDx, -needleDy, 0, 0]}
               stroke="#991B1B"
-              strokeWidth={1.5 * zoom}
+              strokeWidth={1.5}
               shadowColor="#000"
               shadowOpacity={0.3}
               shadowBlur={2}
@@ -58,7 +58,7 @@ export default function MagnetPinLayer() {
               radius={headRadius}
               fill="#DC2626"
               stroke="#FFFFFF"
-              strokeWidth={1 * zoom}
+              strokeWidth={1}
               shadowColor="#000"
               shadowOpacity={0.4}
               shadowBlur={3}

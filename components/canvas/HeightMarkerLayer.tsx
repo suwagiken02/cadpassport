@@ -285,7 +285,7 @@ export default function HeightMarkerLayer() {
           <React.Fragment key={marker.id}>
             <Circle
               x={screenX} y={screenY} radius={r}
-              fill={MARKER_COLOR} stroke="#fff" strokeWidth={1.5 * zoom}
+              fill={MARKER_COLOR} stroke="#fff" strokeWidth={1.5}
               onMouseDown={(e) => onCircleDown(e, { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t })}
               onTouchStart={(e) => onCircleDown(e, { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t })}
               onClick={() => onCircleClick(marker.id)}

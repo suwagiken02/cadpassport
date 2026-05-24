@@ -34,20 +34,20 @@ function Guide({
   return (
     <>
       <Line points={[x1, y1, x2, y2]}
-        stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+        stroke={GUIDE_COLOR} strokeWidth={1} opacity={GUIDE_OPACITY} listening={false} />
       {isV ? (
         <>
           <Line points={[x1 - a, y1 + a, x1, y1, x1 + a, y1 + a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={1} opacity={GUIDE_OPACITY} listening={false} />
           <Line points={[x2 - a, y2 - a, x2, y2, x2 + a, y2 - a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={1} opacity={GUIDE_OPACITY} listening={false} />
         </>
       ) : (
         <>
           <Line points={[x1 + a, y1 - a, x1, y1, x1 + a, y1 + a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={1} opacity={GUIDE_OPACITY} listening={false} />
           <Line points={[x2 - a, y2 - a, x2, y2, x2 - a, y2 + a]}
-            stroke={GUIDE_COLOR} strokeWidth={1 * zoom} opacity={GUIDE_OPACITY} listening={false} />
+            stroke={GUIDE_COLOR} strokeWidth={1} opacity={GUIDE_OPACITY} listening={false} />
         </>
       )}
       <Rect x={mx - tw / 2} y={my - th / 2} width={tw} height={th}

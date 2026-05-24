@@ -117,8 +117,8 @@ export default function ScaffoldLayer() {
                 (anti.y + (anti.direction === 'horizontal' ? h / 2 : h - 1)) * gridPx + panY,
               ]}
               stroke="#b8860b"
-              strokeWidth={0.5 * zoom}
-              dash={[3 * zoom, 3 * zoom]}
+              strokeWidth={0.5}
+              dash={[3, 3]}
               listening={false}
             />
           </React.Fragment>
