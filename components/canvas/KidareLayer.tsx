@@ -75,11 +75,11 @@ export default function KidareLayer() {
 
       elements.push(
         <Line key={`${floorKey}-k-${i}`} points={[x1, y1, x1, y2]}
-          stroke={COLOR} strokeWidth={1.5} listening={false} />,
+          stroke={COLOR} strokeWidth={1.5 * zoom} listening={false} />,
         <Line key={`${floorKey}-ka-${i}`} points={[x1-a, y1+a*Math.sign(y2-y1), x1, y1, x1+a, y1+a*Math.sign(y2-y1)]}
-          stroke={COLOR} strokeWidth={1.5} listening={false} />,
+          stroke={COLOR} strokeWidth={1.5 * zoom} listening={false} />,
         <Line key={`${floorKey}-kb-${i}`} points={[x1-a, y2-a*Math.sign(y2-y1), x1, y2, x1+a, y2-a*Math.sign(y2-y1)]}
-          stroke={COLOR} strokeWidth={1.5} listening={false} />,
+          stroke={COLOR} strokeWidth={1.5 * zoom} listening={false} />,
         <Rect key={`${floorKey}-kr-${i}`} x={x1-18} y={(y1+y2)/2-9} width={36} height={18}
           fill="white" opacity={0.8} cornerRadius={2} listening={false} />,
         <Text key={`${floorKey}-kt-${i}`} x={x1-18} y={(y1+y2)/2-7}
@@ -117,11 +117,11 @@ export default function KidareLayer() {
 
       elements.push(
         <Line key={`${floorKey}-k-${i}`} points={[x1, y1, x2, y1]}
-          stroke={COLOR} strokeWidth={1.5} listening={false} />,
+          stroke={COLOR} strokeWidth={1.5 * zoom} listening={false} />,
         <Line key={`${floorKey}-ka-${i}`} points={[x1+a*Math.sign(x2-x1), y1-a, x1, y1, x1+a*Math.sign(x2-x1), y1+a]}
-          stroke={COLOR} strokeWidth={1.5} listening={false} />,
+          stroke={COLOR} strokeWidth={1.5 * zoom} listening={false} />,
         <Line key={`${floorKey}-kb-${i}`} points={[x2-a*Math.sign(x2-x1), y1-a, x2, y1, x2-a*Math.sign(x2-x1), y1+a]}
-          stroke={COLOR} strokeWidth={1.5} listening={false} />,
+          stroke={COLOR} strokeWidth={1.5 * zoom} listening={false} />,
         <Rect key={`${floorKey}-kr-${i}`} x={(x1+x2)/2-18} y={y1-9} width={36} height={18}
           fill="white" opacity={0.8} cornerRadius={2} listening={false} />,
         <Text key={`${floorKey}-kt-${i}`} x={(x1+x2)/2-18} y={y1-7}

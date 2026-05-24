@@ -202,7 +202,7 @@ export default function ObstacleLayer() {
                 fill={color}
                 opacity={0.7}
                 stroke={isSelected ? '#378ADD' : '#999'}
-                strokeWidth={isSelected ? 2 : 1}
+                strokeWidth={(isSelected ? 2 : 1) * zoom}
                 listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
                 id={obs.id}
                 draggable={mode === 'select'}
@@ -247,7 +247,7 @@ export default function ObstacleLayer() {
                 fill={color}
                 opacity={0.7}
                 stroke={isSelected ? '#378ADD' : '#999'}
-                strokeWidth={isSelected ? 2 : 0.5}
+                strokeWidth={(isSelected ? 2 : 0.5) * zoom}
                 listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
                 id={obs.id}
                 draggable={mode === 'select'}
@@ -289,8 +289,8 @@ export default function ObstacleLayer() {
               fill={isElevated ? 'transparent' : color}
               opacity={0.7}
               stroke={isSelected ? '#378ADD' : isElevated ? color : '#999'}
-              strokeWidth={isSelected ? 2 : isElevated ? 1.5 : 0.5}
-              dash={isElevated ? [8, 4] : undefined}
+              strokeWidth={(isSelected ? 2 : isElevated ? 1.5 : 0.5) * zoom}
+              dash={isElevated ? [8 * zoom, 4 * zoom] : undefined}
               listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
               id={obs.id}
               draggable={mode === 'select'}

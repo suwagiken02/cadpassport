@@ -91,6 +91,7 @@ function renderDimLine(
   totalMm: number,
   fs: number,
   color: string,
+  lw: number,
 ): React.ReactElement[] {
   if (!spans.length) return [];
   const els: React.ReactElement[] = [];
@@ -100,7 +101,7 @@ function renderDimLine(
   els.push(
     <Line key={`${k}L`}
       points={isH ? [lineS, axis, lineE, axis] : [axis, lineS, axis, lineE]}
-      stroke={color} strokeWidth={LW} listening={false} />,
+      stroke={color} strokeWidth={lw} listening={false} />,
   );
 
   const tickSet = new Set<number>();
@@ -115,7 +116,7 @@ function renderDimLine(
         points={isH
           ? [px, axis, px, axis + innerDir * TICK_LEN]
           : [axis, px, axis + innerDir * TICK_LEN, px]}
-        stroke={color} strokeWidth={LW} listening={false} />,
+        stroke={color} strokeWidth={lw} listening={false} />,
     );
   }
 
@@ -198,6 +199,7 @@ function renderOverhangLine(
   totalMm: number,
   fs: number,
   color: string,
+  lw: number,
 ): React.ReactElement[] {
   if (!spans.length) return [];
   const els: React.ReactElement[] = [];
@@ -205,7 +207,7 @@ function renderOverhangLine(
   els.push(
     <Line key={`${k}L`}
       points={isH ? [lineStart, axis, lineEnd, axis] : [axis, lineStart, axis, lineEnd]}
-      stroke={color} strokeWidth={LW} listening={false} />,
+      stroke={color} strokeWidth={lw} listening={false} />,
   );
 
   const tickSet = new Set<number>();
@@ -218,7 +220,7 @@ function renderOverhangLine(
         points={isH
           ? [px, axis, px, axis + innerDir * TICK_LEN]
           : [axis, px, axis + innerDir * TICK_LEN, px]}
-        stroke={color} strokeWidth={LW} listening={false} />,
+        stroke={color} strokeWidth={lw} listening={false} />,
     );
   }
 
@@ -535,7 +537,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const lineColor = previewMm?.key === scaffoldKey ? DRAG_COLOR : color;
           els.push(...renderDimLine(
             `D${floor}S${face}`, isH, axisScaffold, innerDir, spans,
-            spans.length > 1, total, fs, lineColor,
+            spans.length > 1, total, fs, lineColor, LW * zoom,
           ));
           infos.push({
             key: scaffoldKey, face, isH, axis: axisScaffold,
@@ -557,7 +559,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const lineColor = previewMm?.key === wallKey ? DRAG_COLOR : color;
           els.push(...renderDimLine(
             `D${floor}I${face}`, isH, axisWall, innerDir, spans,
-            spans.length > 1, total, fs, lineColor,
+            spans.length > 1, total, fs, lineColor, LW * zoom,
           ));
           infos.push({
             key: wallKey, face, isH, axis: axisWall,
@@ -584,7 +586,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const lineColor = previewMm?.key === roofKey ? DRAG_COLOR : color;
           els.push(...renderOverhangLine(
             `D${floor}O${face}`, isH, axisOuter, innerDir,
-            overhangSpans, lineStartPx, lineEndPx, totalMm, fs, lineColor,
+            overhangSpans, lineStartPx, lineEndPx, totalMm, fs, lineColor, LW * zoom,
           ));
           infos.push({
             key: roofKey, face, isH, axis: axisOuter,
