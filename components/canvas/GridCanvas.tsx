@@ -38,7 +38,7 @@ export default function GridCanvas({ width, height }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const { zoom, panX, panY, setZoom, setPan, mode, canvasData, handrailPreview, snapPoint, obstaclePreview, isMeasuring, measurePoint1, measurePoint2, measureCursor, measureResultMm, buildingInputMethod, showGridGuide, showPrintArea, printPaperSize, printScale, printAreaCenter, setPrintAreaCenter, isDarkMode, building2FDraft, memoDraft, directionPoints, directionCursor, lastMoveDirection, showDirectionGuide, showDimensionLines, isHeightMarkerMode } = useCanvasStore();
 
-  const colorCanvasBg = isDarkMode ? '#0a0a0a' : '#f5f4f0';
+  const colorCanvasBg = isDarkMode ? '#0a0a0a' : '#ffffff';
   const colorGridMinor = isDarkMode ? 'rgba(0,255,65,0.15)' : '#e5e4e0';
   const colorGridMajor = isDarkMode ? 'rgba(0,255,65,0.35)' : '#d0cfcb';
   const { handleStageMouseDown, handleStageMouseMove, handleStageMouseUp, selectionRect } = useCanvasInteraction();
