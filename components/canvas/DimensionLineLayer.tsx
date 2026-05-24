@@ -425,7 +425,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       return { elements: [] as React.ReactElement[], dragInfos: [] as DragInfo[] };
     }
 
-    const fs = Math.max(9, FONT_BASE * Math.min(zoom, 1.5));
+    const fs = FONT_BASE * zoom;  // pure proportional (= 建物との比一定)
     const els: React.ReactElement[] = [];
     const infos: DragInfo[] = [];
     const gx = (g: number) => g * gridPx + panX;

@@ -660,14 +660,14 @@ export default function GridCanvas({ width, height }: Props) {
               return (
                 <>
                   <Circle x={sx + r} y={sy + r} radius={r} fill={color} opacity={0.5} stroke={color} strokeWidth={1.5} />
-                  {label && <Text x={sx} y={sy + r - 5} width={w} align="center" text={label} fontSize={Math.max(8, 9 * zoom)} fill="#333" />}
+                  {label && <Text x={sx} y={sy + r - 5} width={w} align="center" text={label} fontSize={9 * zoom} fill="#333" />}
                 </>
               );
             }
             return (
               <>
                 <Rect x={sx} y={sy} width={w} height={h} fill={color} opacity={0.5} stroke={color} strokeWidth={1.5} cornerRadius={2} />
-                {label && <Text x={sx + 2} y={sy + 2} text={label} fontSize={Math.max(8, 9 * zoom)} fill="#333" />}
+                {label && <Text x={sx + 2} y={sy + 2} text={label} fontSize={9 * zoom} fill="#333" />}
               </>
             );
           })()}
@@ -707,7 +707,7 @@ export default function GridCanvas({ width, height }: Props) {
             const sy = memoCursorPos.y * gridPx + panY;
             const scX = memoDraft.scaleX;
             const scY = memoDraft.scaleY;
-            const fontSize = Math.max(10, 12 * zoom) * Math.min(scX, scY);
+            const fontSize = 12 * zoom * Math.min(scX, scY);  // pure proportional
             const lines = memoDraft.text.split('\n');
             const maxLineLen = Math.max(...lines.map(l => l.length));
             const w = Math.max(80, maxLineLen * fontSize * 0.6 + 24);
