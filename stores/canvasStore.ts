@@ -1235,7 +1235,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
   setCompassAngle: (angle) => {
     const { canvasData } = get();
-    set({ canvasData: { ...canvasData, compass: { angle } } });
+    // 0-360 にクランプ (= 360 超 / 負数 / NaN を normalize)
+    const normalized = ((angle % 360) + 360) % 360;
+    const safe = Number.isFinite(normalized) ? normalized : 0;
+    set({ canvasData: { ...canvasData, compass: { angle: safe } } });
   },
   setScaffoldStart: (config) => {
     const { canvasData, pushHistory } = get();

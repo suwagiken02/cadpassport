@@ -25,7 +25,19 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(git restore:*)",
-      "Bash(git show *)"
+      "Bash(git show *)",
+      "Bash(npx vitest *)",
+      "Bash(npm test *)",
+      "Bash(grep -v \"//\")",
+      "Bash(echo \"tsc_exit=$?\")",
+      "Bash(git stash *)",
+      "Bash(git log *)",
+      "Bash(git revert *)",
+      "Bash(npm outdated *)",
+      "Bash(npm audit *)",
+      "Bash(xargs wc -l)",
+      "Bash(awk '$1 > 500 {print}')",
+      "Bash(npm update *)"
     ]
   }
 }

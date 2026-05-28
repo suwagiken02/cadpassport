@@ -273,6 +273,53 @@ export const exportToPdf = async (
     height: tbPdfHeight,
   });
 
+  // ── 方位磁石（表題欄の左、 canvasData.compass.angle で回転） ──
+  const compassRadius = 18;
+  const compassMargin = 12;
+  const compassCx = drawableX + drawableWidthPt - tbPdfWidth - compassMargin - compassRadius;
+  const compassCy = marginPt + compassRadius;
+  // 0-360 度に正規化 (= undefined 互換)
+  const rawAngle = canvasData.compass?.angle ?? 0;
+  const normalizedAngle = Number.isFinite(rawAngle)
+    ? ((rawAngle % 360) + 360) % 360
+    : 0;
+  const angleRad = (normalizedAngle * Math.PI) / 180;
+  // 北矢印の tip (= 上向き = y+、 angle CW 回転で右へ)
+  const nTipX = compassCx + compassRadius * 0.8 * Math.sin(angleRad);
+  const nTipY = compassCy + compassRadius * 0.8 * Math.cos(angleRad);
+  // 南矢印 tip (= 反対方向)
+  const sTipX = compassCx - compassRadius * 0.8 * Math.sin(angleRad);
+  const sTipY = compassCy - compassRadius * 0.8 * Math.cos(angleRad);
+  // 外円
+  page.drawCircle({
+    x: compassCx,
+    y: compassCy,
+    size: compassRadius,
+    borderColor: rgb(0.53, 0.53, 0.5),
+    borderWidth: 0.6,
+  });
+  // 北矢印 (= 赤線)
+  page.drawLine({
+    start: { x: compassCx, y: compassCy },
+    end: { x: nTipX, y: nTipY },
+    thickness: 1.2,
+    color: rgb(0.9, 0.24, 0.18),
+  });
+  // 南矢印 (= 灰線)
+  page.drawLine({
+    start: { x: compassCx, y: compassCy },
+    end: { x: sTipX, y: sTipY },
+    thickness: 1.0,
+    color: rgb(0.53, 0.53, 0.5),
+  });
+  // N text (= 北 tip 近く、 baseline 微調整)
+  page.drawText('N', {
+    x: nTipX - 2.5,
+    y: nTipY - 2,
+    size: 7,
+    color: rgb(0.9, 0.24, 0.18),
+  });
+
   // ── ダウンロード ──
   const pdfBytes = await pdfDoc.save();
   const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
