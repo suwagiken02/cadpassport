@@ -453,20 +453,6 @@ export function useCanvasInteraction() {
       const hitElement = hitHandrail || hitPost || hitAnti || hitObstacle;
 
       if (hitElement && s.mode !== 'post' && s.mode !== 'erase') {
-        // 移動トグル / カテゴリフィルタ: drag 不可なら selection のみで終了
-        const dragCategory: 'parts' | 'obstacles' | 'other' =
-          hitHandrail || hitPost || hitAnti ? 'parts'
-          : hitObstacle ? 'obstacles'
-          : 'other';
-        const canDrag = s.moveEnabled && (
-          dragCategory === 'parts' ? s.moveFilter.parts
-          : dragCategory === 'obstacles' ? s.moveFilter.obstacles
-          : true
-        );
-        if (!canDrag) {
-          s.setSelectedIds([hitElement.id]);
-          return;
-        }
         const isTouchEvent = 'touches' in e.evt;
         if (isTouchEvent) {
           stageRef.current = stage;

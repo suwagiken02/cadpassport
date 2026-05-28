@@ -363,10 +363,8 @@ function getOverallBB(buildings: BuildingShape[], handrails: Handrail[]): BB {
    メインコンポーネント
    ================================================================ */
 export default function DimensionLineLayer({ visible = true }: { visible?: boolean }) {
-  const { canvasData, zoom, panX, panY, mode, moveEnabled, moveFilter } = useCanvasStore();
+  const { canvasData, zoom, panX, panY } = useCanvasStore();
   const setDimensionOffsetMm = useCanvasStore(s => s.setDimensionOffsetMm);
-  // 寸法ドラッグは mode='select' + moveEnabled + moveFilter.dimensions の AND
-  const canDragDimensions = mode === 'select' && moveEnabled && moveFilter.dimensions;
   const dimensionVisibility = useHandrailSettingsStore(s => s.dimensionVisibility);
   const gridPx = INITIAL_GRID_PX * zoom;
 
@@ -634,7 +632,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
               stroke="transparent"
               strokeWidth={1}
               hitStrokeWidth={HIT_WIDTH}
-              listening={canDragDimensions}
+              listening={true}
               onMouseDown={(e) => onHitDown(e, info)}
               onTouchStart={(e) => onHitDown(e, info)}
             />

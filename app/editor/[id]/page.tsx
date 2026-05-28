@@ -177,32 +177,6 @@ export default function EditorPage() {
     useHandrailSettingsStore.getState().loadHandrailSettings();
   }, []);
 
-  // 移動トグル / フィルタを localStorage から復元 (= default true、 不正値は無視)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const savedEnabled = localStorage.getItem('ashiba-plan:moveEnabled');
-      if (savedEnabled === '0') {
-        useCanvasStore.setState({ moveEnabled: false });
-      }
-      const savedFilter = localStorage.getItem('ashiba-plan:moveFilter');
-      if (savedFilter) {
-        const parsed = JSON.parse(savedFilter);
-        if (
-          parsed && typeof parsed === 'object'
-          && typeof parsed.parts === 'boolean'
-          && typeof parsed.dimensions === 'boolean'
-          && typeof parsed.buildings === 'boolean'
-          && typeof parsed.obstacles === 'boolean'
-        ) {
-          useCanvasStore.setState({ moveFilter: parsed });
-        }
-      }
-    } catch {
-      // localStorage アクセス不可 / JSON parse 失敗 は default 維持
-    }
-  }, []);
-
   // 図面データ読み込み
   useEffect(() => {
     if (!drawingId) return;
