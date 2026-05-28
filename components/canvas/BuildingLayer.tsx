@@ -8,9 +8,11 @@ import { Point } from '@/types';
 import { getEdgeOverhangs, computeOffsetPolygon } from '@/lib/konva/roofUtils';
 
 export default function BuildingLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
+  // select モード時の listening 条件 (= selectActive ON + building ロック解除時のみ)
+  const selectListenBuilding = mode === 'select' && selectActive && !selectLock.building;
 
   return (
     <Layer>
@@ -62,7 +64,7 @@ export default function BuildingLayer() {
             opacity={is2F ? 0.6 : 1}
             stroke={strokeColor}
             strokeWidth={(isSelected ? 24 : 16) * zoom}
-            listening={mode === 'select' || mode === 'erase' || mode === 'move-select' || mode === 'roof'}
+            listening={selectListenBuilding || mode === 'erase' || mode === 'move-select' || mode === 'roof'}
             id={building.id}
             onClick={mode === 'roof' ? handleBuildingRoofTap : undefined}
             onTap={mode === 'roof' ? handleBuildingRoofTap : undefined}

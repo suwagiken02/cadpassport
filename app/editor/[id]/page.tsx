@@ -177,6 +177,29 @@ export default function EditorPage() {
     useHandrailSettingsStore.getState().loadHandrailSettings();
   }, []);
 
+  // 選択カテゴリロックを localStorage から復元 (= default 全 false、 不正値は無視)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem('ashiba-plan:selectLock');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (
+          parsed && typeof parsed === 'object'
+          && typeof parsed.parts === 'boolean'
+          && typeof parsed.building === 'boolean'
+          && typeof parsed.obstacle === 'boolean'
+          && typeof parsed.roof === 'boolean'
+          && typeof parsed.dimension === 'boolean'
+        ) {
+          useCanvasStore.setState({ selectLock: parsed });
+        }
+      }
+    } catch {
+      // localStorage アクセス不可 / JSON parse 失敗 は default 維持
+    }
+  }, []);
+
   // 図面データ読み込み
   useEffect(() => {
     if (!drawingId) return;

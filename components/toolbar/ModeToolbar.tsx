@@ -5,7 +5,7 @@ import { ModeType } from '@/types';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function ModeToolbar() {
-  const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode } = useCanvasStore();
+  const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode, selectActive, setSelectActive, selectLock, setSelectLock } = useCanvasStore();
   const [showKutaiMenu, setShowKutaiMenu] = useState(false);
   const [showAshibaMenu, setShowAshibaMenu] = useState(false);
   const [dismissedStage, setDismissedStage] = useState<string | null>(null);
@@ -69,7 +69,13 @@ export default function ModeToolbar() {
       return;
     }
     if (id === 'select') {
-      setMode('select');
+      // 既に select かつ active なら toggle で OFF、 それ以外なら ON で select モードへ
+      if (mode === 'select' && selectActive) {
+        setSelectActive(false);
+      } else {
+        setMode('select');
+        setSelectActive(true);
+      }
     } else if (id === 'erase') {
       // トグル動作: 既に erase なら select に戻す (= 削除モード OFF)
       setMode(mode === 'erase' ? 'select' : 'erase');
@@ -91,7 +97,7 @@ export default function ModeToolbar() {
   };
 
   const isActive = (id: string) => {
-    if (id === 'select') return mode === 'select' && !isMeasuring;
+    if (id === 'select') return mode === 'select' && selectActive && !isMeasuring;
     if (id === 'kutai') return isKutaiMode && !isMeasuring;
     if (id === 'buzai') return showPartSelector;
     if (id === 'memo') return mode === 'memo' && !isMeasuring;
@@ -275,6 +281,33 @@ export default function ModeToolbar() {
           }}
           onSecondary={() => setShowNoScaffoldConfirm(false)}
         />
+      )}
+
+      {/* 選択カテゴリロック popover (= mode='select' + selectActive 時のみ表示、 屋根は将来用 placeholder で UI 非表示) */}
+      {mode === 'select' && selectActive && !isMeasuring && (
+        <div className="fixed bottom-[58px] left-1/2 -translate-x-1/2 z-30 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-2 py-1 flex gap-1">
+          {([
+            { key: 'parts' as const, label: '部材' },
+            { key: 'building' as const, label: '躯体' },
+            { key: 'obstacle' as const, label: '障害物' },
+            { key: 'dimension' as const, label: '寸法' },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSelectLock({ ...selectLock, [key]: !selectLock[key] })}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                selectLock[key]
+                  ? 'bg-red-500/80 text-white'
+                  : 'bg-dark-bg text-dimension border border-dark-border'
+              }`}
+              aria-pressed={selectLock[key]}
+              title={selectLock[key] ? `${label}: ロック中（触れない）` : `${label}: 触れる`}
+            >
+              {selectLock[key] ? '🔒' : ''}{label}
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-dark-surface border-t border-dark-border safe-area-bottom">

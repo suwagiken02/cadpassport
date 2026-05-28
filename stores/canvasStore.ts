@@ -345,6 +345,13 @@ type CanvasStore = {
   // 高さマーカー (= Task #8 Phase B)
   isHeightMarkerMode: boolean;
   setHeightMarkerMode: (v: boolean) => void;
+  /** 選択モードの ON/OFF トグル (= true: 触れる、 false: 全カテゴリ触れない、 default true、 session 内のみ) */
+  selectActive: boolean;
+  setSelectActive: (v: boolean) => void;
+  /** カテゴリ別ロック (= true でそのカテゴリの listening を無効化、 全 false default、 localStorage 永続化)
+   *  屋根は mode='roof' 限定で別経路のため将来用 placeholder (= UI 非表示) */
+  selectLock: { parts: boolean; building: boolean; obstacle: boolean; roof: boolean; dimension: boolean };
+  setSelectLock: (lock: { parts: boolean; building: boolean; obstacle: boolean; roof: boolean; dimension: boolean }) => void;
   heightInputMarkerId: string | null;
   setHeightInputMarkerId: (id: string | null) => void;
   /** 直前に入力した高さ (mm) (= 次回マーカー配置時の初期値、 セッション内のみ、 Issue 3) */
@@ -1076,6 +1083,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // === 高さマーカー (= Task #8 Phase B) ===
   isHeightMarkerMode: false,
   setHeightMarkerMode: (v) => set({ isHeightMarkerMode: v }),
+  selectActive: true,
+  setSelectActive: (v) => set({ selectActive: v }),
+  selectLock: { parts: false, building: false, obstacle: false, roof: false, dimension: false },
+  setSelectLock: (lock) => {
+    set({ selectLock: lock });
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('ashiba-plan:selectLock', JSON.stringify(lock)); } catch {}
+    }
+  },
   heightInputMarkerId: null,
   setHeightInputMarkerId: (id) => set({ heightInputMarkerId: id }),
   // 直前入力値の保持 (= セッション内のみ、 Issue 3 修正)

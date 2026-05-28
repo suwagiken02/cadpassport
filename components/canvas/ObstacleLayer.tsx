@@ -76,8 +76,10 @@ function findWallEdgeForObstacle(
 }
 
 export default function ObstacleLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, obstaclePreview } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, obstaclePreview, selectActive, selectLock } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
+  // select モード時の listening 条件 (= selectActive ON + obstacle ロック解除時のみ)
+  const selectListenObstacle = mode === 'select' && selectActive && !selectLock.obstacle;
 
   // ドラッグ中の壁吸着距離表示用 (= 投影スナップ位置 + 壁辺端点)
   const [dragInfo, setDragInfo] = useState<{
@@ -203,7 +205,7 @@ export default function ObstacleLayer() {
                 opacity={0.7}
                 stroke={isSelected ? '#378ADD' : '#999'}
                 strokeWidth={isSelected ? 2 : 1}
-                listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
+                listening={selectListenObstacle || mode === 'erase' || mode === 'move-select'}
                 id={obs.id}
                 draggable={mode === 'select'}
                 onDragStart={() => useCanvasStore.getState().pushHistory()}
@@ -248,7 +250,7 @@ export default function ObstacleLayer() {
                 opacity={0.7}
                 stroke={isSelected ? '#378ADD' : '#999'}
                 strokeWidth={isSelected ? 2 : 0.5}
-                listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
+                listening={selectListenObstacle || mode === 'erase' || mode === 'move-select'}
                 id={obs.id}
                 draggable={mode === 'select'}
                 onDragStart={() => useCanvasStore.getState().pushHistory()}
