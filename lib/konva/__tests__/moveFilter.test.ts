@@ -92,6 +92,17 @@ describe('calcCanDrag (= Layer 側 canDrag 計算)', () => {
     expect(calcCanDrag('select', 'parts', false, DEFAULT_FILTER)).toBe(false);
     expect(calcCanDrag('select', 'other', false, DEFAULT_FILTER)).toBe(false);
   });
+
+  it('dimensions=false で寸法 drag 不可、 他カテゴリは維持 (= DimensionLineLayer listening 経路)', () => {
+    const filter: MoveFilter = { ...DEFAULT_FILTER, dimensions: false };
+    // 寸法のみ drag 不可
+    expect(calcCanDrag('select', 'dimensions', true, filter)).toBe(false);
+    // 他カテゴリは維持
+    expect(calcCanDrag('select', 'parts', true, filter)).toBe(true);
+    expect(calcCanDrag('select', 'obstacles', true, filter)).toBe(true);
+    expect(calcCanDrag('select', 'buildings', true, filter)).toBe(true);
+    expect(calcCanDrag('select', 'other', true, filter)).toBe(true);
+  });
 });
 
 describe('localStorage 永続化', () => {

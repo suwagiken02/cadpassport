@@ -280,10 +280,12 @@ export default function ModeToolbar() {
       {/* 移動フィルタ popover (= moveEnabled === true 時に main bar 上に表示) */}
       {moveEnabled && (
         <div className="fixed bottom-[58px] left-1/2 -translate-x-1/2 z-30 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-2 py-1 flex gap-1">
+          {/* 建物フィルタ ボタンは一旦非表示 (= 建物ドラッグ未実装のため UI に出さない)
+             ※ moveFilter.buildings の state / type は将来用に残す。
+             建物移動機能実装時に { key: 'buildings', label: '建物' } を復活させる。 */}
           {([
             { key: 'parts' as const, label: '部材' },
             { key: 'dimensions' as const, label: '寸法' },
-            { key: 'buildings' as const, label: '建物' },
             { key: 'obstacles' as const, label: '障害物' },
           ]).map(({ key, label }) => (
             <button
