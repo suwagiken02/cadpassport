@@ -1,6 +1,7 @@
 'use client';
 import React from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useTutorialStore } from '@/stores/tutorialStore';
 import DimensionVisibilityCheckboxes from '@/components/dimension/DimensionVisibilityCheckboxes';
 
 export default function SettingsPanel({ onClose }: { onClose: () => void }) {
@@ -61,6 +62,21 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </div>
+        {/* チュートリアル開始 (= デフォルト OFF、 手動起動のみ) */}
+        <button
+          type="button"
+          onClick={() => {
+            useTutorialStore.getState().startTutorial();
+            onClose();
+          }}
+          className="w-full flex items-center justify-between px-3 py-2.5 bg-dark-bg rounded-xl border border-dark-border"
+        >
+          <span className="text-sm flex items-center gap-2">
+            <span>📘</span>
+            <span>チュートリアル開始</span>
+          </span>
+          <span className="text-[10px] text-dimension">9 ステップ</span>
+        </button>
       </div>
     </>
   );

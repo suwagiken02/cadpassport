@@ -310,6 +310,7 @@ export default function ModeToolbar() {
         <div className="flex justify-around items-center px-0.5 py-1">
           {mainButtons.map((m) => (
             <button key={m.id} onClick={() => handleMainButton(m.id)}
+              data-tutorial-id={m.id === 'settings' ? 'settings-button' : m.id === 'kutai' ? 'kutai-button' : undefined}
               className={`flex-col items-center justify-center py-2 px-1 rounded-lg min-w-[36px] transition-colors flex ${
                 isActive(m.id) ? 'bg-accent text-white' : 'text-dimension hover:text-canvas'
               } ${highlightId === m.id || (highlightId === 'buzai' && m.id === 'ashiba') ? 'animate-highlight' : ''}`}

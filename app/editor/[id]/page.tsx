@@ -29,6 +29,7 @@ import ReorderModeBar from '@/components/scaffold/ReorderModeBar';
 import DarkModeToggle from '@/components/DarkModeToggle';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 import SettingsPanel from '@/components/toolbar/SettingsPanel';
+import TutorialOverlay from '@/components/tutorial/TutorialOverlay';
 import DimensionVisibilityCheckboxes from '@/components/dimension/DimensionVisibilityCheckboxes';
 import MemoCreateModal from '@/components/memo/MemoCreateModal';
 import DirectionInputModal from '@/components/building/DirectionInputModal';
@@ -777,6 +778,8 @@ export default function EditorPage() {
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
+      {/* チュートリアル overlay (= デフォルト OFF、 設定メニューから手動起動) */}
+      <TutorialOverlay />
       {showMemoCreateModal && (
         <MemoCreateModal onClose={() => setShowMemoCreateModal(false)} />
       )}
