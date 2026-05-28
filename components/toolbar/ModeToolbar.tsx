@@ -286,9 +286,11 @@ export default function ModeToolbar() {
       {/* 選択カテゴリロック popover (= mode='select' + selectActive 時のみ表示、 屋根は将来用 placeholder で UI 非表示) */}
       {mode === 'select' && selectActive && !isMeasuring && (
         <div className="fixed bottom-[58px] left-1/2 -translate-x-1/2 z-30 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-2 py-1 flex gap-1">
+          {/* 躯体は select モードで選択 / 移動機能なし (= 屋根と同じ placeholder) のため UI 非表示。
+             ※ selectLock.building の state は将来用に維持。 建物選択機能実装時に
+             { key: 'building', label: '躯体' } を復活させる。 */}
           {([
             { key: 'parts' as const, label: '部材' },
-            { key: 'building' as const, label: '躯体' },
             { key: 'obstacle' as const, label: '障害物' },
             { key: 'dimension' as const, label: '寸法' },
           ]).map(({ key, label }) => (

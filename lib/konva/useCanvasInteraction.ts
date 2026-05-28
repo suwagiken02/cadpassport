@@ -452,6 +452,15 @@ export function useCanvasInteraction() {
       const hitObstacle = findObstacleAtPos(rawPos, s.canvasData.obstacles);
       const hitElement = hitHandrail || hitPost || hitAnti || hitObstacle;
 
+      // 選択ロック gate: mode='select' 時に部材 / 障害物のロックが ON なら hit を無視 (= 選択 / drag 起動せず)
+      // (= Layer の listening=false は useCanvasInteraction の hit 判定を bypass しないため、 ここで明示 check)
+      if (hitElement && s.mode === 'select') {
+        const isPartsHit = !!(hitHandrail || hitPost || hitAnti);
+        const isObstacleHit = !!hitObstacle;
+        if (isPartsHit && s.selectLock.parts) return;
+        if (isObstacleHit && s.selectLock.obstacle) return;
+      }
+
       if (hitElement && s.mode !== 'post' && s.mode !== 'erase') {
         const isTouchEvent = 'touches' in e.evt;
         if (isTouchEvent) {

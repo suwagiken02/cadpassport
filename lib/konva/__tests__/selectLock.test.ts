@@ -79,6 +79,54 @@ describe('calcSelectListen (= 選択ロックの listening 計算)', () => {
   });
 });
 
+/** useCanvasInteraction の hit 経路 gate ロジック (= mode='select' で lock ON なら return) */
+function shouldGateHit(
+  mode: string,
+  isPartsHit: boolean,
+  isObstacleHit: boolean,
+  selectLock: SelectLock,
+): boolean {
+  if (mode !== 'select') return false;
+  if (isPartsHit && selectLock.parts) return true;
+  if (isObstacleHit && selectLock.obstacle) return true;
+  return false;
+}
+
+describe('shouldGateHit (= 部材 / 障害物の hit 経路 gate)', () => {
+  it('mode != select で gate しない', () => {
+    expect(shouldGateHit('building', true, false, { ...DEFAULT_LOCK, parts: true })).toBe(false);
+    expect(shouldGateHit('erase', false, true, { ...DEFAULT_LOCK, obstacle: true })).toBe(false);
+  });
+
+  it('parts ロック ON + 部材 hit で gate (= 選択 / drag 不可)', () => {
+    const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
+    expect(shouldGateHit('select', true, false, lock)).toBe(true);
+  });
+
+  it('parts ロック OFF + 部材 hit は通る', () => {
+    expect(shouldGateHit('select', true, false, DEFAULT_LOCK)).toBe(false);
+  });
+
+  it('obstacle ロック ON + 障害物 hit で gate', () => {
+    const lock: SelectLock = { ...DEFAULT_LOCK, obstacle: true };
+    expect(shouldGateHit('select', false, true, lock)).toBe(true);
+  });
+
+  it('obstacle ロック OFF + 障害物 hit は通る', () => {
+    expect(shouldGateHit('select', false, true, DEFAULT_LOCK)).toBe(false);
+  });
+
+  it('parts のみロック + 障害物 hit は通る (= 他カテゴリ影響なし)', () => {
+    const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
+    expect(shouldGateHit('select', false, true, lock)).toBe(false);
+  });
+
+  it('hit 無し (= parts/obstacle 共に false) は gate しない', () => {
+    const lock: SelectLock = { parts: true, building: true, obstacle: true, roof: true, dimension: true };
+    expect(shouldGateHit('select', false, false, lock)).toBe(false);
+  });
+});
+
 describe('selectLock localStorage 永続化', () => {
   beforeEach(() => {
     const store: Record<string, string> = {};
