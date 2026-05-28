@@ -25,8 +25,10 @@ function getShapePath(shape: MemoShape, w: number, h: number): string {
 }
 
 export default function MemoLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, moveEnabled } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
+  // memo は仕様外カテゴリ、 moveEnabled のみに従う (= filter 対象外)
+  const canDragMemo = mode === 'select' && moveEnabled;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
 
   return (
@@ -57,7 +59,7 @@ export default function MemoLayer() {
               rotation={ang}
               offsetX={w / 2}
               offsetY={h / 2}
-              draggable={mode === 'select'}
+              draggable={canDragMemo}
               onDragStart={() => useCanvasStore.getState().pushHistory()}
               onDragEnd={(e) => {
                 const dx = Math.round((e.target.x() - screenX) / gridPx);
@@ -149,7 +151,7 @@ export default function MemoLayer() {
             fill={isSelected ? '#378ADD' : '#555'}
             listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
             id={memo.id}
-            draggable={mode === 'select'}
+            draggable={canDragMemo}
             onDragStart={() => useCanvasStore.getState().pushHistory()}
             onDragEnd={(e) => {
               const dx = Math.round((e.target.x() - screenX) / gridPx);

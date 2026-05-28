@@ -76,8 +76,9 @@ function findWallEdgeForObstacle(
 }
 
 export default function ObstacleLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, obstaclePreview } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, obstaclePreview, moveEnabled, moveFilter } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
+  const canDragObstacles = mode === 'select' && moveEnabled && moveFilter.obstacles;
 
   // ドラッグ中の壁吸着距離表示用 (= 投影スナップ位置 + 壁辺端点)
   const [dragInfo, setDragInfo] = useState<{
@@ -205,7 +206,7 @@ export default function ObstacleLayer() {
                 strokeWidth={isSelected ? 2 : 1}
                 listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
                 id={obs.id}
-                draggable={mode === 'select'}
+                draggable={canDragObstacles}
                 onDragStart={() => useCanvasStore.getState().pushHistory()}
                 onDragEnd={(e) => {
                   const dx = Math.round(e.target.x() / gridPx);
@@ -250,7 +251,7 @@ export default function ObstacleLayer() {
                 strokeWidth={isSelected ? 2 : 0.5}
                 listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
                 id={obs.id}
-                draggable={mode === 'select'}
+                draggable={canDragObstacles}
                 onDragStart={() => useCanvasStore.getState().pushHistory()}
                 onDragEnd={(e) => {
                   const origX = screenX + r;
@@ -293,7 +294,7 @@ export default function ObstacleLayer() {
               dash={isElevated ? [8, 4] : undefined}
               listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
               id={obs.id}
-              draggable={mode === 'select'}
+              draggable={canDragObstacles}
               onDragStart={() => useCanvasStore.getState().pushHistory()}
               onDragMove={(e) => {
                 const curX = obs.x + (e.target.x() - screenX) / gridPx;

@@ -345,6 +345,12 @@ type CanvasStore = {
   // 高さマーカー (= Task #8 Phase B)
   isHeightMarkerMode: boolean;
   setHeightMarkerMode: (v: boolean) => void;
+  /** 移動トグル (= 全ドラッグ移動の master ON/OFF、 default true、 localStorage 永続化) */
+  moveEnabled: boolean;
+  setMoveEnabled: (v: boolean) => void;
+  /** 移動対象フィルタ (= 4 カテゴリ独立トグル、 全 default true、 localStorage 永続化) */
+  moveFilter: { parts: boolean; dimensions: boolean; buildings: boolean; obstacles: boolean };
+  setMoveFilter: (filter: { parts: boolean; dimensions: boolean; buildings: boolean; obstacles: boolean }) => void;
   heightInputMarkerId: string | null;
   setHeightInputMarkerId: (id: string | null) => void;
   /** 直前に入力した高さ (mm) (= 次回マーカー配置時の初期値、 セッション内のみ、 Issue 3) */
@@ -1076,6 +1082,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // === 高さマーカー (= Task #8 Phase B) ===
   isHeightMarkerMode: false,
   setHeightMarkerMode: (v) => set({ isHeightMarkerMode: v }),
+  moveEnabled: true,
+  setMoveEnabled: (v) => {
+    set({ moveEnabled: v });
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('ashiba-plan:moveEnabled', v ? '1' : '0'); } catch {}
+    }
+  },
+  moveFilter: { parts: true, dimensions: true, buildings: true, obstacles: true },
+  setMoveFilter: (filter) => {
+    set({ moveFilter: filter });
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('ashiba-plan:moveFilter', JSON.stringify(filter)); } catch {}
+    }
+  },
   heightInputMarkerId: null,
   setHeightInputMarkerId: (id) => set({ heightInputMarkerId: id }),
   // 直前入力値の保持 (= セッション内のみ、 Issue 3 修正)

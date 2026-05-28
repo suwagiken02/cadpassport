@@ -17,7 +17,9 @@ export default function ScaffoldLayer() {
     canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode,
     isDuplicateMode, highlightIds, isReorderMode,
     isAreaDesignationMode, floorDesignation, toggleHandrailFloor,
+    moveEnabled, moveFilter,
   } = useCanvasStore();
+  const canDragParts = mode === 'select' && moveEnabled && moveFilter.parts;
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
 
@@ -93,7 +95,7 @@ export default function ScaffoldLayer() {
               strokeWidth={(isSelected ? 16 : 12) * zoom}
               listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
               id={anti.id}
-              draggable={mode === 'select'}
+              draggable={canDragParts}
               onDragStart={() => useCanvasStore.getState().pushHistory()}
               onDragEnd={(e) => {
                 const dx = Math.round(e.target.x() / gridPx);
@@ -156,7 +158,7 @@ export default function ScaffoldLayer() {
               hitStrokeWidth={isReorderMode || isAreaDesignationMode ? 30 : 10}
               listening={true}
               id={h.id}
-              draggable={mode === 'select'}
+              draggable={canDragParts}
               onDragStart={() => useCanvasStore.getState().pushHistory()}
               onClick={() => handleHandrailClick(h.id)}
               onTap={() => handleHandrailClick(h.id)}
@@ -226,7 +228,7 @@ export default function ScaffoldLayer() {
               strokeWidth={isSelected ? 2 : 0}
               listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
               id={p.id}
-              draggable={mode === 'select'}
+              draggable={canDragParts}
               onDragStart={() => useCanvasStore.getState().pushHistory()}
               onDragEnd={(e) => {
                 const dx = Math.round(e.target.x() / gridPx);

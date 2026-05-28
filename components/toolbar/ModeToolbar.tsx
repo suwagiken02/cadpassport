@@ -5,7 +5,7 @@ import { ModeType } from '@/types';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function ModeToolbar() {
-  const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode } = useCanvasStore();
+  const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode, moveEnabled, setMoveEnabled, moveFilter, setMoveFilter } = useCanvasStore();
   const [showKutaiMenu, setShowKutaiMenu] = useState(false);
   const [showAshibaMenu, setShowAshibaMenu] = useState(false);
   const [dismissedStage, setDismissedStage] = useState<string | null>(null);
@@ -277,6 +277,32 @@ export default function ModeToolbar() {
         />
       )}
 
+      {/* 移動フィルタ popover (= moveEnabled === true 時に main bar 上に表示) */}
+      {moveEnabled && (
+        <div className="fixed bottom-[58px] left-1/2 -translate-x-1/2 z-30 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-2 py-1 flex gap-1">
+          {([
+            { key: 'parts' as const, label: '部材' },
+            { key: 'dimensions' as const, label: '寸法' },
+            { key: 'buildings' as const, label: '建物' },
+            { key: 'obstacles' as const, label: '障害物' },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setMoveFilter({ ...moveFilter, [key]: !moveFilter[key] })}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                moveFilter[key]
+                  ? 'bg-accent text-white'
+                  : 'bg-dark-bg text-dimension border border-dark-border'
+              }`}
+              aria-pressed={moveFilter[key]}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-dark-surface border-t border-dark-border safe-area-bottom">
         {/* メインボタン */}
         <div className="flex justify-around items-center px-0.5 py-1">
@@ -290,6 +316,19 @@ export default function ModeToolbar() {
               <span className="text-[9px] mt-0.5">{m.label}</span>
             </button>
           ))}
+          {/* 移動トグル (= 独立、 mainButtons とは別、 全 drag の master ON/OFF) */}
+          <button
+            type="button"
+            onClick={() => setMoveEnabled(!moveEnabled)}
+            className={`flex-col items-center justify-center py-2 px-1 rounded-lg min-w-[36px] transition-colors flex ${
+              moveEnabled ? 'bg-accent text-white' : 'text-dimension hover:text-canvas'
+            }`}
+            aria-pressed={moveEnabled}
+            title={moveEnabled ? '移動を無効化' : '移動を有効化'}
+          >
+            <span className="text-base leading-none" style={{ color: moveEnabled ? 'white' : '#A78BFA' }}>↔</span>
+            <span className="text-[9px] mt-0.5">移動</span>
+          </button>
         </div>
 
       </div>
