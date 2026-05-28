@@ -1,0 +1,77 @@
+'use client';
+
+import React from 'react';
+import { Layer, Text } from 'react-konva';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
+import type { BuildingShape, ScaffoldStartConfig } from '@/types';
+
+/**
+ * 足場開始アイコン (= ★) を canvas に描画する Layer。
+ * scaffoldStart1F / 2F / legacy scaffoldStart の優先順で各階の起点角に ★ を表示。
+ * 色は AutoLayoutModal の preview ★ と統一 (= #FFD700 ゴールド + 黒縁取り)。
+ * PDF 出力は stage.toDataURL 経由のため自動反映される (= 別途描画追加不要)。
+ */
+
+const STAR_COLOR = '#FFD700';  // ゴールド (= AutoLayoutModal preview と統一)
+const STAR_STROKE = '#000000';
+const STAR_FONT_BASE = 64;     // 既存 DimensionLineLayer FONT_BASE と同等で proportional
+
+function getStartPoint(
+  building: BuildingShape,
+  ss: ScaffoldStartConfig,
+): { x: number; y: number } | null {
+  const pts = building.points;
+  if (!pts || pts.length === 0) return null;
+  const idx = (ss.startVertexIndex ?? 0) % pts.length;
+  return pts[idx];
+}
+
+export default function ScaffoldStartLayer() {
+  const { canvasData, zoom, panX, panY } = useCanvasStore();
+  const gridPx = INITIAL_GRID_PX * zoom;
+
+  // 描画対象: scaffoldStart1F / 2F が優先、 どちらも無ければ legacy scaffoldStart をフォールバック
+  const jobs: { ss: ScaffoldStartConfig; floor: 1 | 2 }[] = [];
+  if (canvasData.scaffoldStart1F) {
+    jobs.push({ ss: canvasData.scaffoldStart1F, floor: 1 });
+  }
+  if (canvasData.scaffoldStart2F) {
+    jobs.push({ ss: canvasData.scaffoldStart2F, floor: 2 });
+  }
+  if (jobs.length === 0 && canvasData.scaffoldStart) {
+    const f = (canvasData.scaffoldStart.floor ?? 1) as 1 | 2;
+    jobs.push({ ss: canvasData.scaffoldStart, floor: f });
+  }
+
+  const elements: React.ReactElement[] = [];
+  for (const { ss, floor } of jobs) {
+    const building = canvasData.buildings.find((b) => (b.floor ?? 1) === floor);
+    if (!building) continue;
+    const pt = getStartPoint(building, ss);
+    if (!pt) continue;
+    const fs = STAR_FONT_BASE * zoom;
+    // Text の x/y は左上基準のため fs/2 ずらして中心を頂点に合わせる
+    elements.push(
+      <Text
+        key={`scaffold-start-${floor}`}
+        x={pt.x * gridPx + panX - fs / 2}
+        y={pt.y * gridPx + panY - fs / 2}
+        width={fs}
+        height={fs}
+        text="★"
+        fontSize={fs}
+        fontFamily="sans-serif"
+        fontStyle="bold"
+        fill={STAR_COLOR}
+        stroke={STAR_STROKE}
+        strokeWidth={Math.max(0.5, fs * 0.05)}
+        align="center"
+        verticalAlign="middle"
+        listening={false}
+      />,
+    );
+  }
+
+  return <Layer listening={false}>{elements}</Layer>;
+}
