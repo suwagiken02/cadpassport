@@ -446,6 +446,9 @@ export function useCanvasInteraction() {
       }
 
       // 全モード共通: クリック位置に既存要素があれば選択 or 移動
+      // 閲覧モード (= 'view') では hit 判定自体を行わず、 drag / 選択を一切起動しない
+      if (s.mode === 'view') return;
+
       const hitHandrail = findHandrailAtPos(rawPos, s.canvasData.handrails);
       const hitPost = s.canvasData.posts.find(p => Math.hypot(p.x - rawPos.x, p.y - rawPos.y) < HIT_TOL);
       const hitAnti = s.canvasData.antis.find(a => Math.hypot(a.x - rawPos.x, a.y - rawPos.y) < HIT_TOL);

@@ -2,7 +2,7 @@
 export type Point = { x: number; y: number };
 
 // === 操作モード ===
-export type ModeType = 'building' | 'handrail' | 'post' | 'anti' | 'select' | 'erase' | 'memo' | 'obstacle' | 'move-select' | 'roof';
+export type ModeType = 'view' | 'building' | 'handrail' | 'post' | 'anti' | 'select' | 'erase' | 'memo' | 'obstacle' | 'move-select' | 'roof';
 
 // === 建物入力方式 ===
 export type BuildingInputMethod = 'template' | 'direction';

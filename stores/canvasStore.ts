@@ -419,8 +419,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     showSettings: false,
     showInnerPost: false,
     alertMessage: null,
-    // mode + selection
-    mode: 'select',
+    // mode + selection (= 図面切替時は閲覧モードで開始、 ユーザが明示的にボタン押下で mode 遷移)
+    mode: 'view',
     selectedIds: [],
     selectedLineIds: [],
     highlightIds: [],
@@ -479,7 +479,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     printAreaCenter: null,
   }),
 
-  mode: 'select',
+  mode: 'view',  // 図面を開いた直後は閲覧モード (= 何も触れない)、 ユーザが明示的にボタン押下で遷移
   setMode: (mode) => set({ mode, selectedIds: [] }),
   buildingInputMethod: 'template',
   setBuildingInputMethod: (m) => set({ buildingInputMethod: m }),
