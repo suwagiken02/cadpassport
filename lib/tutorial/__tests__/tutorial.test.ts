@@ -24,6 +24,7 @@ function emptyCtx(): TutorialContext {
     mode: 'select',
     showSettings: false,
     showSettingsPanel: false,
+    showAreaCalcModal: false,
   };
 }
 
@@ -74,9 +75,9 @@ describe('tutorialStore', () => {
   });
 });
 
-describe('tutorialSteps Phase 1', () => {
-  it('全 3 ステップが定義されている', () => {
-    expect(TUTORIAL_STEPS.length).toBe(3);
+describe('tutorialSteps Phase 1 + 2', () => {
+  it('全 9 ステップが定義されている (= Phase 1: 3 + Phase 2: 6)', () => {
+    expect(TUTORIAL_STEPS.length).toBe(9);
   });
 
   it('TOTAL_STEPS = 9 (= Phase 2 完成時の総数)', () => {
@@ -124,6 +125,76 @@ describe('tutorialSteps Phase 1', () => {
     ctx.canvasData.obstacles = [
       { id: 'o1', type: 'ecocute', x: 0, y: 0, width: 10, height: 10 },
     ];
+    expect(fn(ctx)).toBe(true);
+  });
+
+  // Phase 2 (= step 4-9)
+
+  it('ステップ 4 (= 屋根変更) は completeWhen 未定義 (= 「次へ」 フォールバック)', () => {
+    expect(TUTORIAL_STEPS[3].id).toBe('roof');
+    expect(TUTORIAL_STEPS[3].targetSelector).toContain('kutai-button');
+    expect(TUTORIAL_STEPS[3].completeWhen).toBeUndefined();
+  });
+
+  it('ステップ 5 (= 高さ設定) は heightMarkers 1 個以上で true', () => {
+    const step = TUTORIAL_STEPS[4];
+    expect(step.id).toBe('height-marker');
+    expect(step.targetSelector).toContain('kutai-button');
+    const fn = step.completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    // heightMarker 追加で true
+    const ctx = emptyCtx();
+    ctx.canvasData.heightMarkers = [
+      { id: 'hm1', buildingId: 'b1', edgeIndex: 0, t: 0.5, heightMm: 2500 },
+    ];
+    expect(fn(ctx)).toBe(true);
+  });
+
+  it('ステップ 5 は heightMarkers が undefined でも false (= 既存データ互換)', () => {
+    const fn = TUTORIAL_STEPS[4].completeWhen!;
+    const ctx = emptyCtx();
+    ctx.canvasData.heightMarkers = undefined;
+    expect(fn(ctx)).toBe(false);
+  });
+
+  it('ステップ 6 (= 足場配置) は handrails 1 個以上で true', () => {
+    const step = TUTORIAL_STEPS[5];
+    expect(step.id).toBe('scaffold-auto');
+    expect(step.targetSelector).toContain('ashiba-button');
+    const fn = step.completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx = emptyCtx();
+    ctx.canvasData.handrails = [
+      { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+    ];
+    expect(fn(ctx)).toBe(true);
+  });
+
+  it('ステップ 7 (= 足場入れ替え) は completeWhen 未定義 (= 「次へ」 フォールバック)', () => {
+    expect(TUTORIAL_STEPS[6].id).toBe('scaffold-reorder');
+    expect(TUTORIAL_STEPS[6].targetSelector).toContain('ashiba-button');
+    expect(TUTORIAL_STEPS[6].completeWhen).toBeUndefined();
+  });
+
+  it("ステップ 8 (= 足場移動) は mode === 'move-select' で true", () => {
+    const step = TUTORIAL_STEPS[7];
+    expect(step.id).toBe('scaffold-move');
+    expect(step.targetSelector).toContain('ashiba-button');
+    const fn = step.completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx = emptyCtx();
+    ctx.mode = 'move-select';
+    expect(fn(ctx)).toBe(true);
+  });
+
+  it('ステップ 9 (= 平米計算) は showAreaCalcModal=true で true', () => {
+    const step = TUTORIAL_STEPS[8];
+    expect(step.id).toBe('area-calc');
+    expect(step.targetSelector).toContain('ashiba-button');
+    const fn = step.completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx = emptyCtx();
+    ctx.showAreaCalcModal = true;
     expect(fn(ctx)).toBe(true);
   });
 });

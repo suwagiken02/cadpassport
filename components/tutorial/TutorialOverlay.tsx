@@ -71,6 +71,7 @@ export default function TutorialOverlay() {
       mode: s.mode,
       showSettings: s.showSettings,
       showSettingsPanel: s.showSettingsPanel ?? false,
+      showAreaCalcModal: s.showAreaCalcModal ?? false,
     };
     if (step.completeWhen(ctx)) {
       nextStep();
