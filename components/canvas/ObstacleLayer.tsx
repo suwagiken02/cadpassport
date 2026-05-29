@@ -293,7 +293,7 @@ export default function ObstacleLayer() {
               stroke={isSelected ? '#378ADD' : isElevated ? color : '#999'}
               strokeWidth={isSelected ? 2 : isElevated ? 1.5 : 0.5}
               dash={isElevated ? [8, 4] : undefined}
-              listening={mode === 'select' || mode === 'erase' || mode === 'move-select'}
+              listening={selectListenObstacle || mode === 'erase' || mode === 'move-select'}
               id={obs.id}
               draggable={mode === 'select'}
               onDragStart={() => useCanvasStore.getState().pushHistory()}

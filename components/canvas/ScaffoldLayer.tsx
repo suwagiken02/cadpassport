@@ -157,7 +157,7 @@ export default function ScaffoldLayer() {
               strokeWidth={strokeWidth}
               lineCap="round"
               hitStrokeWidth={isReorderMode || isAreaDesignationMode ? 30 : 10}
-              listening={true}
+              listening={selectListenParts || mode === 'erase' || mode === 'move-select'}
               id={h.id}
               draggable={mode === 'select'}
               onDragStart={() => useCanvasStore.getState().pushHistory()}

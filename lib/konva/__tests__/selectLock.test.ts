@@ -127,6 +127,52 @@ describe('shouldGateHit (= 部材 / 障害物の hit 経路 gate)', () => {
   });
 });
 
+/**
+ * Layer の listening 計算式の純関数版 (= ScaffoldLayer 手摺 + ObstacleLayer 矩形の修正後の式)。
+ * `selectListenXxx || mode === 'erase' || mode === 'move-select'` を再現。
+ */
+function calcLayerListening(
+  selectListen: boolean,
+  mode: string,
+): boolean {
+  return selectListen || mode === 'erase' || mode === 'move-select';
+}
+
+describe('calcLayerListening (= 手摺 L160 / 矩形障害物 L296 修正後の listening)', () => {
+  it('selectListen=true → listening true (= ロックなし、 触れる)', () => {
+    expect(calcLayerListening(true, 'select')).toBe(true);
+  });
+
+  it('selectListen=false + mode=select → listening false (= ロック中、 触れない)', () => {
+    expect(calcLayerListening(false, 'select')).toBe(false);
+  });
+
+  it('selectListen=false でも mode=erase / move-select は listening true (= 消去 / 範囲移動は別経路)', () => {
+    expect(calcLayerListening(false, 'erase')).toBe(true);
+    expect(calcLayerListening(false, 'move-select')).toBe(true);
+  });
+
+  it('selectListen=false + mode=building / memo / roof で listening false (= 通常 mode 切替)', () => {
+    expect(calcLayerListening(false, 'building')).toBe(false);
+    expect(calcLayerListening(false, 'memo')).toBe(false);
+    expect(calcLayerListening(false, 'roof')).toBe(false);
+  });
+
+  it('連動: selectLock.parts=true → calcSelectListen=false → calcLayerListening=false (= 手摺 drag 不可)', () => {
+    const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
+    const sel = calcSelectListen('select', 'parts', true, lock);
+    expect(sel).toBe(false);
+    expect(calcLayerListening(sel, 'select')).toBe(false);
+  });
+
+  it('連動: selectLock.obstacle=true → calcSelectListen=false → calcLayerListening=false (= 矩形障害物 drag 不可)', () => {
+    const lock: SelectLock = { ...DEFAULT_LOCK, obstacle: true };
+    const sel = calcSelectListen('select', 'obstacle', true, lock);
+    expect(sel).toBe(false);
+    expect(calcLayerListening(sel, 'select')).toBe(false);
+  });
+});
+
 describe('selectLock localStorage 永続化', () => {
   beforeEach(() => {
     const store: Record<string, string> = {};
