@@ -1085,7 +1085,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setHeightMarkerMode: (v) => set({ isHeightMarkerMode: v }),
   selectActive: true,
   setSelectActive: (v) => set({ selectActive: v }),
-  selectLock: { parts: false, building: false, obstacle: false, roof: false, dimension: false },
+  selectLock: { parts: true, building: false, obstacle: false, roof: false, dimension: false },
   setSelectLock: (lock) => {
     set({ selectLock: lock });
     if (typeof window !== 'undefined') {

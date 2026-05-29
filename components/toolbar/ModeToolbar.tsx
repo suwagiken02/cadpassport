@@ -80,9 +80,24 @@ export default function ModeToolbar() {
       // トグル動作: 既に erase なら select に戻す (= 削除モード OFF)
       setMode(mode === 'erase' ? 'select' : 'erase');
     } else if (id === 'memo') {
-      useCanvasStore.getState().setShowMemoCreateModal(true);
+      // トグル化: メモモード中 (= mode='memo') で再タップなら mode リセット + modal close
+      if (mode === 'memo') {
+        setMode('select');
+        useCanvasStore.getState().setShowMemoCreateModal(false);
+      } else {
+        useCanvasStore.getState().setShowMemoCreateModal(true);
+      }
     } else if (id === 'kutai') {
-      setShowKutaiMenu(true);
+      // トグル化: 躯体モード中 (= isKutaiMode) で再タップなら mode リセット + 関連 state 全閉じ
+      if (isKutaiMode) {
+        setMode('select');
+        setHeightMarkerMode(false);
+        setShowKutaiMenu(false);
+        useCanvasStore.getState().setShowBuildingModal(false);
+        useCanvasStore.getState().setShowBuilding2FModal(false);
+      } else {
+        setShowKutaiMenu(true);
+      }
     } else if (id === 'buzai') {
       useCanvasStore.getState().togglePartSelector();
     } else if (id === 'ashiba') {

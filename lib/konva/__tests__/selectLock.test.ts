@@ -173,6 +173,64 @@ describe('calcLayerListening (= 手摺 L160 / 矩形障害物 L296 修正後の 
   });
 });
 
+describe('selectLock デフォルト値 (= 部材のみロック ON、 他 OFF)', () => {
+  it('部材のみ true、 他は全 false が想定 default', () => {
+    const expected: SelectLock = {
+      parts: true,
+      building: false,
+      obstacle: false,
+      roof: false,
+      dimension: false,
+    };
+    expect(expected.parts).toBe(true);
+    expect(expected.building).toBe(false);
+    expect(expected.obstacle).toBe(false);
+    expect(expected.roof).toBe(false);
+    expect(expected.dimension).toBe(false);
+  });
+
+  it('デフォルト適用時、 部材のみ drag 不可、 他は触れる (= 連動 check)', () => {
+    const defaultLock: SelectLock = {
+      parts: true, building: false, obstacle: false, roof: false, dimension: false,
+    };
+    expect(calcSelectListen('select', 'parts', true, defaultLock)).toBe(false);
+    expect(calcSelectListen('select', 'building', true, defaultLock)).toBe(true);
+    expect(calcSelectListen('select', 'obstacle', true, defaultLock)).toBe(true);
+    expect(calcSelectListen('select', 'dimension', true, defaultLock)).toBe(true);
+  });
+});
+
+/** 躯体トグル判定 (= ModeToolbar の handleMainButton 'kutai' 分岐) */
+function shouldResetKutai(isKutaiMode: boolean): 'reset' | 'open' {
+  return isKutaiMode ? 'reset' : 'open';
+}
+
+/** メモトグル判定 */
+function shouldResetMemo(mode: string): 'reset' | 'open' {
+  return mode === 'memo' ? 'reset' : 'open';
+}
+
+describe('躯体ボタンのトグル化 (= 再タップで mode + 関連 state リセット)', () => {
+  it('isKutaiMode=false で open (= 通常 popover open)', () => {
+    expect(shouldResetKutai(false)).toBe('open');
+  });
+
+  it('isKutaiMode=true で reset (= 関連 state 全リセット)', () => {
+    expect(shouldResetKutai(true)).toBe('reset');
+  });
+});
+
+describe('メモボタンのトグル化', () => {
+  it('mode=memo で reset', () => {
+    expect(shouldResetMemo('memo')).toBe('reset');
+  });
+
+  it('mode=select で open (= 通常 modal open)', () => {
+    expect(shouldResetMemo('select')).toBe('open');
+    expect(shouldResetMemo('building')).toBe('open');
+  });
+});
+
 describe('selectLock localStorage 永続化', () => {
   beforeEach(() => {
     const store: Record<string, string> = {};
