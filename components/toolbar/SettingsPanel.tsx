@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
+// 起動ボタンを一旦非表示にしているため未使用だが、再有効化時に使うので import は保持する
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useTutorialStore } from '@/stores/tutorialStore';
 import DimensionVisibilityCheckboxes from '@/components/dimension/DimensionVisibilityCheckboxes';
 
@@ -62,7 +64,12 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </div>
-        {/* チュートリアル開始 (= デフォルト OFF、 手動起動のみ) */}
+        {/*
+          TODO: チュートリアル実装の不具合（点滅ハイライト・自動進行）修正後に再有効化する。
+          コード本体（TutorialOverlay / tutorialStore / tutorialSteps / data-tutorial-id）は
+          残してあるので、下記ボタンのコメントを外すだけで再有効化できる。
+        */}
+        {/* チュートリアル開始 (= デフォルト OFF、 手動起動のみ)
         <button
           type="button"
           onClick={() => {
@@ -77,6 +84,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           </span>
           <span className="text-[10px] text-dimension">9 ステップ</span>
         </button>
+        */}
       </div>
     </>
   );

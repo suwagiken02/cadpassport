@@ -37,7 +37,11 @@
       "Bash(npm audit *)",
       "Bash(xargs wc -l)",
       "Bash(awk '$1 > 500 {print}')",
-      "Bash(npm update *)"
+      "Bash(npm update *)",
+      "PowerShell(npx vitest run 2>&1 | Select-Object -Last 12)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -Last 8)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -Last 5)",
+      "PowerShell(npm run *)"
     ]
   }
 }
