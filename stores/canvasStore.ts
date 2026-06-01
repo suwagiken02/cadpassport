@@ -670,8 +670,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const next = !get().isReorderMode;
     set({ isReorderMode: next });
     if (next) {
-      // 入替モードON時はselectモードに切り替え
+      // 入替モードON時はselectモードに切り替え + selectActive=false
+      // (= selectLock を無効化し、部材を選択 / 入替可能にする)
       get().setMode('select');
+      get().setSelectActive(false);
+    } else {
+      // 入替モード終了時は通常の選択モードへ戻す (= selectActive 復帰)
+      get().setSelectActive(true);
     }
   },
   selectedLineIds: [],

@@ -455,9 +455,10 @@ export function useCanvasInteraction() {
       const hitObstacle = findObstacleAtPos(rawPos, s.canvasData.obstacles);
       const hitElement = hitHandrail || hitPost || hitAnti || hitObstacle;
 
-      // 選択ロック gate: mode='select' 時に部材 / 障害物のロックが ON なら hit を無視 (= 選択 / drag 起動せず)
+      // 選択ロック gate: mode='select' かつ selectActive=true 時のみ、部材 / 障害物のロックが ON なら hit を無視
+      // (= selectActive=false (例: 入替モード) では selectLock を無視して hit を通す。 listening 計算式と同ロジック)
       // (= Layer の listening=false は useCanvasInteraction の hit 判定を bypass しないため、 ここで明示 check)
-      if (hitElement && s.mode === 'select') {
+      if (hitElement && s.mode === 'select' && s.selectActive) {
         const isPartsHit = !!(hitHandrail || hitPost || hitAnti);
         const isObstacleHit = !!hitObstacle;
         if (isPartsHit && s.selectLock.parts) return;

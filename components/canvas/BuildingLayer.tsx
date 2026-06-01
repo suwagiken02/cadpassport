@@ -11,8 +11,9 @@ export default function BuildingLayer() {
   const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
-  // select モード時の listening 条件 (= selectActive ON + building ロック解除時のみ)
-  const selectListenBuilding = mode === 'select' && selectActive && !selectLock.building;
+  // 「ロック中」判定は selectActive=true のときだけ (= selectActive=false / 入替モードでは selectLock を無視して触れる)
+  const isBuildingLocked = mode === 'select' && selectActive && selectLock.building;
+  const selectListenBuilding = mode === 'select' && !isBuildingLocked;
 
   return (
     <Layer>
