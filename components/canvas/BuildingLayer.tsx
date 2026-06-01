@@ -8,12 +8,13 @@ import { Point } from '@/types';
 import { getEdgeOverhangs, computeOffsetPolygon } from '@/lib/konva/roofUtils';
 
 export default function BuildingLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
-  // 「ロック中」判定は selectActive=true のときだけ (= selectActive=false / 入替モードでは selectLock を無視して触れる)
-  const isBuildingLocked = mode === 'select' && selectActive && selectLock.building;
-  const selectListenBuilding = mode === 'select' && !isBuildingLocked;
+  // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
+  const selectListenBuilding =
+    (mode === 'select' && selectActive && !selectLock.building)
+    || (mode === 'select' && isReorderMode);
 
   return (
     <Layer>

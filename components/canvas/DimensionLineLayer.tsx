@@ -363,11 +363,12 @@ function getOverallBB(buildings: BuildingShape[], handrails: Handrail[]): BB {
    メインコンポーネント
    ================================================================ */
 export default function DimensionLineLayer({ visible = true }: { visible?: boolean }) {
-  const { canvasData, zoom, panX, panY, mode, selectActive, selectLock } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectActive, selectLock, isReorderMode } = useCanvasStore();
   const setDimensionOffsetMm = useCanvasStore(s => s.setDimensionOffsetMm);
-  // 「ロック中」判定は selectActive=true のときだけ (= selectActive=false / 入替モードでは selectLock を無視して触れる)
-  const isDimensionLocked = mode === 'select' && selectActive && selectLock.dimension;
-  const selectListenDimension = mode === 'select' && !isDimensionLocked;
+  // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
+  const selectListenDimension =
+    (mode === 'select' && selectActive && !selectLock.dimension)
+    || (mode === 'select' && isReorderMode);
   const dimensionVisibility = useHandrailSettingsStore(s => s.dimensionVisibility);
   const gridPx = INITIAL_GRID_PX * zoom;
 

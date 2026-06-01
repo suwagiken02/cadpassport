@@ -16,18 +16,21 @@ type Category = 'parts' | 'building' | 'obstacle' | 'roof' | 'dimension';
 
 /**
  * 各 Layer の listening 計算。
- * 「ロック中」と判定するのは selectActive=true のときだけ。
- * selectActive=false (= フッター選択 OFF / 入替モード) では selectLock を無視して触れる。
+ * - 入替モード (isReorderMode) 中はロック無視で触れる。
+ * - selectActive=false (= フッター選択 OFF) かつ非入替 → 閲覧モードで触れない。
+ * - selectActive=true → ロック解除カテゴリのみ触れる。
  */
 function calcSelectListen(
   mode: string,
   category: Category,
   selectActive: boolean,
   selectLock: SelectLock,
+  isReorderMode = false,
 ): boolean {
   if (mode !== 'select') return false;
-  const isLocked = selectActive && selectLock[category];
-  return !isLocked;
+  if (isReorderMode) return true;   // 入替モードはロック無視で触れる
+  if (!selectActive) return false;  // 選択 OFF = 閲覧モード (触れない)
+  return !selectLock[category];     // 選択 ON: ロック解除カテゴリのみ触れる
 }
 
 const DEFAULT_LOCK: SelectLock = {
@@ -45,13 +48,20 @@ describe('calcSelectListen (= 選択ロックの listening 計算)', () => {
     expect(calcSelectListen('memo', 'dimension', true, DEFAULT_LOCK)).toBe(false);
   });
 
-  it('selectActive=false で selectLock 無視 → 全カテゴリ true (= 入替モード等でロック誤発動しない)', () => {
-    // lock を全 ON にしても selectActive=false なら触れる
+  it('selectActive=false + 非入替 で全カテゴリ false (= 閲覧モード、 触れない)', () => {
+    // lock を全 OFF にしても selectActive=false なら閲覧モードで触れない
+    expect(calcSelectListen('select', 'parts', false, DEFAULT_LOCK)).toBe(false);
+    expect(calcSelectListen('select', 'building', false, DEFAULT_LOCK)).toBe(false);
+    expect(calcSelectListen('select', 'obstacle', false, DEFAULT_LOCK)).toBe(false);
+    expect(calcSelectListen('select', 'dimension', false, DEFAULT_LOCK)).toBe(false);
+  });
+
+  it('入替モード中は lock 全 ON でも全カテゴリ true (= ロック無視で触れる)', () => {
     const lock: SelectLock = { parts: true, building: true, obstacle: true, roof: true, dimension: true };
-    expect(calcSelectListen('select', 'parts', false, lock)).toBe(true);
-    expect(calcSelectListen('select', 'building', false, lock)).toBe(true);
-    expect(calcSelectListen('select', 'obstacle', false, lock)).toBe(true);
-    expect(calcSelectListen('select', 'dimension', false, lock)).toBe(true);
+    expect(calcSelectListen('select', 'parts', false, lock, true)).toBe(true);
+    expect(calcSelectListen('select', 'building', false, lock, true)).toBe(true);
+    expect(calcSelectListen('select', 'obstacle', false, lock, true)).toBe(true);
+    expect(calcSelectListen('select', 'dimension', false, lock, true)).toBe(true);
   });
 
   it('selectActive=true + 全 lock false で全カテゴリ true (= default 全解除)', () => {
@@ -86,9 +96,9 @@ describe('calcSelectListen (= 選択ロックの listening 計算)', () => {
 });
 
 /**
- * useCanvasInteraction の hit 経路 gate ロジック。
+ * useCanvasInteraction の選択ロック hit 経路 gate ロジック。
  * mode='select' かつ selectActive=true で lock ON なら return (= hit 無視)。
- * selectActive=false (= 入替モード等) では gate せず hit を通す。
+ * selectActive=false では本 gate は発火しない (= 閲覧 / 入替は別判定 isViewBlocked が担当)。
  */
 function shouldGateHit(
   mode: string,
@@ -103,13 +113,13 @@ function shouldGateHit(
   return false;
 }
 
-describe('shouldGateHit (= 部材 / 障害物の hit 経路 gate)', () => {
+describe('shouldGateHit (= 部材 / 障害物の選択ロック hit gate)', () => {
   it('mode != select で gate しない', () => {
     expect(shouldGateHit('building', true, true, false, { ...DEFAULT_LOCK, parts: true })).toBe(false);
     expect(shouldGateHit('erase', true, false, true, { ...DEFAULT_LOCK, obstacle: true })).toBe(false);
   });
 
-  it('selectActive=false で gate しない (= 入替モード等で部材 hit を通す)', () => {
+  it('selectActive=false でロック gate は発火しない (= 閲覧 / 入替は別 gate)', () => {
     const lock: SelectLock = { ...DEFAULT_LOCK, parts: true, obstacle: true };
     expect(shouldGateHit('select', false, true, false, lock)).toBe(false);
     expect(shouldGateHit('select', false, false, true, lock)).toBe(false);
@@ -141,6 +151,33 @@ describe('shouldGateHit (= 部材 / 障害物の hit 経路 gate)', () => {
   it('hit 無し (= parts/obstacle 共に false) は gate しない', () => {
     const lock: SelectLock = { parts: true, building: true, obstacle: true, roof: true, dimension: true };
     expect(shouldGateHit('select', true, false, false, lock)).toBe(false);
+  });
+});
+
+/**
+ * 閲覧モード gate (= useCanvasInteraction の hit 早期 return)。
+ * mode='select' で selectActive=false かつ非入替モード → hit を一切起動しない。
+ */
+function isViewBlocked(mode: string, selectActive: boolean, isReorderMode: boolean): boolean {
+  return mode === 'select' && !selectActive && !isReorderMode;
+}
+
+describe('isViewBlocked (= 閲覧モードの hit ブロック)', () => {
+  it('mode=select + selectActive=false + 非入替 → true (= 閲覧、 触れない)', () => {
+    expect(isViewBlocked('select', false, false)).toBe(true);
+  });
+
+  it('mode=select + selectActive=false + 入替モード → false (= 入替は触れる)', () => {
+    expect(isViewBlocked('select', false, true)).toBe(false);
+  });
+
+  it('mode=select + selectActive=true → false (= 通常選択は別 gate)', () => {
+    expect(isViewBlocked('select', true, false)).toBe(false);
+  });
+
+  it('mode != select → false (= 閲覧 gate は select 専用)', () => {
+    expect(isViewBlocked('erase', false, false)).toBe(false);
+    expect(isViewBlocked('move-select', false, false)).toBe(false);
   });
 });
 
@@ -192,44 +229,59 @@ describe('calcLayerListening (= 手摺 L160 / 矩形障害物 L296 修正後の 
 
 /**
  * 入替モード (reorderMode) の selectActive 連動 (= 案B: toggleReorderMode で selectActive を切替)。
- * ON 時 selectActive=false (= ロック無効化), OFF 時 selectActive=true 復帰。
+ * ON 時 selectActive=false, OFF 時 selectActive=true 復帰。
+ * (= 入替の listening / gate は isReorderMode フラグ側で担保する)
  */
 function reorderToggleSelectActive(next: boolean): boolean {
   return next ? false : true;
 }
 
-describe('selectLock は selectActive=true 時のみ有効 (= reorderMode 等でロック誤発動しない)', () => {
-  it('mode=select + selectActive=false → listening=true (= ロック無視で触れる)', () => {
+describe('選択ロック + 閲覧モード + 入替モードの統合挙動', () => {
+  it('選択OFF + 非入替 → listening=false (= 閲覧モード、 触れない)', () => {
     const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
-    const sel = calcSelectListen('select', 'parts', false, lock);
-    expect(sel).toBe(true);
-    expect(calcLayerListening(sel, 'select')).toBe(true);
+    const sel = calcSelectListen('select', 'parts', false, lock, false);
+    expect(sel).toBe(false);
+    expect(calcLayerListening(sel, 'select')).toBe(false);
+    expect(isViewBlocked('select', false, false)).toBe(true);
   });
 
-  it('mode=select + selectActive=true + selectLock.parts=true → listening=false (= ロック中)', () => {
+  it('選択OFF + 入替モード → listening=true (= 入替可能、 ロック無視)', () => {
+    const lock: SelectLock = { ...DEFAULT_LOCK, parts: true }; // parts ロック ON でも
+    const sel = calcSelectListen('select', 'parts', false, lock, true);
+    expect(sel).toBe(true);
+    expect(calcLayerListening(sel, 'select')).toBe(true);
+    expect(isViewBlocked('select', false, true)).toBe(false);
+  });
+
+  it('選択ON + selectLock.parts=true → listening=false (= ロック中)', () => {
     const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
     const sel = calcSelectListen('select', 'parts', true, lock);
     expect(sel).toBe(false);
     expect(calcLayerListening(sel, 'select')).toBe(false);
   });
 
-  it('入替モード (= 案B で selectActive=false) → 部材 listening=true (= 入替可能)', () => {
-    const selectActive = reorderToggleSelectActive(true); // toggleReorderMode ON
-    expect(selectActive).toBe(false);
-    const lock: SelectLock = { ...DEFAULT_LOCK, parts: true }; // parts ロック ON でも
-    const sel = calcSelectListen('select', 'parts', selectActive, lock);
+  it('選択ON + selectLock.parts=false → listening=true (= 通常選択)', () => {
+    const sel = calcSelectListen('select', 'parts', true, DEFAULT_LOCK);
     expect(sel).toBe(true);
     expect(calcLayerListening(sel, 'select')).toBe(true);
-    // hit gate も通す (= selectActive=false なので gate しない)
+  });
+
+  it('入替モード起動 (= 案B: toggleReorderMode ON → selectActive=false) → 部材触れる & gate 通過', () => {
+    const selectActive = reorderToggleSelectActive(true);
+    expect(selectActive).toBe(false);
+    const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
+    expect(calcSelectListen('select', 'parts', selectActive, lock, true)).toBe(true);
+    // 閲覧 gate は入替モードなので block しない
+    expect(isViewBlocked('select', selectActive, true)).toBe(false);
+    // 選択ロック gate も selectActive=false なので発火しない
     expect(shouldGateHit('select', selectActive, true, false, lock)).toBe(false);
   });
 
-  it('入替モード終了 (= 案B で selectActive=true 復帰) → ロック再有効', () => {
-    const selectActive = reorderToggleSelectActive(false); // toggleReorderMode OFF
+  it('入替モード終了 (= 案B: toggleReorderMode OFF → selectActive=true 復帰) → ロック再有効', () => {
+    const selectActive = reorderToggleSelectActive(false);
     expect(selectActive).toBe(true);
     const lock: SelectLock = { ...DEFAULT_LOCK, parts: true };
-    const sel = calcSelectListen('select', 'parts', selectActive, lock);
-    expect(sel).toBe(false);
+    expect(calcSelectListen('select', 'parts', selectActive, lock, false)).toBe(false);
     expect(shouldGateHit('select', selectActive, true, false, lock)).toBe(true);
   });
 

@@ -19,9 +19,10 @@ export default function ScaffoldLayer() {
     isAreaDesignationMode, floorDesignation, toggleHandrailFloor,
     selectActive, selectLock,
   } = useCanvasStore();
-  // 「ロック中」判定は selectActive=true のときだけ (= selectActive=false / 入替モードでは selectLock を無視して触れる)
-  const isPartsLocked = mode === 'select' && selectActive && selectLock.parts;
-  const selectListenParts = mode === 'select' && !isPartsLocked;
+  // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
+  const selectListenParts =
+    (mode === 'select' && selectActive && !selectLock.parts)
+    || (mode === 'select' && isReorderMode);
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
 

@@ -76,11 +76,12 @@ function findWallEdgeForObstacle(
 }
 
 export default function ObstacleLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, obstaclePreview, selectActive, selectLock } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, obstaclePreview, selectActive, selectLock, isReorderMode } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
-  // 「ロック中」判定は selectActive=true のときだけ (= selectActive=false / 入替モードでは selectLock を無視して触れる)
-  const isObstacleLocked = mode === 'select' && selectActive && selectLock.obstacle;
-  const selectListenObstacle = mode === 'select' && !isObstacleLocked;
+  // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
+  const selectListenObstacle =
+    (mode === 'select' && selectActive && !selectLock.obstacle)
+    || (mode === 'select' && isReorderMode);
 
   // ドラッグ中の壁吸着距離表示用 (= 投影スナップ位置 + 壁辺端点)
   const [dragInfo, setDragInfo] = useState<{
