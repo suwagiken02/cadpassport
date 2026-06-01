@@ -132,7 +132,7 @@ export default function TutorialOverlay() {
               left: 0,
               right: 0,
               height: Math.max(0, targetRect.top - padding),
-              pointerEvents: 'auto',
+              pointerEvents: 'none',
             }}
           />
           <div
@@ -142,7 +142,7 @@ export default function TutorialOverlay() {
               left: 0,
               right: 0,
               bottom: 0,
-              pointerEvents: 'auto',
+              pointerEvents: 'none',
             }}
           />
           <div
@@ -152,7 +152,7 @@ export default function TutorialOverlay() {
               left: 0,
               width: Math.max(0, targetRect.left - padding),
               height: targetRect.height + padding * 2,
-              pointerEvents: 'auto',
+              pointerEvents: 'none',
             }}
           />
           <div
@@ -162,12 +162,12 @@ export default function TutorialOverlay() {
               left: targetRect.right + padding,
               right: 0,
               height: targetRect.height + padding * 2,
-              pointerEvents: 'auto',
+              pointerEvents: 'none',
             }}
           />
           {/* 点滅枠 (= pointer-events: none で対象操作を透過) */}
           <div
-            className="absolute border-4 border-yellow-400 rounded-lg animate-pulse"
+            className="absolute border-4 border-yellow-400 rounded-lg animate-highlight"
             style={{
               top: targetRect.top - padding,
               left: targetRect.left - padding,

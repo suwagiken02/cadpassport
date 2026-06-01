@@ -41,7 +41,8 @@
       "PowerShell(npx vitest run 2>&1 | Select-Object -Last 12)",
       "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -Last 8)",
       "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -Last 5)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "PowerShell(npx vitest run 2>&1 | Select-Object -Last 10)"
     ]
   }
 }
