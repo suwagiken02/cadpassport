@@ -99,24 +99,31 @@ export default function TutorialOverlay() {
 
   if (!step) return null;
 
-  // 吹き出し位置 (= 対象の下、 はみ出すなら上)
-  const balloonW = 320;
-  const balloonH = 180;
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 360;
+  // 吹き出し位置: ターゲット (= ハイライト枠) に被らないよう、 target と反対側の画面端に固定配置。
+  // - target が画面下半分 → balloon は上部 (top: 80)
+  // - target が画面上半分 → balloon は下部 (bottom: 80)
+  // - target なし → 画面中央
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-  let balloonX = 8;
-  let balloonY = vh / 2 - balloonH / 2;
-  if (targetRect) {
-    balloonX = Math.min(
-      Math.max(8, targetRect.left + targetRect.width / 2 - balloonW / 2),
-      vw - balloonW - 8,
-    );
-    // 対象の上に置く、 上端超えるなら下に
-    balloonY = targetRect.top - balloonH - 16;
-    if (balloonY < 8) balloonY = targetRect.bottom + 16;
-    // 下端超えるならビューポート内に
-    if (balloonY + balloonH > vh - 8) balloonY = vh - balloonH - 8;
-  }
+  const isTargetInBottomHalf = !!targetRect && targetRect.top > vh / 2;
+  const balloonStyle: React.CSSProperties = !targetRect
+    ? {
+        position: 'fixed',
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 320,
+        maxWidth: '90vw',
+        zIndex: 110,
+      }
+    : {
+        position: 'fixed',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 320,
+        maxWidth: '90vw',
+        zIndex: 110,
+        ...(isTargetInBottomHalf ? { top: 80 } : { bottom: 80 }),
+      };
 
   const padding = 8;
 
@@ -182,8 +189,8 @@ export default function TutorialOverlay() {
 
       {/* 吹き出し */}
       <div
-        className="absolute bg-dark-surface border-2 border-accent rounded-2xl shadow-2xl p-4 pointer-events-auto"
-        style={{ left: balloonX, top: balloonY, width: balloonW }}
+        className="bg-dark-surface border-2 border-accent rounded-2xl shadow-2xl p-4 pointer-events-auto"
+        style={balloonStyle}
       >
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-dimension">
