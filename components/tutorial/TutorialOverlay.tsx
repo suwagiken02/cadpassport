@@ -64,16 +64,25 @@ export default function TutorialOverlay() {
     };
   }, [step]);
 
-  // 完了検知: useCanvasStore subscribe
+  // 完了検知: useCanvasStore subscribe。
+  // ⚠️ クロージャの step ではなく useTutorialStore のライブ currentStep で評価する。
+  // (= 1 操作で複数の store set() が同期発火しても、 先頭の nextStep で currentStep が進み、
+  //    後続の checkComplete は新ステップを見るため多重進行しない = step 飛びバグ修正)
   const checkComplete = useCallback(() => {
-    if (!step) return;
-    const s = useCanvasStore.getState();
     const t = useTutorialStore.getState();
+    const idx = t.currentStep;
+    if (!t.isActive || idx < 0 || idx >= TUTORIAL_STEPS.length) return;
+    const curStep = TUTORIAL_STEPS[idx];
+    const s = useCanvasStore.getState();
+    // step1: 設定パネルを一度でも開いたら記録 (= 開いて閉じたで完了)
+    if (s.showSettings && !t.settingsOpenedOnce) {
+      t.setSettingsOpenedOnce(true);
+    }
     // 自動配置ステップ突入時に handrails 本数を snapshot (= 足場開始分と区別し「増加」で完了検知)
-    if (step.id === 'autolayout' && t.handrailsBeforeAutolayout == null) {
+    if (curStep.id === 'autolayout' && t.handrailsBeforeAutolayout == null) {
       t.setHandrailsBeforeAutolayout(s.canvasData.handrails.length);
     }
-    if (!step.completeWhen) return;
+    if (!curStep.completeWhen) return;
     const ctx: TutorialContext = {
       canvasData: s.canvasData,
       mode: s.mode,
@@ -83,22 +92,23 @@ export default function TutorialOverlay() {
       showBuildingModal: s.showBuildingModal ?? false,
       autoOpenRoofForBuildingId: s.autoOpenRoofForBuildingId ?? null,
       handrailsBeforeAutolayout: useTutorialStore.getState().handrailsBeforeAutolayout,
+      settingsOpenedOnce: useTutorialStore.getState().settingsOpenedOnce,
     };
-    if (step.completeWhen(ctx)) {
-      nextStep();
+    if (curStep.completeWhen(ctx)) {
+      t.nextStep();
     }
-  }, [step, nextStep]);
+  }, []);
 
   useEffect(() => {
-    if (!step) return;
-    // 初回 check
+    if (!isActive) return;
+    // 初回 check (= ステップ切替時、 既に条件成立なら進む)
     checkComplete();
     // store 変化を subscribe
     const unsub = useCanvasStore.subscribe(() => {
       checkComplete();
     });
     return unsub;
-  }, [step, checkComplete]);
+  }, [isActive, currentStep, checkComplete]);
 
   // DOM ポーリング自動進行 (= Phase B): 解説のみ (completeWhen=undefined) かつ autoAdvance のステップは、
   // 「次のステップの target」 が DOM に出現したら自動で次へ進む (= 例: 躯体ボタン押下 → 建物1F 出現 → 自動進行)。

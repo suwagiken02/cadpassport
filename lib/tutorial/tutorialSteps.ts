@@ -17,6 +17,8 @@ export type TutorialContext = {
   autoOpenRoofForBuildingId: string | null;
   /** step 自動配置 完了検知用 (= 自動配置ステップ突入時の handrails 本数 snapshot) */
   handrailsBeforeAutolayout: number | null;
+  /** step1 設定 完了検知用 (= 設定を一度開いた once flag) */
+  settingsOpenedOnce: boolean;
 };
 
 /**
@@ -47,11 +49,11 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'settings',
     targetSelector: '[data-tutorial-id="settings-button"]',
-    title: '1. 設定を確認',
+    title: '1. 設定を開いて閉じる',
     description:
-      'まずは右下の「設定」ボタンの場所を覚えましょう。ダークモードや寸法表示などをここで切り替えられます。確認したら「次へ」を押してください。',
-    completeWhen: undefined,
-    autoAdvance: false,
+      '右下の「設定」ボタンを押して設定パネルを開いてみましょう。ダークモードや寸法表示などを切り替えられます。確認したら ✕ で閉じてください（閉じると次へ進みます）。',
+    completeWhen: (ctx) => ctx.settingsOpenedOnce === true && ctx.showSettings === false,
+    autoAdvance: true,
   },
   {
     id: 'kutai-open',

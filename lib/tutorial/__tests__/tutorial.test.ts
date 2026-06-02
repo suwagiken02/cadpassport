@@ -28,6 +28,7 @@ function emptyCtx(): TutorialContext {
     showBuildingModal: false,
     autoOpenRoofForBuildingId: null,
     handrailsBeforeAutolayout: null,
+    settingsOpenedOnce: false,
   };
 }
 
@@ -50,23 +51,25 @@ function showsNextButton(step: TutorialStep): boolean {
 
 describe('tutorialStore', () => {
   beforeEach(() => {
-    useTutorialStore.setState({ isActive: false, currentStep: 0, handrailsBeforeAutolayout: null });
+    useTutorialStore.setState({ isActive: false, currentStep: 0, handrailsBeforeAutolayout: null, settingsOpenedOnce: false });
   });
 
-  it('デフォルトで isActive=false、 currentStep=0、 handrailsBeforeAutolayout=null', () => {
+  it('デフォルトで isActive=false、 currentStep=0、 snapshot/settings flag=初期値', () => {
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(false);
     expect(s.currentStep).toBe(0);
     expect(s.handrailsBeforeAutolayout).toBeNull();
+    expect(s.settingsOpenedOnce).toBe(false);
   });
 
-  it('startTutorial で isActive=true、 currentStep=0、 snapshot リセット', () => {
-    useTutorialStore.setState({ handrailsBeforeAutolayout: 5 });
+  it('startTutorial で各 state をリセット', () => {
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 5, settingsOpenedOnce: true });
     useTutorialStore.getState().startTutorial();
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(true);
     expect(s.currentStep).toBe(0);
     expect(s.handrailsBeforeAutolayout).toBeNull();
+    expect(s.settingsOpenedOnce).toBe(false);
   });
 
   it('nextStep で currentStep が +1 される', () => {
@@ -77,33 +80,35 @@ describe('tutorialStore', () => {
     expect(useTutorialStore.getState().currentStep).toBe(2);
   });
 
-  it('skipTutorial で isActive=false、 currentStep=0、 snapshot リセット', () => {
+  it('skipTutorial で各 state をリセット', () => {
     useTutorialStore.getState().startTutorial();
     useTutorialStore.getState().nextStep();
-    useTutorialStore.setState({ handrailsBeforeAutolayout: 3 });
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 3, settingsOpenedOnce: true });
     useTutorialStore.getState().skipTutorial();
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(false);
     expect(s.currentStep).toBe(0);
     expect(s.handrailsBeforeAutolayout).toBeNull();
+    expect(s.settingsOpenedOnce).toBe(false);
   });
 
-  it('endTutorial で isActive=false、 currentStep=0、 snapshot リセット', () => {
+  it('endTutorial で各 state をリセット', () => {
     useTutorialStore.getState().startTutorial();
     useTutorialStore.getState().nextStep();
-    useTutorialStore.setState({ handrailsBeforeAutolayout: 9 });
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 9, settingsOpenedOnce: true });
     useTutorialStore.getState().endTutorial();
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(false);
     expect(s.currentStep).toBe(0);
     expect(s.handrailsBeforeAutolayout).toBeNull();
+    expect(s.settingsOpenedOnce).toBe(false);
   });
 
-  it('setHandrailsBeforeAutolayout で snapshot 値をセット', () => {
+  it('setHandrailsBeforeAutolayout / setSettingsOpenedOnce で値をセット', () => {
     useTutorialStore.getState().setHandrailsBeforeAutolayout(2);
     expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBe(2);
-    useTutorialStore.getState().setHandrailsBeforeAutolayout(null);
-    expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBeNull();
+    useTutorialStore.getState().setSettingsOpenedOnce(true);
+    expect(useTutorialStore.getState().settingsOpenedOnce).toBe(true);
   });
 });
 
@@ -160,34 +165,20 @@ describe('tutorialSteps Phase A.1+B (= 13 ステップ)', () => {
 });
 
 describe('autoAdvance フラグ (= Phase C: 次へ表示制御 / 飛ばし防止)', () => {
-  it('settings と reorder のみ autoAdvance=false (= 次へ表示)', () => {
+  it('reorder のみ autoAdvance=false (= settings は開閉操作で進むため true に変更)', () => {
     const noAuto = TUTORIAL_STEPS.filter((s) => !s.autoAdvance).map((s) => s.id);
-    expect(noAuto).toEqual(['settings', 'reorder']);
+    expect(noAuto).toEqual(['reorder']);
   });
 
-  it('操作ステップは全て autoAdvance=true (= 次へ非表示・操作完了で進行)', () => {
-    const auto = TUTORIAL_STEPS.filter((s) => s.autoAdvance).map((s) => s.id);
-    expect(auto).toEqual([
-      'kutai-open',
-      'building-select',
-      'wallinput-tab',
-      'build-canvas',
-      'roof',
-      'obstacle-select',
-      'obstacle-place',
-      'height',
-      'scaffold-start',
-      'autolayout',
-      'areacalc',
-    ]);
+  it('settings は autoAdvance=true (= 次へ非表示・開閉操作で進行)', () => {
+    expect(stepById('settings').autoAdvance).toBe(true);
   });
 
-  it('showsNextButton: settings/reorder は true、 操作ステップは false', () => {
-    expect(showsNextButton(stepById('settings'))).toBe(true);
+  it('showsNextButton: reorder のみ true、 settings/操作ステップは false', () => {
     expect(showsNextButton(stepById('reorder'))).toBe(true);
+    expect(showsNextButton(stepById('settings'))).toBe(false);
     expect(showsNextButton(stepById('kutai-open'))).toBe(false);
     expect(showsNextButton(stepById('build-canvas'))).toBe(false);
-    expect(showsNextButton(stepById('roof'))).toBe(false);
   });
 });
 
@@ -195,10 +186,6 @@ describe('DOM ポーリング自動進行 (= Phase B)', () => {
   it('needsDomPoll: kutai-open のみ true (= 解説のみ + autoAdvance)', () => {
     const polled = TUTORIAL_STEPS.filter(needsDomPoll).map((s) => s.id);
     expect(polled).toEqual(['kutai-open']);
-  });
-
-  it('settings は completeWhen=undefined だが autoAdvance=false なので DOM ポーリング対象外', () => {
-    expect(needsDomPoll(stepById('settings'))).toBe(false);
   });
 
   it('reorder は completeWhen=undefined だが autoAdvance=false なので DOM ポーリング対象外', () => {
@@ -217,8 +204,25 @@ describe('DOM ポーリング自動進行 (= Phase B)', () => {
 });
 
 describe('completeWhen 各ステップ', () => {
-  it('settings は completeWhen 未定義', () => {
-    expect(stepById('settings').completeWhen).toBeUndefined();
+  it('settings は settingsOpenedOnce && !showSettings で true (= 開いて閉じた)', () => {
+    const fn = stepById('settings').completeWhen!;
+    // 一度も開いてない → false
+    expect(fn(emptyCtx())).toBe(false);
+    // 開いた直後 (まだ開いてる) → false
+    const opened = emptyCtx();
+    opened.settingsOpenedOnce = true;
+    opened.showSettings = true;
+    expect(fn(opened)).toBe(false);
+    // 開いて閉じた → true
+    const closed = emptyCtx();
+    closed.settingsOpenedOnce = true;
+    closed.showSettings = false;
+    expect(fn(closed)).toBe(true);
+    // 一度も開かず閉じてる → false
+    const never = emptyCtx();
+    never.settingsOpenedOnce = false;
+    never.showSettings = false;
+    expect(fn(never)).toBe(false);
   });
 
   it('kutai-open は completeWhen 未定義 (= DOM ポーリングで進行)', () => {
@@ -338,5 +342,42 @@ describe('completeWhen 各ステップ', () => {
     const ctx = emptyCtx();
     ctx.showAreaCalcModal = true;
     expect(fn(ctx)).toBe(true);
+  });
+});
+
+describe('step 飛びバグ回帰 (= ライブ currentStep 評価で多重進行しない)', () => {
+  // checkComplete の「ライブ currentStep 評価」 ロジックを純粋に再現:
+  // 1 操作で複数の store set() が同期発火しても、 現在ステップの completeWhen が false になった時点で止まる。
+  function simulateBurst(startId: string, ctxFactory: () => TutorialContext, bursts: number): number {
+    let idx = TUTORIAL_STEPS.findIndex((s) => s.id === startId);
+    for (let i = 0; i < bursts; i++) {
+      const cur = TUTORIAL_STEPS[idx];
+      if (cur && cur.completeWhen && cur.completeWhen(ctxFactory())) {
+        idx += 1; // nextStep
+      }
+    }
+    return idx;
+  }
+
+  it('wallinput-tab で mode=building 後、 連続 store 変化が来ても 1 ステップ (build-canvas) のみ進む', () => {
+    // mode='building' は維持されるが buildings は空 (= build-canvas.completeWhen は false)
+    const ctxFactory = () => {
+      const c = emptyCtx();
+      c.mode = 'building';
+      return c;
+    };
+    // 1 タップで 5 回の同期 set() を想定
+    const result = simulateBurst('wallinput-tab', ctxFactory, 5);
+    expect(result).toBe(TUTORIAL_STEPS.findIndex((s) => s.id === 'build-canvas'));
+  });
+
+  it('building-select で showBuildingModal=true 後も 1 ステップ (wallinput-tab) のみ進む', () => {
+    const ctxFactory = () => {
+      const c = emptyCtx();
+      c.showBuildingModal = true;
+      return c;
+    };
+    const result = simulateBurst('building-select', ctxFactory, 5);
+    expect(result).toBe(TUTORIAL_STEPS.findIndex((s) => s.id === 'wallinput-tab'));
   });
 });
