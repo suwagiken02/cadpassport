@@ -203,7 +203,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
             </div>
           ) : null)}
 
-          <button type="button" onClick={handleConfirm} className="w-full py-3 bg-accent text-white font-bold rounded-xl text-lg">
+          <button type="button" data-tutorial-id="roof-confirm" onClick={handleConfirm} className="w-full py-3 bg-accent text-white font-bold rounded-xl text-lg">
             設定する
           </button>
         </div>

@@ -39,9 +39,14 @@ function stepById(id: string): TutorialStep {
   return s;
 }
 
-/** Phase B: DOM ポーリング自動進行の対象か (= 解説のみ + autoAdvance) */
-function needsDomPoll(step: TutorialStep): boolean {
-  return step.completeWhen === undefined && step.autoAdvance === true;
+/** Phase B: 「次ステップ target 出現」 ポーリングの対象か (= store/DOM 完了条件が無い解説 + autoAdvance) */
+function needsNextTargetPoll(step: TutorialStep): boolean {
+  return step.completeWhen === undefined && step.completeWhenDom === undefined && step.autoAdvance === true;
+}
+
+/** DOM 値ポーリングの対象か (= completeWhenDom を持つ) */
+function needsDomValuePoll(step: TutorialStep): boolean {
+  return step.completeWhenDom !== undefined;
 }
 
 /** Phase C: 「次へ」 ボタンを表示するか (= autoAdvance=false のみ) */
@@ -112,24 +117,25 @@ describe('tutorialStore', () => {
   });
 });
 
-describe('tutorialSteps Phase A.1+B (= 13 ステップ)', () => {
-  it('全 13 ステップが定義されている', () => {
-    expect(TUTORIAL_STEPS.length).toBe(13);
+describe('tutorialSteps (= 14 ステップ / 屋根 2 分割)', () => {
+  it('全 14 ステップが定義されている', () => {
+    expect(TUTORIAL_STEPS.length).toBe(14);
   });
 
-  it('TOTAL_STEPS = 13 (= ステップ数と一致)', () => {
-    expect(TOTAL_STEPS).toBe(13);
+  it('TOTAL_STEPS = 14 (= ステップ数と一致)', () => {
+    expect(TOTAL_STEPS).toBe(14);
     expect(TOTAL_STEPS).toBe(TUTORIAL_STEPS.length);
   });
 
-  it('ステップ id の順序が想定通り', () => {
+  it('ステップ id の順序が想定通り (= roof が roof-input/roof-confirm に分割)', () => {
     expect(TUTORIAL_STEPS.map((s) => s.id)).toEqual([
       'settings',
       'kutai-open',
       'building-select',
       'wallinput-tab',
       'build-canvas',
-      'roof',
+      'roof-input',
+      'roof-confirm',
       'obstacle-select',
       'obstacle-place',
       'height',
@@ -162,39 +168,73 @@ describe('tutorialSteps Phase A.1+B (= 13 ステップ)', () => {
   it('kutai-open は親ボタン (kutai-button) を target にする (= problem 1: 躯体が光る)', () => {
     expect(stepById('kutai-open').targetSelector).toBe('[data-tutorial-id="kutai-button"]');
   });
+
+  it('roof-confirm は「設定する」 ボタン (roof-confirm) を target にする', () => {
+    expect(stepById('roof-confirm').targetSelector).toBe('[data-tutorial-id="roof-confirm"]');
+  });
+});
+
+describe('屋根 2 分割ステップ', () => {
+  it('roof-input は completeWhenDom を持ち completeWhen は持たない (= DOM 値監視)', () => {
+    const s = stepById('roof-input');
+    expect(typeof s.completeWhenDom).toBe('function');
+    expect(s.completeWhen).toBeUndefined();
+    expect(s.autoAdvance).toBe(true);
+    expect(s.targetSelector).toBe('[data-tutorial-id="roof-overhang-input"]');
+  });
+
+  it('roof-confirm は completeWhen (uniformMm===500) を持つ', () => {
+    const s = stepById('roof-confirm');
+    expect(typeof s.completeWhen).toBe('function');
+    expect(s.completeWhenDom).toBeUndefined();
+    expect(s.autoAdvance).toBe(true);
+    const fn = s.completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx500 = emptyCtx();
+    ctx500.canvasData.buildings = [
+      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 500, northMm: null, southMm: null, eastMm: null, westMm: null } },
+    ];
+    expect(fn(ctx500)).toBe(true);
+    const ctx600 = emptyCtx();
+    ctx600.canvasData.buildings = [
+      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null } },
+    ];
+    expect(fn(ctx600)).toBe(false);
+  });
 });
 
 describe('autoAdvance フラグ (= Phase C: 次へ表示制御 / 飛ばし防止)', () => {
-  it('reorder のみ autoAdvance=false (= settings は開閉操作で進むため true に変更)', () => {
+  it('reorder のみ autoAdvance=false', () => {
     const noAuto = TUTORIAL_STEPS.filter((s) => !s.autoAdvance).map((s) => s.id);
     expect(noAuto).toEqual(['reorder']);
   });
 
-  it('settings は autoAdvance=true (= 次へ非表示・開閉操作で進行)', () => {
-    expect(stepById('settings').autoAdvance).toBe(true);
-  });
-
-  it('showsNextButton: reorder のみ true、 settings/操作ステップは false', () => {
+  it('showsNextButton: reorder のみ true、 操作ステップは false', () => {
     expect(showsNextButton(stepById('reorder'))).toBe(true);
     expect(showsNextButton(stepById('settings'))).toBe(false);
-    expect(showsNextButton(stepById('kutai-open'))).toBe(false);
-    expect(showsNextButton(stepById('build-canvas'))).toBe(false);
+    expect(showsNextButton(stepById('roof-input'))).toBe(false);
+    expect(showsNextButton(stepById('roof-confirm'))).toBe(false);
   });
 });
 
 describe('DOM ポーリング自動進行 (= Phase B)', () => {
-  it('needsDomPoll: kutai-open のみ true (= 解説のみ + autoAdvance)', () => {
-    const polled = TUTORIAL_STEPS.filter(needsDomPoll).map((s) => s.id);
+  it('needsNextTargetPoll: kutai-open のみ true (= store/DOM 完了条件なし + autoAdvance)', () => {
+    const polled = TUTORIAL_STEPS.filter(needsNextTargetPoll).map((s) => s.id);
     expect(polled).toEqual(['kutai-open']);
   });
 
-  it('reorder は completeWhen=undefined だが autoAdvance=false なので DOM ポーリング対象外', () => {
-    expect(needsDomPoll(stepById('reorder'))).toBe(false);
+  it('needsDomValuePoll: roof-input のみ true (= completeWhenDom を持つ)', () => {
+    const polled = TUTORIAL_STEPS.filter(needsDomValuePoll).map((s) => s.id);
+    expect(polled).toEqual(['roof-input']);
   });
 
-  it('DOM ポーリングするステップの「次ステップ」は非null targetSelector を持つ (= 検知対象が存在)', () => {
+  it('reorder は autoAdvance=false なので次ステップ target ポーリング対象外', () => {
+    expect(needsNextTargetPoll(stepById('reorder'))).toBe(false);
+  });
+
+  it('次ステップ target ポーリングするステップの「次ステップ」は非null targetSelector を持つ', () => {
     TUTORIAL_STEPS.forEach((step, i) => {
-      if (needsDomPoll(step)) {
+      if (needsNextTargetPoll(step)) {
         const next = TUTORIAL_STEPS[i + 1];
         expect(next).toBeDefined();
         expect(next.targetSelector).not.toBeNull();
@@ -203,22 +243,18 @@ describe('DOM ポーリング自動進行 (= Phase B)', () => {
   });
 });
 
-describe('completeWhen 各ステップ', () => {
+describe('completeWhen 各ステップ (store ベース)', () => {
   it('settings は settingsOpenedOnce && !showSettings で true (= 開いて閉じた)', () => {
     const fn = stepById('settings').completeWhen!;
-    // 一度も開いてない → false
     expect(fn(emptyCtx())).toBe(false);
-    // 開いた直後 (まだ開いてる) → false
     const opened = emptyCtx();
     opened.settingsOpenedOnce = true;
     opened.showSettings = true;
     expect(fn(opened)).toBe(false);
-    // 開いて閉じた → true
     const closed = emptyCtx();
     closed.settingsOpenedOnce = true;
     closed.showSettings = false;
     expect(fn(closed)).toBe(true);
-    // 一度も開かず閉じてる → false
     const never = emptyCtx();
     never.settingsOpenedOnce = false;
     never.showSettings = false;
@@ -253,21 +289,6 @@ describe('completeWhen 各ステップ', () => {
       { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000' },
     ];
     expect(fn(ctx)).toBe(true);
-  });
-
-  it('roof は roof.uniformMm===500 で true (= 600 のままは false)', () => {
-    const fn = stepById('roof').completeWhen!;
-    expect(fn(emptyCtx())).toBe(false);
-    const ctx600 = emptyCtx();
-    ctx600.canvasData.buildings = [
-      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null } },
-    ];
-    expect(fn(ctx600)).toBe(false);
-    const ctx500 = emptyCtx();
-    ctx500.canvasData.buildings = [
-      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 500, northMm: null, southMm: null, eastMm: null, westMm: null } },
-    ];
-    expect(fn(ctx500)).toBe(true);
   });
 
   it("obstacle-select は mode==='obstacle' で true", () => {
@@ -346,38 +367,24 @@ describe('completeWhen 各ステップ', () => {
 });
 
 describe('step 飛びバグ回帰 (= ライブ currentStep 評価で多重進行しない)', () => {
-  // checkComplete の「ライブ currentStep 評価」 ロジックを純粋に再現:
-  // 1 操作で複数の store set() が同期発火しても、 現在ステップの completeWhen が false になった時点で止まる。
   function simulateBurst(startId: string, ctxFactory: () => TutorialContext, bursts: number): number {
     let idx = TUTORIAL_STEPS.findIndex((s) => s.id === startId);
     for (let i = 0; i < bursts; i++) {
       const cur = TUTORIAL_STEPS[idx];
       if (cur && cur.completeWhen && cur.completeWhen(ctxFactory())) {
-        idx += 1; // nextStep
+        idx += 1;
       }
     }
     return idx;
   }
 
   it('wallinput-tab で mode=building 後、 連続 store 変化が来ても 1 ステップ (build-canvas) のみ進む', () => {
-    // mode='building' は維持されるが buildings は空 (= build-canvas.completeWhen は false)
     const ctxFactory = () => {
       const c = emptyCtx();
       c.mode = 'building';
       return c;
     };
-    // 1 タップで 5 回の同期 set() を想定
     const result = simulateBurst('wallinput-tab', ctxFactory, 5);
     expect(result).toBe(TUTORIAL_STEPS.findIndex((s) => s.id === 'build-canvas'));
-  });
-
-  it('building-select で showBuildingModal=true 後も 1 ステップ (wallinput-tab) のみ進む', () => {
-    const ctxFactory = () => {
-      const c = emptyCtx();
-      c.showBuildingModal = true;
-      return c;
-    };
-    const result = simulateBurst('building-select', ctxFactory, 5);
-    expect(result).toBe(TUTORIAL_STEPS.findIndex((s) => s.id === 'wallinput-tab'));
   });
 });

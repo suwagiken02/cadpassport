@@ -110,10 +110,24 @@ export default function TutorialOverlay() {
     return unsub;
   }, [isActive, currentStep, checkComplete]);
 
-  // DOM ポーリング自動進行 (= Phase B): 解説のみ (completeWhen=undefined) かつ autoAdvance のステップは、
-  // 「次のステップの target」 が DOM に出現したら自動で次へ進む (= 例: 躯体ボタン押下 → 建物1F 出現 → 自動進行)。
+  // DOM ポーリング自動進行 (= Phase B): autoAdvance ステップを 500ms ごとに監視。
+  // (1) completeWhenDom があれば DOM 値で完了判定 (= 例: 軒の出入力欄の value === '500')。
+  // (2) completeWhen も completeWhenDom も無い解説ステップは、「次ステップの target」 が DOM 出現したら進む
+  //     (= submenu を開く誘導。 例: 躯体ボタン押下 → 建物1F 出現 → 自動進行)。
   useEffect(() => {
-    if (!step || step.completeWhen || !step.autoAdvance) return;
+    if (!step || !step.autoAdvance) return;
+    // (1) DOM 値ベース完了
+    if (step.completeWhenDom) {
+      const domCheck = step.completeWhenDom;
+      const poll = () => {
+        if (domCheck()) nextStep();
+      };
+      poll();
+      const interval = setInterval(poll, 500);
+      return () => clearInterval(interval);
+    }
+    // (2) 次ステップ target 出現で進行
+    if (step.completeWhen) return;
     const next = TUTORIAL_STEPS[currentStep + 1];
     if (!next || !next.targetSelector) return;
     const nextSelector = next.targetSelector;

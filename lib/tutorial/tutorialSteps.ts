@@ -27,10 +27,11 @@ export type TutorialContext = {
  * - targetSelector: ハイライト対象 (= data-tutorial-id 属性の CSS セレクタ)。
  *   null の場合は Konva canvas 操作など DOM ハイライト不可のステップ (= balloon テキストで誘導)。
  * - title / description: 吹き出しの文言 (= CAD 初心者向け平易な日本語)
- * - completeWhen: 完了条件 (= true で自動次ステップへ)。 undefined なら DOM ポーリング or「次へ」で進む
+ * - completeWhen: store ベースの完了条件 (= true で自動次ステップへ)。
+ * - completeWhenDom: DOM 値ベースの完了条件 (= 例: 入力欄の value === '500')。 500ms ごとに評価。
+ *   completeWhen / completeWhenDom が両方 undefined かつ autoAdvance=true のステップは、
+ *   次ステップの target が DOM 出現したら自動進行 (= submenu を開く誘導)。
  * - autoAdvance: 操作で進行するステップ (= true なら「次へ」ボタンを隠し、 操作完了でのみ進行)。
- *   false なら解説ステップ (=「次へ」ボタンで進める)。
- *   completeWhen=undefined かつ autoAdvance=true のステップは、 次ステップの target が DOM 出現したら自動進行 (= submenu を開く誘導)。
  */
 export type TutorialStep = {
   id: string;
@@ -38,12 +39,14 @@ export type TutorialStep = {
   title: string;
   description: string;
   completeWhen?: (ctx: TutorialContext) => boolean;
+  completeWhenDom?: () => boolean;
   autoAdvance: boolean;
 };
 
 /**
  * Phase A.1 + B: submenu 親ボタン誘導を細分化 + DOM ポーリング自動進行 + 操作完了強制。
- * 計 13 ステップ (= 移動 (move-select) は複雑度が高いため Phase B 以降)。
+ * 屋根は「軒の出を変更」→「設定するを押す」 の 2 ステップに分割。 計 14 ステップ
+ * (= 移動 (move-select) は複雑度が高いため Phase B 以降)。
  */
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
@@ -92,18 +95,31 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     autoAdvance: true,
   },
   {
-    id: 'roof',
+    id: 'roof-input',
     targetSelector: '[data-tutorial-id="roof-overhang-input"]',
-    title: '6. 屋根の軒の出を変更',
+    title: '6. 軒の出を変更',
     description:
-      '建物を作ると屋根設定が自動で開きます。「出幅(mm)」を 600 から 500 に変更して「設定する」を押してください。（開いていない場合は躯体メニューの「屋根」→建物をタップ）',
+      '建物を作ると屋根設定が自動で開きます。「出幅(mm)」を 600 から 500 に変更してください。（開いていない場合は躯体メニューの「屋根」→建物をタップ）',
+    // DOM 値監視: 入力欄の value が '500' になったら次へ
+    completeWhenDom: () => {
+      const el = document.querySelector('[data-tutorial-id="roof-overhang-input"] input') as HTMLInputElement | null;
+      return el?.value === '500';
+    },
+    autoAdvance: true,
+  },
+  {
+    id: 'roof-confirm',
+    targetSelector: '[data-tutorial-id="roof-confirm"]',
+    title: '7. 屋根設定を確定',
+    description:
+      '「設定する」ボタン（光っています）を押して、屋根の変更を確定してください。',
     completeWhen: (ctx) => ctx.canvasData.buildings.some((b) => b.roof?.uniformMm === 500),
     autoAdvance: true,
   },
   {
     id: 'obstacle-select',
     targetSelector: '[data-tutorial-id="kutai-obstacle"]',
-    title: '7. 障害物モードにする',
+    title: '8. 障害物モードにする',
     description:
       '「躯体」ボタンを押してメニューを開き、「障害物」を押してください。エコキュートや室外機などを配置できるモードになります。',
     completeWhen: (ctx) => ctx.mode === 'obstacle',
@@ -112,7 +128,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'obstacle-place',
     targetSelector: null,
-    title: '8. 障害物を配置',
+    title: '9. 障害物を配置',
     description:
       '画面下のパレットから種類（エコキュート等）を選び、キャンバスにドラッグして配置してください。',
     completeWhen: (ctx) => ctx.canvasData.obstacles.length > 0,
@@ -121,7 +137,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'height',
     targetSelector: '[data-tutorial-id="kutai-height"]',
-    title: '9. 高さを設定',
+    title: '10. 高さを設定',
     description:
       '「躯体」ボタンを押してメニューを開き、「高さ」を押します。建物の辺をタップして軒高（例: 6000）を入力してください。',
     completeWhen: (ctx) => (ctx.canvasData.heightMarkers ?? []).length > 0,
@@ -130,7 +146,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'scaffold-start',
     targetSelector: '[data-tutorial-id="ashiba-start"]',
-    title: '10. 足場開始位置を設定',
+    title: '11. 足場開始位置を設定',
     description:
       '「足場」ボタンを押してメニューを開き、「足場開始」を押します。開始する頂点を選んで離れを入力し「足場開始」で確定してください。',
     completeWhen: (ctx) => !!ctx.canvasData.scaffoldStart1F || !!ctx.canvasData.scaffoldStart2F,
@@ -139,7 +155,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'autolayout',
     targetSelector: '[data-tutorial-id="ashiba-autolayout"]',
-    title: '11. 自動配置で足場を組む',
+    title: '12. 自動配置で足場を組む',
     description:
       '「足場」ボタンを押してメニューを開き、「自動配置」を押します。各辺の離れを設定して「配置する」を押すと、外周に手摺・支柱が一括配置されます。',
     completeWhen: (ctx) =>
@@ -150,7 +166,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'reorder',
     targetSelector: '[data-tutorial-id="ashiba-reorder"]',
-    title: '12. 足場の入れ替え（任意）',
+    title: '13. 足場の入れ替え（任意）',
     description:
       '「足場」ボタン → 「入れ替え」で、同じラインの手摺の並び順を入れ替えられます。試したら「終了」して「次へ」を押してください。（任意のためスキップ可）',
     // 入れ替えは任意 + toggle で完了タイミングが曖昧なため「次へ」 フォールバック
@@ -160,7 +176,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'areacalc',
     targetSelector: '[data-tutorial-id="ashiba-areacalc"]',
-    title: '13. 平米を計算',
+    title: '14. 平米を計算',
     description:
       '「足場」ボタンを押してメニューを開き、「平米計算」を押すと、建物の延べ床㎡や足場の面積を確認できます。これでチュートリアルは完了です！',
     completeWhen: (ctx) => ctx.showAreaCalcModal === true,
@@ -168,5 +184,5 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-/** Phase A.1+B 完成時の総ステップ数 (= UI に「N/13」 で表示) */
+/** Phase A.1+B 完成時の総ステップ数 (= UI に「N/14」 で表示) */
 export const TOTAL_STEPS = TUTORIAL_STEPS.length;
