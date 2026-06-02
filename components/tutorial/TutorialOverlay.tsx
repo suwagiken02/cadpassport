@@ -100,6 +100,23 @@ export default function TutorialOverlay() {
     return unsub;
   }, [step, checkComplete]);
 
+  // DOM ポーリング自動進行 (= Phase B): 解説のみ (completeWhen=undefined) かつ autoAdvance のステップは、
+  // 「次のステップの target」 が DOM に出現したら自動で次へ進む (= 例: 躯体ボタン押下 → 建物1F 出現 → 自動進行)。
+  useEffect(() => {
+    if (!step || step.completeWhen || !step.autoAdvance) return;
+    const next = TUTORIAL_STEPS[currentStep + 1];
+    if (!next || !next.targetSelector) return;
+    const nextSelector = next.targetSelector;
+    const poll = () => {
+      if (document.querySelector(nextSelector)) {
+        nextStep();
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 500);
+    return () => clearInterval(interval);
+  }, [step, currentStep, nextStep]);
+
   // 全ステップ完了時に自動 endTutorial
   useEffect(() => {
     if (isActive && currentStep >= TUTORIAL_STEPS.length) {
@@ -226,13 +243,16 @@ export default function TutorialOverlay() {
           >
             スキップ
           </button>
-          <button
-            type="button"
-            onClick={nextStep}
-            className="flex-1 py-2 bg-accent text-white rounded-lg text-sm font-bold"
-          >
-            次へ →
-          </button>
+          {/* 操作で進行するステップ (autoAdvance=true) は「次へ」を隠し、 操作完了でのみ進行 (= 飛ばし防止) */}
+          {!step.autoAdvance && (
+            <button
+              type="button"
+              onClick={nextStep}
+              className="flex-1 py-2 bg-accent text-white rounded-lg text-sm font-bold"
+            >
+              次へ →
+            </button>
+          )}
         </div>
       </div>
     </div>

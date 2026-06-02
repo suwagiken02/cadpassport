@@ -25,7 +25,10 @@ export type TutorialContext = {
  * - targetSelector: ハイライト対象 (= data-tutorial-id 属性の CSS セレクタ)。
  *   null の場合は Konva canvas 操作など DOM ハイライト不可のステップ (= balloon テキストで誘導)。
  * - title / description: 吹き出しの文言 (= CAD 初心者向け平易な日本語)
- * - completeWhen: 完了条件 (= true で自動次ステップへ)。 undefined なら「次へ」 ボタンで進む
+ * - completeWhen: 完了条件 (= true で自動次ステップへ)。 undefined なら DOM ポーリング or「次へ」で進む
+ * - autoAdvance: 操作で進行するステップ (= true なら「次へ」ボタンを隠し、 操作完了でのみ進行)。
+ *   false なら解説ステップ (=「次へ」ボタンで進める)。
+ *   completeWhen=undefined かつ autoAdvance=true のステップは、 次ステップの target が DOM 出現したら自動進行 (= submenu を開く誘導)。
  */
 export type TutorialStep = {
   id: string;
@@ -33,11 +36,12 @@ export type TutorialStep = {
   title: string;
   description: string;
   completeWhen?: (ctx: TutorialContext) => boolean;
+  autoAdvance: boolean;
 };
 
 /**
- * Phase A: HTML 要素を細分化してハイライト + Konva 操作は balloon テキストで誘導。
- * 計 12 ステップ (= 移動 (move-select) は複雑度が高いため Phase B 以降)。
+ * Phase A.1 + B: submenu 親ボタン誘導を細分化 + DOM ポーリング自動進行 + 操作完了強制。
+ * 計 13 ステップ (= 移動 (move-select) は複雑度が高いため Phase B 以降)。
  */
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
@@ -47,99 +51,120 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     description:
       'まずは右下の「設定」ボタンの場所を覚えましょう。ダークモードや寸法表示などをここで切り替えられます。確認したら「次へ」を押してください。',
     completeWhen: undefined,
+    autoAdvance: false,
   },
   {
-    id: 'building-open',
-    targetSelector: '[data-tutorial-id="kutai-building1f"]',
-    title: '2. 建物を作る（メニューを開く）',
+    id: 'kutai-open',
+    targetSelector: '[data-tutorial-id="kutai-button"]',
+    title: '2. 躯体メニューを開く',
     description:
-      '下の「躯体」ボタンを押すとメニューが開きます。その中の「建物1F」を押してください。',
+      '下の「躯体」ボタン（光っています）を押して、メニューを開いてください。',
+    completeWhen: undefined,
+    autoAdvance: true,
+  },
+  {
+    id: 'building-select',
+    targetSelector: '[data-tutorial-id="kutai-building1f"]',
+    title: '3. 建物1Fを選ぶ',
+    description:
+      'メニュー内の「建物1F」を押してください。建物作成のモーダルが開きます。',
     completeWhen: (ctx) => ctx.showBuildingModal === true,
+    autoAdvance: true,
   },
   {
     id: 'wallinput-tab',
     targetSelector: '[data-tutorial-id="building-wallinput-tab"]',
-    title: '3. 壁方向入力に切り替え',
+    title: '4. 壁方向入力に切り替え',
     description:
       'モーダル上部の「壁方向入力」タブを押してください。キャンバスで方向と長さを指定して建物を描くモードになります。',
     completeWhen: (ctx) => ctx.mode === 'building',
+    autoAdvance: true,
   },
   {
     id: 'build-canvas',
     targetSelector: null,
-    title: '4. 建物の外周を描く',
+    title: '5. 建物の外周を描く',
     description:
       '画面下の数値ボタンで長さ（例: 3000）を選び、方向ボタン（↑→↓←）で壁を伸ばします。これを繰り返し、最後に開始点（オレンジの交点マーカー）をタップすると建物が閉じて完成します。',
     completeWhen: (ctx) => ctx.canvasData.buildings.length > 0,
+    autoAdvance: true,
   },
   {
     id: 'roof',
     targetSelector: '[data-tutorial-id="roof-overhang-input"]',
-    title: '5. 屋根の軒の出を変更',
+    title: '6. 屋根の軒の出を変更',
     description:
       '建物を作ると屋根設定が自動で開きます。「出幅(mm)」を 600 から 500 に変更して「設定する」を押してください。（開いていない場合は躯体メニューの「屋根」→建物をタップ）',
     completeWhen: (ctx) => ctx.canvasData.buildings.some((b) => b.roof?.uniformMm === 500),
+    autoAdvance: true,
   },
   {
-    id: 'obstacle-open',
+    id: 'obstacle-select',
     targetSelector: '[data-tutorial-id="kutai-obstacle"]',
-    title: '6. 障害物モードにする',
+    title: '7. 障害物モードにする',
     description:
-      '「躯体」ボタン → 「障害物」を押してください。エコキュートや室外機などを配置できるモードになります。',
+      '「躯体」ボタンを押してメニューを開き、「障害物」を押してください。エコキュートや室外機などを配置できるモードになります。',
     completeWhen: (ctx) => ctx.mode === 'obstacle',
+    autoAdvance: true,
   },
   {
     id: 'obstacle-place',
     targetSelector: null,
-    title: '7. 障害物を配置',
+    title: '8. 障害物を配置',
     description:
       '画面下のパレットから種類（エコキュート等）を選び、キャンバスにドラッグして配置してください。',
     completeWhen: (ctx) => ctx.canvasData.obstacles.length > 0,
+    autoAdvance: true,
   },
   {
     id: 'height',
     targetSelector: '[data-tutorial-id="kutai-height"]',
-    title: '8. 高さを設定',
+    title: '9. 高さを設定',
     description:
-      '「躯体」ボタン → 「高さ」を押し、建物の辺をタップして軒高（例: 6000）を入力してください。',
+      '「躯体」ボタンを押してメニューを開き、「高さ」を押します。建物の辺をタップして軒高（例: 6000）を入力してください。',
     completeWhen: (ctx) => (ctx.canvasData.heightMarkers ?? []).length > 0,
+    autoAdvance: true,
   },
   {
     id: 'scaffold-start',
     targetSelector: '[data-tutorial-id="ashiba-start"]',
-    title: '9. 足場開始位置を設定',
+    title: '10. 足場開始位置を設定',
     description:
-      '「足場」ボタン → 「足場開始」を押し、開始する頂点を選んで離れを入力し「足場開始」で確定してください。',
+      '「足場」ボタンを押してメニューを開き、「足場開始」を押します。開始する頂点を選んで離れを入力し「足場開始」で確定してください。',
     completeWhen: (ctx) => !!ctx.canvasData.scaffoldStart1F || !!ctx.canvasData.scaffoldStart2F,
+    autoAdvance: true,
   },
   {
     id: 'autolayout',
     targetSelector: '[data-tutorial-id="ashiba-autolayout"]',
-    title: '10. 自動配置で足場を組む',
+    title: '11. 自動配置で足場を組む',
     description:
-      '「足場」ボタン → 「自動配置」を押し、各辺の離れを設定して「配置する」を押すと、外周に手摺・支柱が一括配置されます。',
+      '「足場」ボタンを押してメニューを開き、「自動配置」を押します。各辺の離れを設定して「配置する」を押すと、外周に手摺・支柱が一括配置されます。',
     completeWhen: (ctx) =>
       ctx.handrailsBeforeAutolayout != null &&
       ctx.canvasData.handrails.length > ctx.handrailsBeforeAutolayout,
+    autoAdvance: true,
   },
   {
     id: 'reorder',
     targetSelector: '[data-tutorial-id="ashiba-reorder"]',
-    title: '11. 足場の入れ替え（任意）',
+    title: '12. 足場の入れ替え（任意）',
     description:
-      '「足場」ボタン → 「入れ替え」で、同じラインの手摺の並び順を入れ替えられます。試したら「終了」して「次へ」を押してください。',
+      '「足場」ボタン → 「入れ替え」で、同じラインの手摺の並び順を入れ替えられます。試したら「終了」して「次へ」を押してください。（任意のためスキップ可）',
     // 入れ替えは任意 + toggle で完了タイミングが曖昧なため「次へ」 フォールバック
     completeWhen: undefined,
+    autoAdvance: false,
   },
   {
     id: 'areacalc',
     targetSelector: '[data-tutorial-id="ashiba-areacalc"]',
-    title: '12. 平米を計算',
+    title: '13. 平米を計算',
     description:
-      '「足場」ボタン → 「平米計算」を押すと、建物の延べ床㎡や足場の面積を確認できます。これでチュートリアルは完了です！',
+      '「足場」ボタンを押してメニューを開き、「平米計算」を押すと、建物の延べ床㎡や足場の面積を確認できます。これでチュートリアルは完了です！',
     completeWhen: (ctx) => ctx.showAreaCalcModal === true,
+    autoAdvance: true,
   },
 ];
 
-/** Phase A 完成時の総ステップ数 (= UI に「N/12」 で表示) */
+/** Phase A.1+B 完成時の総ステップ数 (= UI に「N/13」 で表示) */
 export const TOTAL_STEPS = TUTORIAL_STEPS.length;
