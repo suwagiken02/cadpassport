@@ -9,7 +9,7 @@ import { TUTORIAL_STEPS, TOTAL_STEPS, type TutorialContext } from '@/lib/tutoria
  * チュートリアル overlay。 isActive のとき表示。
  * 構成: 4 つの半透明矩形でスポットライト + 点滅枠 + 吹き出し (= title/description/「次へ」/「スキップ」/「✕」).
  * 完了検知: useCanvasStore subscribe で各ステップの completeWhen を監視、 true で自動 nextStep。
- * 完了検知が無いステップは「次へ」 ボタンで進む。
+ * 完了検知が無いステップは「次へ」 ボタン or DOM ポーリングで進む。
  */
 export default function TutorialOverlay() {
   const isActive = useTutorialStore((s) => s.isActive);
@@ -25,16 +25,20 @@ export default function TutorialOverlay() {
       ? TUTORIAL_STEPS[currentStep]
       : null;
 
-  // 対象要素の位置取得 (= resize / scroll / 動的 UI 変化に追従、 500ms ポーリング)
+  // 対象要素の位置取得 (= resize / scroll / 動的 UI 変化に追従、 500ms ポーリング)。
+  // primary が DOM 不在なら fallback (= submenu 項目の親ボタン) をハイライト。 primary 出現で自動切替。
   useEffect(() => {
-    // step が無い or targetSelector が null (= Konva 操作など DOM ハイライト不可ステップ) は枠なし
-    if (!step || !step.targetSelector) {
+    const primary = step?.targetSelector ?? null;
+    const fallback = step?.fallbackTargetSelector ?? null;
+    // step が無い or primary/fallback 両方 null (= Konva 操作など DOM ハイライト不可) は枠なし
+    if (!step || (!primary && !fallback)) {
       setTargetRect(null);
       return;
     }
-    const selector = step.targetSelector;
     const update = () => {
-      const el = document.querySelector(selector);
+      let el: Element | null = null;
+      if (primary) el = document.querySelector(primary);
+      if (!el && fallback) el = document.querySelector(fallback);
       if (el) {
         const r = el.getBoundingClientRect();
         setTargetRect((prev) => {
@@ -78,10 +82,6 @@ export default function TutorialOverlay() {
     if (s.showSettings && !t.settingsOpenedOnce) {
       t.setSettingsOpenedOnce(true);
     }
-    // 自動配置ステップ突入時に handrails 本数を snapshot (= 足場開始分と区別し「増加」で完了検知)
-    if (curStep.id === 'autolayout' && t.handrailsBeforeAutolayout == null) {
-      t.setHandrailsBeforeAutolayout(s.canvasData.handrails.length);
-    }
     if (!curStep.completeWhen) return;
     const ctx: TutorialContext = {
       canvasData: s.canvasData,
@@ -109,6 +109,18 @@ export default function TutorialOverlay() {
     });
     return unsub;
   }, [isActive, currentStep, checkComplete]);
+
+  // 自動配置ステップ突入時に handrails 本数を snapshot。
+  // ⚠️ checkComplete (= 同期バースト中) ではなく useEffect (= レンダー後) で取得する。
+  // 足場開始の確定は setScaffoldStart + addHandrail×2 を同期実行するため、 バースト途中で snapshot を
+  // 取ると中間値 (= 1本目) になり 2本目で誤完了 → 自動配置を飛ばす。 レンダー後なら確定本数で取れる。
+  useEffect(() => {
+    if (step?.id !== 'autolayout') return;
+    if (useTutorialStore.getState().handrailsBeforeAutolayout != null) return;
+    useTutorialStore
+      .getState()
+      .setHandrailsBeforeAutolayout(useCanvasStore.getState().canvasData.handrails.length);
+  }, [step]);
 
   // DOM ポーリング自動進行 (= Phase B): autoAdvance ステップを 500ms ごとに監視。
   // (1) completeWhenDom があれば DOM 値で完了判定 (= 例: 軒の出入力欄の value === '500')。
@@ -144,7 +156,6 @@ export default function TutorialOverlay() {
   // 全ステップ完了時に自動 endTutorial
   useEffect(() => {
     if (isActive && currentStep >= TUTORIAL_STEPS.length) {
-      // Phase 1 で 3 ステップ終了したら一旦 end (= Phase 2 で TOTAL_STEPS に拡張)
       endTutorial();
     }
   }, [isActive, currentStep, endTutorial]);
@@ -154,7 +165,7 @@ export default function TutorialOverlay() {
   // 吹き出し位置: ターゲット (= ハイライト枠) に被らないよう、 target と反対側の画面端に固定配置。
   // - target が画面下半分 → balloon は上部 (top: 80)
   // - target が画面上半分 → balloon は下部 (bottom: 80)
-  // - target なし (= Konva 操作系 / build-canvas・obstacle-place 等) → 画面最上部に小さく配置し、
+  // - target なし (= Konva 操作系 / build-canvas・obstacle-place・obstacle-close 等) → 画面最上部に小さく配置し、
   //   canvas の方向ボタン・寸法モーダル等を覆わないようにする (maxHeight でスクロール対応)。
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const isTargetInBottomHalf = !!targetRect && targetRect.top > vh / 2;
