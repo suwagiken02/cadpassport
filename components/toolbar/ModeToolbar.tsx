@@ -129,6 +129,7 @@ export default function ModeToolbar() {
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setShowKutaiMenu(false)} />
           <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-2xl shadow-2xl p-4 flex gap-3 flex-wrap justify-center max-w-[calc(100vw-32px)]">
             <button
+              data-tutorial-id="kutai-building1f"
               onClick={() => {
                 useCanvasStore.getState().setShowBuildingModal(true);
                 setShowKutaiMenu(false);
@@ -149,6 +150,7 @@ export default function ModeToolbar() {
               <span className="text-sm font-bold">建物2F</span>
             </button>
             <button
+              data-tutorial-id="kutai-obstacle"
               onClick={() => {
                 setMode('obstacle');
                 setShowKutaiMenu(false);
@@ -159,6 +161,7 @@ export default function ModeToolbar() {
               <span className="text-sm font-bold">障害物</span>
             </button>
             <button
+              data-tutorial-id="kutai-height"
               onClick={() => {
                 setHeightMarkerMode(true);
                 setShowKutaiMenu(false);
@@ -169,6 +172,7 @@ export default function ModeToolbar() {
               <span className="text-sm font-bold">高さ</span>
             </button>
             <button
+              data-tutorial-id="kutai-roof"
               onClick={() => {
                 setMode('roof');
                 setShowKutaiMenu(false);
@@ -189,6 +193,7 @@ export default function ModeToolbar() {
           <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-2xl shadow-2xl p-4 flex gap-3 flex-wrap justify-center max-w-[calc(100vw-32px)]">
             {/* 足場開始（canvas 上の ★ アイコンと色統一: #FFD700 ゴールド系 = Tailwind yellow-400） */}
             <button
+              data-tutorial-id="ashiba-start"
               onClick={() => {
                 const s = useCanvasStore.getState();
                 if (s.canvasData.buildings.length === 0) {
@@ -206,6 +211,7 @@ export default function ModeToolbar() {
             </button>
             {/* 移動（選択移動モードに入る: カテゴリ別＋選択範囲のみ移動） */}
             <button
+              data-tutorial-id="ashiba-move"
               onClick={() => {
                 useCanvasStore.getState().enterMoveSelectMode();
                 setShowAshibaMenu(false);
@@ -217,6 +223,7 @@ export default function ModeToolbar() {
             </button>
             {/* 入れ替え（既存の toggleReorderMode を呼ぶ） */}
             <button
+              data-tutorial-id="ashiba-reorder"
               onClick={() => {
                 useCanvasStore.getState().toggleReorderMode();
                 setShowAshibaMenu(false);
@@ -228,6 +235,7 @@ export default function ModeToolbar() {
             </button>
             {/* 自動配置（旧・自動割付） */}
             <button
+              data-tutorial-id="ashiba-autolayout"
               onClick={() => {
                 const s = useCanvasStore.getState();
                 if (s.canvasData.buildings.length === 0) {
@@ -256,6 +264,7 @@ export default function ModeToolbar() {
             </button>
             {/* 平米計算 (= 平米計算 Phase C + D-1 事前チェック + D-2 1F+2F 分岐) */}
             <button
+              data-tutorial-id="ashiba-areacalc"
               onClick={() => {
                 const s = useCanvasStore.getState();
                 setShowAshibaMenu(false);

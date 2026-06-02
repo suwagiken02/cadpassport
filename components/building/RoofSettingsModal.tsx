@@ -157,7 +157,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
 
           {/* 出幅入力 */}
           {!roofNone && (uniform ? (
-            <div>
+            <div data-tutorial-id="roof-overhang-input">
               <label className="block text-sm text-dimension mb-1">出幅 (mm)</label>
               <NumInput value={uniformMm} onChange={setUniformMm} min={0} step={50} />
             </div>

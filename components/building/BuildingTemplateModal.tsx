@@ -381,6 +381,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
         <div className="flex border-b border-dark-border">
           {(['template', 'direction'] as BuildingInputMethod[]).map(m => (
             <button key={m}
+              data-tutorial-id={m === 'direction' ? 'building-wallinput-tab' : undefined}
               onClick={() => {
                 setBuildingInputMethod(m);
                 if (m === 'direction') {

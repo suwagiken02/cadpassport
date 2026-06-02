@@ -27,12 +27,14 @@ export default function TutorialOverlay() {
 
   // 対象要素の位置取得 (= resize / scroll / 動的 UI 変化に追従、 500ms ポーリング)
   useEffect(() => {
-    if (!step) {
+    // step が無い or targetSelector が null (= Konva 操作など DOM ハイライト不可ステップ) は枠なし
+    if (!step || !step.targetSelector) {
       setTargetRect(null);
       return;
     }
+    const selector = step.targetSelector;
     const update = () => {
-      const el = document.querySelector(step.targetSelector);
+      const el = document.querySelector(selector);
       if (el) {
         const r = el.getBoundingClientRect();
         setTargetRect((prev) => {
@@ -64,14 +66,23 @@ export default function TutorialOverlay() {
 
   // 完了検知: useCanvasStore subscribe
   const checkComplete = useCallback(() => {
-    if (!step || !step.completeWhen) return;
+    if (!step) return;
     const s = useCanvasStore.getState();
+    const t = useTutorialStore.getState();
+    // 自動配置ステップ突入時に handrails 本数を snapshot (= 足場開始分と区別し「増加」で完了検知)
+    if (step.id === 'autolayout' && t.handrailsBeforeAutolayout == null) {
+      t.setHandrailsBeforeAutolayout(s.canvasData.handrails.length);
+    }
+    if (!step.completeWhen) return;
     const ctx: TutorialContext = {
       canvasData: s.canvasData,
       mode: s.mode,
       showSettings: s.showSettings,
       showSettingsPanel: s.showSettingsPanel ?? false,
       showAreaCalcModal: s.showAreaCalcModal ?? false,
+      showBuildingModal: s.showBuildingModal ?? false,
+      autoOpenRoofForBuildingId: s.autoOpenRoofForBuildingId ?? null,
+      handrailsBeforeAutolayout: useTutorialStore.getState().handrailsBeforeAutolayout,
     };
     if (step.completeWhen(ctx)) {
       nextStep();

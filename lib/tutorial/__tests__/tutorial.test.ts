@@ -25,26 +25,38 @@ function emptyCtx(): TutorialContext {
     showSettings: false,
     showSettingsPanel: false,
     showAreaCalcModal: false,
+    showBuildingModal: false,
+    autoOpenRoofForBuildingId: null,
+    handrailsBeforeAutolayout: null,
   };
+}
+
+/** id でステップを取得 */
+function stepById(id: string) {
+  const s = TUTORIAL_STEPS.find((x) => x.id === id);
+  if (!s) throw new Error(`step not found: ${id}`);
+  return s;
 }
 
 describe('tutorialStore', () => {
   beforeEach(() => {
-    // テスト間 state リセット
-    useTutorialStore.setState({ isActive: false, currentStep: 0 });
+    useTutorialStore.setState({ isActive: false, currentStep: 0, handrailsBeforeAutolayout: null });
   });
 
-  it('デフォルトで isActive=false、 currentStep=0 (= 既存ユーザに勝手に出さない)', () => {
+  it('デフォルトで isActive=false、 currentStep=0、 handrailsBeforeAutolayout=null', () => {
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(false);
     expect(s.currentStep).toBe(0);
+    expect(s.handrailsBeforeAutolayout).toBeNull();
   });
 
-  it('startTutorial で isActive=true、 currentStep=0', () => {
+  it('startTutorial で isActive=true、 currentStep=0、 snapshot リセット', () => {
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 5 });
     useTutorialStore.getState().startTutorial();
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(true);
     expect(s.currentStep).toBe(0);
+    expect(s.handrailsBeforeAutolayout).toBeNull();
   });
 
   it('nextStep で currentStep が +1 される', () => {
@@ -55,57 +67,105 @@ describe('tutorialStore', () => {
     expect(useTutorialStore.getState().currentStep).toBe(2);
   });
 
-  it('skipTutorial で isActive=false、 currentStep=0 にリセット', () => {
+  it('skipTutorial で isActive=false、 currentStep=0、 snapshot リセット', () => {
     useTutorialStore.getState().startTutorial();
     useTutorialStore.getState().nextStep();
-    useTutorialStore.getState().nextStep();
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 3 });
     useTutorialStore.getState().skipTutorial();
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(false);
     expect(s.currentStep).toBe(0);
+    expect(s.handrailsBeforeAutolayout).toBeNull();
   });
 
-  it('endTutorial で isActive=false、 currentStep=0 にリセット', () => {
+  it('endTutorial で isActive=false、 currentStep=0、 snapshot リセット', () => {
     useTutorialStore.getState().startTutorial();
     useTutorialStore.getState().nextStep();
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 9 });
     useTutorialStore.getState().endTutorial();
     const s = useTutorialStore.getState();
     expect(s.isActive).toBe(false);
     expect(s.currentStep).toBe(0);
+    expect(s.handrailsBeforeAutolayout).toBeNull();
+  });
+
+  it('setHandrailsBeforeAutolayout で snapshot 値をセット', () => {
+    useTutorialStore.getState().setHandrailsBeforeAutolayout(2);
+    expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBe(2);
+    useTutorialStore.getState().setHandrailsBeforeAutolayout(null);
+    expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBeNull();
   });
 });
 
-describe('tutorialSteps Phase 1 + 2', () => {
-  it('全 9 ステップが定義されている (= Phase 1: 3 + Phase 2: 6)', () => {
-    expect(TUTORIAL_STEPS.length).toBe(9);
+describe('tutorialSteps Phase A (= 12 ステップ)', () => {
+  it('全 12 ステップが定義されている', () => {
+    expect(TUTORIAL_STEPS.length).toBe(12);
   });
 
-  it('TOTAL_STEPS = 9 (= Phase 2 完成時の総数)', () => {
-    expect(TOTAL_STEPS).toBe(9);
+  it('TOTAL_STEPS = 12 (= ステップ数と一致)', () => {
+    expect(TOTAL_STEPS).toBe(12);
+    expect(TOTAL_STEPS).toBe(TUTORIAL_STEPS.length);
   });
 
-  it('各ステップが id / targetSelector / title / description を持つ', () => {
+  it('ステップ id の順序が想定通り', () => {
+    expect(TUTORIAL_STEPS.map((s) => s.id)).toEqual([
+      'settings',
+      'building-open',
+      'wallinput-tab',
+      'build-canvas',
+      'roof',
+      'obstacle-open',
+      'obstacle-place',
+      'height',
+      'scaffold-start',
+      'autolayout',
+      'reorder',
+      'areacalc',
+    ]);
+  });
+
+  it('各ステップが id / title / description を持つ', () => {
     for (const step of TUTORIAL_STEPS) {
       expect(step.id).toBeTruthy();
-      expect(step.targetSelector).toMatch(/data-tutorial-id/);
       expect(step.title).toBeTruthy();
       expect(step.description).toBeTruthy();
     }
   });
 
-  it('ステップ 1 (= 設定) は completeWhen 未定義 (= 「次へ」 フォールバック)', () => {
-    expect(TUTORIAL_STEPS[0].id).toBe('settings');
-    expect(TUTORIAL_STEPS[0].completeWhen).toBeUndefined();
+  it('targetSelector は data-tutorial-id を指す文字列 または null (= Konva 操作)', () => {
+    for (const step of TUTORIAL_STEPS) {
+      if (step.targetSelector !== null) {
+        expect(step.targetSelector).toMatch(/data-tutorial-id/);
+      }
+    }
+    // Konva 操作ステップは targetSelector=null
+    expect(stepById('build-canvas').targetSelector).toBeNull();
+    expect(stepById('obstacle-place').targetSelector).toBeNull();
   });
 
-  it('ステップ 2 (= 躯体) は buildings 1 個以上で true', () => {
-    const step = TUTORIAL_STEPS[1];
-    expect(step.id).toBe('kutai-building');
-    expect(step.completeWhen).toBeDefined();
-    const fn = step.completeWhen!;
-    // 空 canvas は false
+  it('ステップ settings は completeWhen 未定義 (= 「次へ」 フォールバック)', () => {
+    expect(stepById('settings').completeWhen).toBeUndefined();
+  });
+
+  it('ステップ building-open は showBuildingModal=true で true', () => {
+    const fn = stepById('building-open').completeWhen!;
     expect(fn(emptyCtx())).toBe(false);
-    // building 1 個追加で true
+    const ctx = emptyCtx();
+    ctx.showBuildingModal = true;
+    expect(fn(ctx)).toBe(true);
+  });
+
+  it("ステップ wallinput-tab は mode==='building' で true", () => {
+    const fn = stepById('wallinput-tab').completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx = emptyCtx();
+    ctx.mode = 'building';
+    expect(fn(ctx)).toBe(true);
+  });
+
+  it('ステップ build-canvas は buildings 1 個以上で true', () => {
+    const fn = stepById('build-canvas').completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
     const ctx = emptyCtx();
     ctx.canvasData.buildings = [
       { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000' },
@@ -113,14 +173,35 @@ describe('tutorialSteps Phase 1 + 2', () => {
     expect(fn(ctx)).toBe(true);
   });
 
-  it('ステップ 3 (= 障害物) は obstacles 1 個以上で true', () => {
-    const step = TUTORIAL_STEPS[2];
-    expect(step.id).toBe('obstacle');
-    expect(step.completeWhen).toBeDefined();
-    const fn = step.completeWhen!;
-    // 空 canvas は false
+  it('ステップ roof は いずれかの building の roof.uniformMm===500 で true', () => {
+    const fn = stepById('roof').completeWhen!;
+    // 建物なし → false
     expect(fn(emptyCtx())).toBe(false);
-    // obstacle 1 個追加で true
+    // 既定 600 のまま → false
+    const ctx600 = emptyCtx();
+    ctx600.canvasData.buildings = [
+      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null } },
+    ];
+    expect(fn(ctx600)).toBe(false);
+    // 500 に変更 → true
+    const ctx500 = emptyCtx();
+    ctx500.canvasData.buildings = [
+      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 500, northMm: null, southMm: null, eastMm: null, westMm: null } },
+    ];
+    expect(fn(ctx500)).toBe(true);
+  });
+
+  it("ステップ obstacle-open は mode==='obstacle' で true", () => {
+    const fn = stepById('obstacle-open').completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx = emptyCtx();
+    ctx.mode = 'obstacle';
+    expect(fn(ctx)).toBe(true);
+  });
+
+  it('ステップ obstacle-place は obstacles 1 個以上で true', () => {
+    const fn = stepById('obstacle-place').completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
     const ctx = emptyCtx();
     ctx.canvasData.obstacles = [
       { id: 'o1', type: 'ecocute', x: 0, y: 0, width: 10, height: 10 },
@@ -128,70 +209,59 @@ describe('tutorialSteps Phase 1 + 2', () => {
     expect(fn(ctx)).toBe(true);
   });
 
-  // Phase 2 (= step 4-9)
-
-  it('ステップ 4 (= 屋根変更) は completeWhen 未定義 (= 「次へ」 フォールバック)', () => {
-    expect(TUTORIAL_STEPS[3].id).toBe('roof');
-    expect(TUTORIAL_STEPS[3].targetSelector).toContain('kutai-button');
-    expect(TUTORIAL_STEPS[3].completeWhen).toBeUndefined();
-  });
-
-  it('ステップ 5 (= 高さ設定) は heightMarkers 1 個以上で true', () => {
-    const step = TUTORIAL_STEPS[4];
-    expect(step.id).toBe('height-marker');
-    expect(step.targetSelector).toContain('kutai-button');
-    const fn = step.completeWhen!;
+  it('ステップ height は heightMarkers 1 個以上で true、 undefined でも false', () => {
+    const fn = stepById('height').completeWhen!;
     expect(fn(emptyCtx())).toBe(false);
-    // heightMarker 追加で true
+    const ctxUndef = emptyCtx();
+    ctxUndef.canvasData.heightMarkers = undefined;
+    expect(fn(ctxUndef)).toBe(false);
     const ctx = emptyCtx();
     ctx.canvasData.heightMarkers = [
-      { id: 'hm1', buildingId: 'b1', edgeIndex: 0, t: 0.5, heightMm: 2500 },
+      { id: 'hm1', buildingId: 'b1', edgeIndex: 0, t: 0.5, heightMm: 6000 },
     ];
     expect(fn(ctx)).toBe(true);
   });
 
-  it('ステップ 5 は heightMarkers が undefined でも false (= 既存データ互換)', () => {
-    const fn = TUTORIAL_STEPS[4].completeWhen!;
-    const ctx = emptyCtx();
-    ctx.canvasData.heightMarkers = undefined;
-    expect(fn(ctx)).toBe(false);
+  it('ステップ scaffold-start は scaffoldStart1F または 2F があれば true', () => {
+    const fn = stepById('scaffold-start').completeWhen!;
+    expect(fn(emptyCtx())).toBe(false);
+    const ctx1 = emptyCtx();
+    ctx1.canvasData.scaffoldStart1F = { corner: 'tl' } as never;
+    expect(fn(ctx1)).toBe(true);
+    const ctx2 = emptyCtx();
+    ctx2.canvasData.scaffoldStart2F = { corner: 'tl' } as never;
+    expect(fn(ctx2)).toBe(true);
   });
 
-  it('ステップ 6 (= 足場配置) は handrails 1 個以上で true', () => {
-    const step = TUTORIAL_STEPS[5];
-    expect(step.id).toBe('scaffold-auto');
-    expect(step.targetSelector).toContain('ashiba-button');
-    const fn = step.completeWhen!;
+  it('ステップ autolayout は snapshot より handrails が増えたら true', () => {
+    const fn = stepById('autolayout').completeWhen!;
+    // snapshot 未設定 (null) → false
     expect(fn(emptyCtx())).toBe(false);
-    const ctx = emptyCtx();
-    ctx.canvasData.handrails = [
+    // snapshot=2 で handrails も 2 → 増えてない → false
+    const ctxEq = emptyCtx();
+    ctxEq.handrailsBeforeAutolayout = 2;
+    ctxEq.canvasData.handrails = [
       { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+      { id: 'h2', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
     ];
-    expect(fn(ctx)).toBe(true);
+    expect(fn(ctxEq)).toBe(false);
+    // snapshot=2 で handrails 3 → 増えた → true
+    const ctxInc = emptyCtx();
+    ctxInc.handrailsBeforeAutolayout = 2;
+    ctxInc.canvasData.handrails = [
+      { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+      { id: 'h2', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+      { id: 'h3', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+    ];
+    expect(fn(ctxInc)).toBe(true);
   });
 
-  it('ステップ 7 (= 足場入れ替え) は completeWhen 未定義 (= 「次へ」 フォールバック)', () => {
-    expect(TUTORIAL_STEPS[6].id).toBe('scaffold-reorder');
-    expect(TUTORIAL_STEPS[6].targetSelector).toContain('ashiba-button');
-    expect(TUTORIAL_STEPS[6].completeWhen).toBeUndefined();
+  it('ステップ reorder は completeWhen 未定義 (= 任意・「次へ」 フォールバック)', () => {
+    expect(stepById('reorder').completeWhen).toBeUndefined();
   });
 
-  it("ステップ 8 (= 足場移動) は mode === 'move-select' で true", () => {
-    const step = TUTORIAL_STEPS[7];
-    expect(step.id).toBe('scaffold-move');
-    expect(step.targetSelector).toContain('ashiba-button');
-    const fn = step.completeWhen!;
-    expect(fn(emptyCtx())).toBe(false);
-    const ctx = emptyCtx();
-    ctx.mode = 'move-select';
-    expect(fn(ctx)).toBe(true);
-  });
-
-  it('ステップ 9 (= 平米計算) は showAreaCalcModal=true で true', () => {
-    const step = TUTORIAL_STEPS[8];
-    expect(step.id).toBe('area-calc');
-    expect(step.targetSelector).toContain('ashiba-button');
-    const fn = step.completeWhen!;
+  it('ステップ areacalc は showAreaCalcModal=true で true', () => {
+    const fn = stepById('areacalc').completeWhen!;
     expect(fn(emptyCtx())).toBe(false);
     const ctx = emptyCtx();
     ctx.showAreaCalcModal = true;
