@@ -140,17 +140,20 @@ export default function TutorialOverlay() {
   // 吹き出し位置: ターゲット (= ハイライト枠) に被らないよう、 target と反対側の画面端に固定配置。
   // - target が画面下半分 → balloon は上部 (top: 80)
   // - target が画面上半分 → balloon は下部 (bottom: 80)
-  // - target なし → 画面中央
+  // - target なし (= Konva 操作系 / build-canvas・obstacle-place 等) → 画面最上部に小さく配置し、
+  //   canvas の方向ボタン・寸法モーダル等を覆わないようにする (maxHeight でスクロール対応)。
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const isTargetInBottomHalf = !!targetRect && targetRect.top > vh / 2;
   const balloonStyle: React.CSSProperties = !targetRect
     ? {
         position: 'fixed',
+        top: 16,
         left: '50%',
-        top: '50%',
-        transform: 'translate(-50%, -50%)',
+        transform: 'translateX(-50%)',
         width: 320,
         maxWidth: '90vw',
+        maxHeight: 200,
+        overflowY: 'auto',
         zIndex: 110,
       }
     : {
