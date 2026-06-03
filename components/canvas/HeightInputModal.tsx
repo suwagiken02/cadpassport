@@ -53,7 +53,7 @@ export default function HeightInputModal() {
     <div className="fixed inset-0 modal-overlay z-50 flex items-center justify-center">
       <div className="bg-dark-surface border border-dark-border rounded-2xl p-5 max-w-xs mx-4 w-full">
         <h2 className="text-base text-canvas font-bold mb-4">高さ入力</h2>
-        <div className="flex items-center gap-2 mb-5">
+        <div data-tutorial-id="height-input" className="flex items-center gap-2 mb-5">
           <NumInput
             value={marker.heightMm}
             onChange={handleChange}
@@ -71,6 +71,7 @@ export default function HeightInputModal() {
             削除
           </button>
           <button
+            data-tutorial-id="height-ok"
             onClick={handleClose}
             className="flex-1 py-2 bg-accent text-white rounded-xl text-sm font-bold"
           >

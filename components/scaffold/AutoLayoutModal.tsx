@@ -1435,7 +1435,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           })()}
 
           {/* 計算ボタン */}
-          <button onClick={handleCalc}
+          <button onClick={handleCalc} data-tutorial-id="autolayout-calc"
             className="w-full py-2.5 bg-dark-bg border border-accent text-accent font-bold rounded-xl text-sm hover:bg-accent/10 transition-colors"
           >
             計算する
@@ -1649,7 +1649,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 );
               })()}
 
-              <button onClick={handlePlace}
+              <button onClick={handlePlace} data-tutorial-id="autolayout-place"
                 className="w-full py-3 bg-accent text-white font-bold rounded-xl text-lg"
               >
                 配置する

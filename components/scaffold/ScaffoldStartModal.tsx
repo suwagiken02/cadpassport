@@ -264,6 +264,7 @@ export default function ScaffoldStartModal({ onClose }: Props) {
           {/* 確定ボタン */}
           <button
             type="button"
+            data-tutorial-id="scaffold-start-confirm"
             onClick={handleConfirm}
             disabled={!targetBuilding}
             className="w-full py-3 bg-accent text-white font-bold rounded-xl text-lg disabled:opacity-40 disabled:cursor-not-allowed"

@@ -692,7 +692,7 @@ export default function PartSelector() {
             {/* 種類選択 */}
             <div className="flex gap-1.5 overflow-x-auto">
               {OBSTACLE_TYPES.map((o) => (
-                <button key={o.id} onClick={() => selectObstacle(o.id)}
+                <button key={o.id} data-tutorial-id={`obstacle-type-${o.id}`} onClick={() => selectObstacle(o.id)}
                   className={`px-2 py-1 rounded-lg text-[10px] shrink-0 ${selectedObstacleType === o.id ? 'ring-2 ring-accent' : ''}`}
                   style={{ backgroundColor: o.color, color: '#333' }}
                 >{o.label}</button>
@@ -726,6 +726,7 @@ export default function PartSelector() {
                 {/* ドラッグして配置 + 壁方向入力 */}
                 <div className="flex gap-1.5">
                   <div
+                    data-tutorial-id="obstacle-place-area"
                     onPointerDown={handleObstacleDown}
                     className="flex-1 relative flex items-center justify-center h-11 rounded-lg border-2 border-dashed border-dark-border cursor-grab active:cursor-grabbing select-none touch-none"
                     style={{ backgroundColor: OBSTACLE_TYPES.find(o => o.id === selectedObstacleType)?.color + '30' }}

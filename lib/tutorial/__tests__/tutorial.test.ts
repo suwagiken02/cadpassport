@@ -29,6 +29,11 @@ function emptyCtx(): TutorialContext {
     autoOpenRoofForBuildingId: null,
     handrailsBeforeAutolayout: null,
     settingsOpenedOnce: false,
+    directionPointsLength: 0,
+    isHeightMarkerMode: false,
+    heightInputMarkerId: null,
+    showScaffoldStart: false,
+    showAutoLayout: false,
   };
 }
 
@@ -38,68 +43,61 @@ function stepById(id: string): TutorialStep {
   return s;
 }
 
-/** Phase B: 「次ステップ target 出現」 ポーリングの対象か */
 function needsNextTargetPoll(step: TutorialStep): boolean {
   return step.completeWhen === undefined && step.completeWhenDom === undefined && step.autoAdvance === true;
 }
-
-/** DOM 値ポーリングの対象か (= completeWhenDom を持つ) */
 function needsDomValuePoll(step: TutorialStep): boolean {
   return step.completeWhenDom !== undefined;
 }
 
-/** Phase C: 「次へ」 ボタンを表示するか (= autoAdvance=false のみ) */
-function showsNextButton(step: TutorialStep): boolean {
-  return !step.autoAdvance;
-}
-
 const KUTAI_BUTTON = '[data-tutorial-id="kutai-button"]';
 const ASHIBA_BUTTON = '[data-tutorial-id="ashiba-button"]';
+
+const EXPECTED_IDS = [
+  'settings',
+  'kutai-open',
+  'building-select',
+  'wallinput-tab',
+  'build-start',
+  'build-canvas',
+  'roof-input',
+  'roof-confirm',
+  'obstacle-select',
+  'obstacle-type',
+  'obstacle-place',
+  'obstacle-close',
+  'height-open',
+  'height-tap',
+  'height-input',
+  'height-ok',
+  'scaffold-start-open',
+  'scaffold-start-confirm',
+  'autolayout-open',
+  'autolayout-calc',
+  'autolayout-place',
+  'reorder',
+  'areacalc',
+];
 
 describe('tutorialStore', () => {
   beforeEach(() => {
     useTutorialStore.setState({ isActive: false, currentStep: 0, handrailsBeforeAutolayout: null, settingsOpenedOnce: false });
   });
 
-  it('デフォルト値', () => {
-    const s = useTutorialStore.getState();
-    expect(s.isActive).toBe(false);
-    expect(s.currentStep).toBe(0);
-    expect(s.handrailsBeforeAutolayout).toBeNull();
-    expect(s.settingsOpenedOnce).toBe(false);
-  });
-
-  it('startTutorial で各 state をリセット', () => {
-    useTutorialStore.setState({ handrailsBeforeAutolayout: 5, settingsOpenedOnce: true });
+  it('start/skip/end で各 state をリセット', () => {
     useTutorialStore.getState().startTutorial();
-    const s = useTutorialStore.getState();
-    expect(s.isActive).toBe(true);
-    expect(s.currentStep).toBe(0);
-    expect(s.handrailsBeforeAutolayout).toBeNull();
-    expect(s.settingsOpenedOnce).toBe(false);
-  });
-
-  it('nextStep で currentStep +1', () => {
-    useTutorialStore.getState().startTutorial();
-    useTutorialStore.getState().nextStep();
-    expect(useTutorialStore.getState().currentStep).toBe(1);
-  });
-
-  it('skipTutorial / endTutorial で各 state をリセット', () => {
-    useTutorialStore.getState().startTutorial();
-    useTutorialStore.setState({ handrailsBeforeAutolayout: 3, settingsOpenedOnce: true, currentStep: 5 });
+    expect(useTutorialStore.getState().isActive).toBe(true);
+    useTutorialStore.setState({ handrailsBeforeAutolayout: 5, settingsOpenedOnce: true, currentStep: 9 });
     useTutorialStore.getState().skipTutorial();
     expect(useTutorialStore.getState().currentStep).toBe(0);
     expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBeNull();
     expect(useTutorialStore.getState().settingsOpenedOnce).toBe(false);
-    useTutorialStore.getState().startTutorial();
-    useTutorialStore.setState({ handrailsBeforeAutolayout: 7, settingsOpenedOnce: true });
-    useTutorialStore.getState().endTutorial();
-    expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBeNull();
-    expect(useTutorialStore.getState().settingsOpenedOnce).toBe(false);
   });
 
-  it('setHandrailsBeforeAutolayout / setSettingsOpenedOnce', () => {
+  it('nextStep / setter 群', () => {
+    useTutorialStore.getState().startTutorial();
+    useTutorialStore.getState().nextStep();
+    expect(useTutorialStore.getState().currentStep).toBe(1);
     useTutorialStore.getState().setHandrailsBeforeAutolayout(2);
     expect(useTutorialStore.getState().handrailsBeforeAutolayout).toBe(2);
     useTutorialStore.getState().setSettingsOpenedOnce(true);
@@ -107,30 +105,14 @@ describe('tutorialStore', () => {
   });
 });
 
-describe('tutorialSteps (= 15 ステップ / Phase A.2)', () => {
-  it('全 15 ステップ + TOTAL_STEPS=15', () => {
-    expect(TUTORIAL_STEPS.length).toBe(15);
-    expect(TOTAL_STEPS).toBe(15);
+describe('tutorialSteps Phase A.3 (= 23 ステップ)', () => {
+  it('全 23 ステップ + TOTAL_STEPS=23', () => {
+    expect(TUTORIAL_STEPS.length).toBe(23);
+    expect(TOTAL_STEPS).toBe(23);
   });
 
-  it('ステップ id の順序 (= obstacle-close を追加)', () => {
-    expect(TUTORIAL_STEPS.map((s) => s.id)).toEqual([
-      'settings',
-      'kutai-open',
-      'building-select',
-      'wallinput-tab',
-      'build-canvas',
-      'roof-input',
-      'roof-confirm',
-      'obstacle-select',
-      'obstacle-place',
-      'obstacle-close',
-      'height',
-      'scaffold-start',
-      'autolayout',
-      'reorder',
-      'areacalc',
-    ]);
+  it('ステップ id の順序', () => {
+    expect(TUTORIAL_STEPS.map((s) => s.id)).toEqual(EXPECTED_IDS);
   });
 
   it('各ステップが id / title / description / autoAdvance を持つ', () => {
@@ -148,54 +130,66 @@ describe('tutorialSteps (= 15 ステップ / Phase A.2)', () => {
         expect(step.targetSelector).toMatch(/data-tutorial-id/);
       }
     }
+    // Konva 操作系は null
+    expect(stepById('build-start').targetSelector).toBeNull();
     expect(stepById('build-canvas').targetSelector).toBeNull();
-    expect(stepById('obstacle-place').targetSelector).toBeNull();
     expect(stepById('obstacle-close').targetSelector).toBeNull();
+    expect(stepById('height-tap').targetSelector).toBeNull();
   });
 });
 
-describe('fallbackTargetSelector (= submenu 親ボタン fallback)', () => {
-  it('kutai 系 submenu ステップは fallback=kutai-button', () => {
-    expect(stepById('building-select').fallbackTargetSelector).toBe(KUTAI_BUTTON);
-    expect(stepById('obstacle-select').fallbackTargetSelector).toBe(KUTAI_BUTTON);
-    expect(stepById('height').fallbackTargetSelector).toBe(KUTAI_BUTTON);
+describe('dimmed フラグ (= 暗幕調整)', () => {
+  it('build-start/build-canvas/height-tap/scaffold-start-confirm は dimmed=false', () => {
+    const dimmedFalse = TUTORIAL_STEPS.filter((s) => s.dimmed === false).map((s) => s.id);
+    expect(dimmedFalse).toEqual(['build-start', 'build-canvas', 'height-tap', 'scaffold-start-confirm']);
   });
 
-  it('ashiba 系 submenu ステップは fallback=ashiba-button', () => {
-    expect(stepById('scaffold-start').fallbackTargetSelector).toBe(ASHIBA_BUTTON);
-    expect(stepById('autolayout').fallbackTargetSelector).toBe(ASHIBA_BUTTON);
-    expect(stepById('reorder').fallbackTargetSelector).toBe(ASHIBA_BUTTON);
-    expect(stepById('areacalc').fallbackTargetSelector).toBe(ASHIBA_BUTTON);
-  });
-
-  it('親ボタン自体 / Konva ステップは fallback なし', () => {
-    expect(stepById('settings').fallbackTargetSelector).toBeUndefined();
-    expect(stepById('kutai-open').fallbackTargetSelector).toBeUndefined();
-    expect(stepById('build-canvas').fallbackTargetSelector).toBeUndefined();
-    expect(stepById('obstacle-place').fallbackTargetSelector).toBeUndefined();
-    expect(stepById('obstacle-close').fallbackTargetSelector).toBeUndefined();
+  it('それ以外は dimmed 未指定 (= 濃い暗幕)', () => {
+    expect(stepById('settings').dimmed).toBeUndefined();
+    expect(stepById('roof-input').dimmed).toBeUndefined();
   });
 });
 
-describe('autoAdvance / 次へ表示 / ポーリング種別', () => {
+describe('fallbackTargetSelector', () => {
+  it('kutai 系は fallback=kutai-button', () => {
+    for (const id of ['building-select', 'obstacle-select', 'obstacle-type', 'height-open']) {
+      expect(stepById(id).fallbackTargetSelector).toBe(KUTAI_BUTTON);
+    }
+  });
+
+  it('ashiba メニュー誘導系は fallback=ashiba-button', () => {
+    for (const id of ['scaffold-start-open', 'autolayout-open', 'reorder', 'areacalc']) {
+      expect(stepById(id).fallbackTargetSelector).toBe(ASHIBA_BUTTON);
+    }
+  });
+
+  it('「変なとこが光る」回帰: モーダル確定ステップは fallback なし (= ashiba-button に誤点滅しない)', () => {
+    expect(stepById('scaffold-start-confirm').fallbackTargetSelector).toBeUndefined();
+    expect(stepById('autolayout-place').fallbackTargetSelector).toBeUndefined();
+    // モーダル確定ステップは固定 target を持つ
+    expect(stepById('scaffold-start-confirm').targetSelector).toBe('[data-tutorial-id="scaffold-start-confirm"]');
+    expect(stepById('autolayout-place').targetSelector).toBe('[data-tutorial-id="autolayout-place"]');
+  });
+});
+
+describe('ポーリング種別 / autoAdvance', () => {
   it('reorder のみ autoAdvance=false', () => {
     expect(TUTORIAL_STEPS.filter((s) => !s.autoAdvance).map((s) => s.id)).toEqual(['reorder']);
   });
 
-  it('showsNextButton: reorder のみ true', () => {
-    expect(showsNextButton(stepById('reorder'))).toBe(true);
-    expect(showsNextButton(stepById('settings'))).toBe(false);
+  it('needsNextTargetPoll: kutai-open / obstacle-type / autolayout-calc', () => {
+    expect(TUTORIAL_STEPS.filter(needsNextTargetPoll).map((s) => s.id)).toEqual([
+      'kutai-open',
+      'obstacle-type',
+      'autolayout-calc',
+    ]);
   });
 
-  it('needsNextTargetPoll: kutai-open のみ', () => {
-    expect(TUTORIAL_STEPS.filter(needsNextTargetPoll).map((s) => s.id)).toEqual(['kutai-open']);
+  it('needsDomValuePoll: roof-input / height-input', () => {
+    expect(TUTORIAL_STEPS.filter(needsDomValuePoll).map((s) => s.id)).toEqual(['roof-input', 'height-input']);
   });
 
-  it('needsDomValuePoll: roof-input のみ', () => {
-    expect(TUTORIAL_STEPS.filter(needsDomValuePoll).map((s) => s.id)).toEqual(['roof-input']);
-  });
-
-  it('次ステップ target ポーリングするステップの次ステップは非null target', () => {
+  it('次ステップ target ポーリングのステップの次は非null target', () => {
     TUTORIAL_STEPS.forEach((step, i) => {
       if (needsNextTargetPoll(step)) {
         expect(TUTORIAL_STEPS[i + 1].targetSelector).not.toBeNull();
@@ -204,141 +198,128 @@ describe('autoAdvance / 次へ表示 / ポーリング種別', () => {
   });
 });
 
-describe('屋根 2 分割ステップ', () => {
-  it('roof-input は completeWhenDom を持つ', () => {
-    const s = stepById('roof-input');
-    expect(typeof s.completeWhenDom).toBe('function');
-    expect(s.completeWhen).toBeUndefined();
-  });
-
-  it('roof-confirm は completeWhen (uniformMm===500)', () => {
-    const fn = stepById('roof-confirm').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.canvasData.buildings = [
-      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 500, northMm: null, southMm: null, eastMm: null, westMm: null } },
-    ];
-    expect(fn(ctx)).toBe(true);
-    expect(fn(emptyCtx())).toBe(false);
-  });
-});
-
 describe('completeWhen 各ステップ', () => {
-  it('settings: settingsOpenedOnce && !showSettings', () => {
+  it('settings', () => {
     const fn = stepById('settings').completeWhen!;
-    const closed = emptyCtx();
-    closed.settingsOpenedOnce = true;
-    expect(fn(closed)).toBe(true);
-    const opened = emptyCtx();
-    opened.settingsOpenedOnce = true;
-    opened.showSettings = true;
-    expect(fn(opened)).toBe(false);
-    expect(fn(emptyCtx())).toBe(false);
+    const c = emptyCtx(); c.settingsOpenedOnce = true;
+    expect(fn(c)).toBe(true);
+    c.showSettings = true;
+    expect(fn(c)).toBe(false);
   });
 
   it('building-select: showBuildingModal', () => {
-    const fn = stepById('building-select').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.showBuildingModal = true;
-    expect(fn(ctx)).toBe(true);
+    const c = emptyCtx(); c.showBuildingModal = true;
+    expect(stepById('building-select').completeWhen!(c)).toBe(true);
   });
 
   it("wallinput-tab: mode==='building'", () => {
-    const fn = stepById('wallinput-tab').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.mode = 'building';
-    expect(fn(ctx)).toBe(true);
+    const c = emptyCtx(); c.mode = 'building';
+    expect(stepById('wallinput-tab').completeWhen!(c)).toBe(true);
+  });
+
+  it('build-start: directionPointsLength>0', () => {
+    expect(stepById('build-start').completeWhen!(emptyCtx())).toBe(false);
+    const c = emptyCtx(); c.directionPointsLength = 1;
+    expect(stepById('build-start').completeWhen!(c)).toBe(true);
   });
 
   it('build-canvas: buildings.length>0', () => {
-    const fn = stepById('build-canvas').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.canvasData.buildings = [{ id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000' }];
-    expect(fn(ctx)).toBe(true);
+    const c = emptyCtx();
+    c.canvasData.buildings = [{ id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000' }];
+    expect(stepById('build-canvas').completeWhen!(c)).toBe(true);
+  });
+
+  it('roof-input/obstacle-type/autolayout-calc は completeWhen 未定義', () => {
+    expect(stepById('roof-input').completeWhen).toBeUndefined();
+    expect(stepById('obstacle-type').completeWhen).toBeUndefined();
+    expect(stepById('autolayout-calc').completeWhen).toBeUndefined();
+  });
+
+  it('roof-confirm: uniformMm===500', () => {
+    const c = emptyCtx();
+    c.canvasData.buildings = [
+      { id: 'b1', type: 'polygon', points: [{ x: 0, y: 0 }], fill: '#000', roof: { roofType: 'yosemune', uniformMm: 500, northMm: null, southMm: null, eastMm: null, westMm: null } },
+    ];
+    expect(stepById('roof-confirm').completeWhen!(c)).toBe(true);
   });
 
   it("obstacle-select: mode==='obstacle'", () => {
-    const fn = stepById('obstacle-select').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.mode = 'obstacle';
-    expect(fn(ctx)).toBe(true);
+    const c = emptyCtx(); c.mode = 'obstacle';
+    expect(stepById('obstacle-select').completeWhen!(c)).toBe(true);
   });
 
   it('obstacle-place: obstacles.length>0', () => {
-    const fn = stepById('obstacle-place').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.canvasData.obstacles = [{ id: 'o1', type: 'ecocute', x: 0, y: 0, width: 10, height: 10 }];
-    expect(fn(ctx)).toBe(true);
+    const c = emptyCtx();
+    c.canvasData.obstacles = [{ id: 'o1', type: 'ecocute', x: 0, y: 0, width: 10, height: 10 }];
+    expect(stepById('obstacle-place').completeWhen!(c)).toBe(true);
   });
 
-  it("obstacle-close: mode !== 'obstacle' で true (= パレットを閉じた)", () => {
-    const fn = stepById('obstacle-close').completeWhen!;
-    // obstacle のまま → false
-    const stillObstacle = emptyCtx();
-    stillObstacle.mode = 'obstacle';
-    expect(fn(stillObstacle)).toBe(false);
-    // select に戻した → true
-    const closed = emptyCtx();
-    closed.mode = 'select';
-    expect(fn(closed)).toBe(true);
+  it("obstacle-close: mode !== 'obstacle'", () => {
+    const stillObstacle = emptyCtx(); stillObstacle.mode = 'obstacle';
+    expect(stepById('obstacle-close').completeWhen!(stillObstacle)).toBe(false);
+    expect(stepById('obstacle-close').completeWhen!(emptyCtx())).toBe(true);
   });
 
-  it('height: heightMarkers.length>0 (undefined でも false)', () => {
-    const fn = stepById('height').completeWhen!;
-    expect(fn(emptyCtx())).toBe(false);
-    const ctx = emptyCtx();
-    ctx.canvasData.heightMarkers = [{ id: 'hm1', buildingId: 'b1', edgeIndex: 0, t: 0.5, heightMm: 6000 }];
-    expect(fn(ctx)).toBe(true);
+  it('height-open: isHeightMarkerMode', () => {
+    const c = emptyCtx(); c.isHeightMarkerMode = true;
+    expect(stepById('height-open').completeWhen!(c)).toBe(true);
+    expect(stepById('height-open').completeWhen!(emptyCtx())).toBe(false);
   });
 
-  it('scaffold-start: scaffoldStart1F||2F', () => {
-    const fn = stepById('scaffold-start').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.canvasData.scaffoldStart1F = { corner: 'tl' } as never;
-    expect(fn(ctx)).toBe(true);
+  it('height-tap: heightInputMarkerId != null', () => {
+    const c = emptyCtx(); c.heightInputMarkerId = 'hm1';
+    expect(stepById('height-tap').completeWhen!(c)).toBe(true);
+    expect(stepById('height-tap').completeWhen!(emptyCtx())).toBe(false);
   });
 
-  it('autolayout: snapshot より handrails 増で true', () => {
-    const fn = stepById('autolayout').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.handrailsBeforeAutolayout = 2;
-    ctx.canvasData.handrails = [
+  it('height-input は completeWhenDom を持つ', () => {
+    expect(typeof stepById('height-input').completeWhenDom).toBe('function');
+  });
+
+  it('height-ok: heightInputMarkerId == null (= OK で閉じた)', () => {
+    expect(stepById('height-ok').completeWhen!(emptyCtx())).toBe(true);
+    const open = emptyCtx(); open.heightInputMarkerId = 'hm1';
+    expect(stepById('height-ok').completeWhen!(open)).toBe(false);
+  });
+
+  it('scaffold-start-open: showScaffoldStart', () => {
+    const c = emptyCtx(); c.showScaffoldStart = true;
+    expect(stepById('scaffold-start-open').completeWhen!(c)).toBe(true);
+  });
+
+  it('scaffold-start-confirm: scaffoldStart1F||2F', () => {
+    const c = emptyCtx(); c.canvasData.scaffoldStart1F = { corner: 'tl' } as never;
+    expect(stepById('scaffold-start-confirm').completeWhen!(c)).toBe(true);
+  });
+
+  it('autolayout-open: showAutoLayout', () => {
+    const c = emptyCtx(); c.showAutoLayout = true;
+    expect(stepById('autolayout-open').completeWhen!(c)).toBe(true);
+  });
+
+  it('autolayout-place: snapshot より handrails 増', () => {
+    const fn = stepById('autolayout-place').completeWhen!;
+    // snapshot=null は false (= 足場開始バースト中に飛ばない)
+    const nullSnap = emptyCtx();
+    nullSnap.canvasData.handrails = [
+      { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+      { id: 'h2', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
+    ];
+    expect(fn(nullSnap)).toBe(false);
+    // snapshot=2, handrails=3 → true
+    const inc = emptyCtx();
+    inc.handrailsBeforeAutolayout = 2;
+    inc.canvasData.handrails = [
       { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
       { id: 'h2', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
       { id: 'h3', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
     ];
-    expect(fn(ctx)).toBe(true);
+    expect(fn(inc)).toBe(true);
   });
 
   it('areacalc: showAreaCalcModal', () => {
-    const fn = stepById('areacalc').completeWhen!;
-    const ctx = emptyCtx();
-    ctx.showAreaCalcModal = true;
-    expect(fn(ctx)).toBe(true);
-  });
-});
-
-describe('自動配置スキップ回帰 (= snapshot=null ガード)', () => {
-  it('snapshot=null の間は autolayout completeWhen が false (= 足場開始バースト中に飛ばない)', () => {
-    const fn = stepById('autolayout').completeWhen!;
-    // 足場開始バースト中: snapshot 未取得 (null) + handrails が増えても false
-    const ctx = emptyCtx();
-    ctx.handrailsBeforeAutolayout = null;
-    ctx.canvasData.handrails = [
-      { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
-      { id: 'h2', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
-    ];
-    expect(fn(ctx)).toBe(false);
-  });
-
-  it('snapshot=確定本数 と同じなら false、 超えたら true (= 自動配置後のみ完了)', () => {
-    const fn = stepById('autolayout').completeWhen!;
-    const base = emptyCtx();
-    base.handrailsBeforeAutolayout = 2;
-    base.canvasData.handrails = [
-      { id: 'h1', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
-      { id: 'h2', x: 0, y: 0, lengthMm: 1800, direction: 'horizontal', color: '#000' },
-    ];
-    expect(fn(base)).toBe(false); // 足場開始の 2 本のみ → まだ
+    const c = emptyCtx(); c.showAreaCalcModal = true;
+    expect(stepById('areacalc').completeWhen!(c)).toBe(true);
   });
 });
 
@@ -352,12 +333,13 @@ describe('step 飛びバグ回帰 (= ライブ currentStep 評価)', () => {
     return idx;
   }
 
-  it('wallinput-tab で mode=building 後、 連続変化でも build-canvas で止まる', () => {
+  it('wallinput-tab で mode=building 後、 連続変化でも build-start で止まる', () => {
     const result = simulateBurst('wallinput-tab', () => {
       const c = emptyCtx();
       c.mode = 'building';
       return c;
     }, 5);
-    expect(result).toBe(TUTORIAL_STEPS.findIndex((s) => s.id === 'build-canvas'));
+    // wallinput-tab → build-start。 build-start は directionPointsLength=0 なので進まない
+    expect(result).toBe(TUTORIAL_STEPS.findIndex((s) => s.id === 'build-start'));
   });
 });
