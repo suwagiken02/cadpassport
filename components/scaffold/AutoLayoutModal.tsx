@@ -1676,6 +1676,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             </button>
             <button
               onClick={handleConflictOk}
+              data-tutorial-id="autolayout-conflict-ok"
               className="flex-1 py-2 bg-accent text-white font-bold rounded-xl text-sm"
             >
               削除して配置

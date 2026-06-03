@@ -133,8 +133,9 @@ describe('tutorialSteps Phase A.3 (= 23 ステップ)', () => {
     // Konva 操作系は null
     expect(stepById('build-start').targetSelector).toBeNull();
     expect(stepById('build-canvas').targetSelector).toBeNull();
-    expect(stepById('obstacle-close').targetSelector).toBeNull();
     expect(stepById('height-tap').targetSelector).toBeNull();
+    // obstacle-close は躯体ボタン誘導に変更 (= Phase A.4)
+    expect(stepById('obstacle-close').targetSelector).toBe(KUTAI_BUTTON);
   });
 });
 
@@ -169,6 +170,16 @@ describe('fallbackTargetSelector', () => {
     // モーダル確定ステップは固定 target を持つ
     expect(stepById('scaffold-start-confirm').targetSelector).toBe('[data-tutorial-id="scaffold-start-confirm"]');
     expect(stepById('autolayout-place').targetSelector).toBe('[data-tutorial-id="autolayout-place"]');
+  });
+
+  it('autolayout-place は priorityTargetSelector=conflict-ok (= 干渉警告時に動的ハイライト)', () => {
+    expect(stepById('autolayout-place').priorityTargetSelector).toBe('[data-tutorial-id="autolayout-conflict-ok"]');
+  });
+
+  it('obstacle-close は target=kutai-button (= 躯体ボタンで閉じる誘導)', () => {
+    expect(stepById('obstacle-close').targetSelector).toBe(KUTAI_BUTTON);
+    expect(stepById('obstacle-close').completeWhen!({ ...emptyCtx(), mode: 'obstacle' })).toBe(false);
+    expect(stepById('obstacle-close').completeWhen!(emptyCtx())).toBe(true);
   });
 });
 

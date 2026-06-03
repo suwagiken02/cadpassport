@@ -29,15 +29,18 @@ export type TutorialContext = {
 /**
  * チュートリアル 1 ステップの定義。
  * - targetSelector: ハイライト対象 (= data-tutorial-id セレクタ)。 null は Konva/canvas 操作で枠なし。
+ * - priorityTargetSelector: 存在すれば targetSelector より優先してハイライト (= 干渉警告ボタン等、
+ *   特定条件で DOM に現れる要素を動的に指す)。
  * - fallbackTargetSelector: primary 不在時の代替ハイライト (= submenu 項目の親ボタン)。
  * - completeWhen: store ベース完了条件。 completeWhenDom: DOM 値ベース完了条件 (500ms 評価)。
  *   両方 undefined + autoAdvance=true は「次ステップ target が DOM 出現」で進む (= submenu 開く誘導)。
  * - autoAdvance: true で「次へ」を隠し操作完了でのみ進行。
- * - dimmed: false で暗幕を薄く (= Konva/モーダル操作で図面を見せる)。 省略時 true (= 濃い暗幕)。
+ * - dimmed: false で暗幕を薄く。 省略時 true (= 濃い暗幕)。
  */
 export type TutorialStep = {
   id: string;
   targetSelector: string | null;
+  priorityTargetSelector?: string | null;
   fallbackTargetSelector?: string | null;
   title: string;
   description: string;
@@ -51,8 +54,7 @@ const KUTAI_BUTTON = '[data-tutorial-id="kutai-button"]';
 const ASHIBA_BUTTON = '[data-tutorial-id="ashiba-button"]';
 
 /**
- * Phase A.3: モーダル内操作を独立ステップに細分化 (= fallback 誤点滅の解消) +
- * スタート位置タップ / 障害物2段階 / 高さ3分割 / 足場開始・自動配置のモーダル確定 + 暗幕調整。 計 23 ステップ。
+ * Phase A.3 + A.4: モーダル内操作を独立ステップに細分化 + スクロール自動誘導 + 干渉警告ボタンの動的ハイライト。 計 23 ステップ。
  */
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
@@ -156,9 +158,9 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'obstacle-close',
-    targetSelector: null,
+    targetSelector: KUTAI_BUTTON,
     title: '12. 障害物パレットを閉じる',
-    description: '配置できたら「選択」ボタンを押して、障害物パレットを閉じてください。',
+    description: '配置できたら「躯体」ボタンを押して、障害物パレットを閉じてください。',
     completeWhen: (ctx) => ctx.mode !== 'obstacle',
     autoAdvance: true,
   },
@@ -238,6 +240,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'autolayout-place',
     targetSelector: '[data-tutorial-id="autolayout-place"]',
+    // 干渉警告が出ると「削除して配置」(autolayout-conflict-ok) が DOM 出現 → そちらを優先ハイライト
+    priorityTargetSelector: '[data-tutorial-id="autolayout-conflict-ok"]',
     title: '21. 足場を配置',
     description:
       '「配置する」ボタンを押して足場を配置してください。干渉の警告が出たら「削除して配置」を押してください。',
@@ -267,5 +271,5 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-/** Phase A.3 完成時の総ステップ数 (= UI に「N/23」 で表示) */
+/** Phase A.4 完成時の総ステップ数 (= UI に「N/23」 で表示) */
 export const TOTAL_STEPS = TUTORIAL_STEPS.length;

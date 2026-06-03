@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTutorialStore } from '@/stores/tutorialStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { TUTORIAL_STEPS, TOTAL_STEPS, type TutorialContext } from '@/lib/tutorial/tutorialSteps';
@@ -36,20 +36,34 @@ export default function TutorialOverlay() {
       ? TUTORIAL_STEPS[currentStep]
       : null;
 
-  // 対象要素の位置取得 (= 500ms ポーリング)。 primary 不在なら fallback (= submenu 親ボタン) をハイライト。
+  // viewport 外への自動スクロールをステップごと 1 回に制限するための ref
+  const scrolledForStep = useRef<number | null>(null);
+
+  // 対象要素の位置取得 (= 500ms ポーリング)。 priority → primary → fallback の順にハイライト。
+  // viewport 外 (特に下) ならステップごと 1 回だけ自動スクロール (= モーダル下部の確定ボタン等を見せる)。
   useEffect(() => {
+    const priority = step?.priorityTargetSelector ?? null;
     const primary = step?.targetSelector ?? null;
     const fallback = step?.fallbackTargetSelector ?? null;
-    if (!step || (!primary && !fallback)) {
+    if (!step || (!priority && !primary && !fallback)) {
       setTargetRect(null);
       return;
     }
+    scrolledForStep.current = null;
     const update = () => {
       let el: Element | null = null;
-      if (primary) el = queryVisible(primary);
+      if (priority) el = queryVisible(priority);
+      if (!el && primary) el = queryVisible(primary);
       if (!el && fallback) el = queryVisible(fallback);
       if (el) {
         const r = el.getBoundingClientRect();
+        if (
+          (r.bottom > window.innerHeight || r.top < 0) &&
+          scrolledForStep.current !== currentStep
+        ) {
+          scrolledForStep.current = currentStep;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
         setTargetRect((prev) => {
           if (
             prev &&
