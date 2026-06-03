@@ -288,6 +288,11 @@ export default function TutorialOverlay() {
             ✕
           </button>
         </div>
+        {step.iconHint && (
+          <div className="text-5xl text-center mb-1 animate-highlight" aria-hidden>
+            {step.iconHint}
+          </div>
+        )}
         <h3 className="font-bold text-lg text-canvas mb-1">{step.title}</h3>
         <p className="text-sm text-dimension mb-3 leading-relaxed">{step.description}</p>
         <div className="flex gap-2">

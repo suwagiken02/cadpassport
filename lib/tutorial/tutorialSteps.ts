@@ -14,7 +14,7 @@ export type TutorialContext = {
   autoOpenRoofForBuildingId: string | null;
   handrailsBeforeAutolayout: number | null;
   settingsOpenedOnce: boolean;
-  /** 壁方向入力の頂点数 (= 最初のタップでスタート位置決定 → 1 になる) */
+  /** 壁方向入力の頂点数 (= 最初のタップでスタート位置決定 → 1、 壁を追加ごとに +1) */
   directionPointsLength: number;
   /** 高さマーカーモード中か (= 躯体→高さ で true) */
   isHeightMarkerMode: boolean;
@@ -29,19 +29,17 @@ export type TutorialContext = {
 /**
  * チュートリアル 1 ステップの定義。
  * - targetSelector: ハイライト対象 (= data-tutorial-id セレクタ)。 null は Konva/canvas 操作で枠なし。
- * - priorityTargetSelector: 存在すれば targetSelector より優先してハイライト (= 干渉警告ボタン等、
- *   特定条件で DOM に現れる要素を動的に指す)。
- * - fallbackTargetSelector: primary 不在時の代替ハイライト (= submenu 項目の親ボタン)。
- * - completeWhen: store ベース完了条件。 completeWhenDom: DOM 値ベース完了条件 (500ms 評価)。
- *   両方 undefined + autoAdvance=true は「次ステップ target が DOM 出現」で進む (= submenu 開く誘導)。
- * - autoAdvance: true で「次へ」を隠し操作完了でのみ進行。
- * - dimmed: false で暗幕を薄く。 省略時 true (= 濃い暗幕)。
+ * - priorityTargetSelector: 存在すれば targetSelector より優先 (= 干渉警告ボタン等)。
+ * - fallbackTargetSelector: primary 不在時の代替 (= submenu 親ボタン)。
+ * - iconHint: balloon に大きく点滅表示する誘導アイコン (= ↑ → 👆 等。 Konva 操作の方向誘導用)。
+ * - completeWhen / completeWhenDom: 完了条件。 autoAdvance: true で「次へ」を隠す。 dimmed: false で暗幕を薄く。
  */
 export type TutorialStep = {
   id: string;
   targetSelector: string | null;
   priorityTargetSelector?: string | null;
   fallbackTargetSelector?: string | null;
+  iconHint?: string;
   title: string;
   description: string;
   completeWhen?: (ctx: TutorialContext) => boolean;
@@ -52,9 +50,10 @@ export type TutorialStep = {
 
 const KUTAI_BUTTON = '[data-tutorial-id="kutai-button"]';
 const ASHIBA_BUTTON = '[data-tutorial-id="ashiba-button"]';
+const ADD_WALL = '[data-tutorial-id="building-add-wall"]';
 
 /**
- * Phase A.3 + A.4: モーダル内操作を独立ステップに細分化 + スクロール自動誘導 + 干渉警告ボタンの動的ハイライト。 計 23 ステップ。
+ * Phase A.5: 建物作成を細分化 + balloon の方向アイコン誘導 (Konva 改修なし)。 計 25 ステップ。
  */
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
@@ -94,6 +93,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'build-start',
     targetSelector: null,
+    iconHint: '👆',
     title: '5. スタート位置を決める',
     description: 'キャンバスをタップして、建物の最初の角（スタート位置）を決めてください。',
     completeWhen: (ctx) => ctx.directionPointsLength > 0,
@@ -101,11 +101,33 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     dimmed: false,
   },
   {
-    id: 'build-canvas',
-    targetSelector: null,
-    title: '6. 建物の外周を描く',
+    id: 'build-wall1',
+    targetSelector: ADD_WALL,
+    iconHint: '↑',
+    title: '6. 1辺目を引く',
     description:
-      '数値ボタンで長さ（例: 3000）を選び、方向ボタン（↑→↓←）で壁を伸ばします。繰り返して、最後に開始点（オレンジの交点）をタップすると建物が閉じて完成します。',
+      'キャンバスの方向ボタン（例: ↑ 上）を押すと「壁の長さ」が開きます。長さ（例: 3000）を選び「壁を追加」を押してください。',
+    completeWhen: (ctx) => ctx.directionPointsLength >= 2,
+    autoAdvance: true,
+    dimmed: false,
+  },
+  {
+    id: 'build-wall2',
+    targetSelector: ADD_WALL,
+    iconHint: '→',
+    title: '7. 2辺目を引く',
+    description: '次は別の方向（例: → 右）。同じく長さを選んで「壁を追加」を押してください。',
+    completeWhen: (ctx) => ctx.directionPointsLength >= 3,
+    autoAdvance: true,
+    dimmed: false,
+  },
+  {
+    id: 'build-close',
+    targetSelector: null,
+    iconHint: '🔁',
+    title: '8. 残りを引いて閉じる',
+    description:
+      '同じ要領で残りの辺（例: ↓ 下 → ← 左）を追加し、最後に始点（オレンジの交点）をタップすると建物が閉じて完成します。',
     completeWhen: (ctx) => ctx.canvasData.buildings.length > 0,
     autoAdvance: true,
     dimmed: false,
@@ -113,7 +135,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'roof-input',
     targetSelector: '[data-tutorial-id="roof-overhang-input"]',
-    title: '7. 軒の出を変更',
+    title: '9. 軒の出を変更',
     description:
       '建物を作ると屋根設定が自動で開きます。「出幅(mm)」を 600 から 500 に変更してください。',
     completeWhenDom: () => {
@@ -125,7 +147,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'roof-confirm',
     targetSelector: '[data-tutorial-id="roof-confirm"]',
-    title: '8. 屋根設定を確定',
+    title: '10. 屋根設定を確定',
     description: '「設定する」ボタン（光っています）を押して、屋根の変更を確定してください。',
     completeWhen: (ctx) => ctx.canvasData.buildings.some((b) => b.roof?.uniformMm === 500),
     autoAdvance: true,
@@ -134,7 +156,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'obstacle-select',
     targetSelector: '[data-tutorial-id="kutai-obstacle"]',
     fallbackTargetSelector: KUTAI_BUTTON,
-    title: '9. 障害物モードにする',
+    title: '11. 障害物モードにする',
     description: '「躯体」ボタンを押してメニューを開き、「障害物」を押してください。',
     completeWhen: (ctx) => ctx.mode === 'obstacle',
     autoAdvance: true,
@@ -143,7 +165,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'obstacle-type',
     targetSelector: '[data-tutorial-id="obstacle-type-ecocute"]',
     fallbackTargetSelector: KUTAI_BUTTON,
-    title: '10. 障害物の種類を選ぶ',
+    title: '12. 障害物の種類を選ぶ',
     description: 'パレットから種類（エコキュート等）を選んでください。選ぶと配置用のプレビューが出ます。',
     completeWhen: undefined,
     autoAdvance: true,
@@ -151,7 +173,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'obstacle-place',
     targetSelector: '[data-tutorial-id="obstacle-place-area"]',
-    title: '11. 障害物を配置',
+    title: '13. 障害物を配置',
     description: 'プレビュー部分（光っています）をキャンバスにドラッグして配置してください。',
     completeWhen: (ctx) => ctx.canvasData.obstacles.length > 0,
     autoAdvance: true,
@@ -160,7 +182,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'obstacle-close',
     targetSelector: KUTAI_BUTTON,
-    title: '12. 障害物パレットを閉じる',
+    title: '14. 障害物パレットを閉じる',
     description: '配置できたら「躯体」ボタンを押して、障害物パレットを閉じてください。',
     completeWhen: (ctx) => ctx.mode !== 'obstacle',
     autoAdvance: true,
@@ -169,7 +191,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'height-open',
     targetSelector: '[data-tutorial-id="kutai-height"]',
     fallbackTargetSelector: KUTAI_BUTTON,
-    title: '13. 高さモードにする',
+    title: '15. 高さモードにする',
     description: '「躯体」ボタンを押してメニューを開き、「高さ」を押してください。',
     completeWhen: (ctx) => ctx.isHeightMarkerMode === true,
     autoAdvance: true,
@@ -177,7 +199,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'height-tap',
     targetSelector: null,
-    title: '14. 高さの位置をタップ',
+    iconHint: '👆',
+    title: '16. 高さの位置をタップ',
     description: '屋根の破線（建物の外周）をタップしてください。高さ入力欄が開きます。',
     completeWhen: (ctx) => ctx.heightInputMarkerId != null,
     autoAdvance: true,
@@ -186,7 +209,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'height-input',
     targetSelector: '[data-tutorial-id="height-input"]',
-    title: '15. 軒高を入力',
+    title: '17. 軒高を入力',
     description:
       '軒高（例: 6000）を入力してください。※すべて同じ高さなら1か所でOK。切妻などは頂点と下端を入力すると、その間は斜めに保持されます。',
     completeWhenDom: () => {
@@ -198,7 +221,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'height-ok',
     targetSelector: '[data-tutorial-id="height-ok"]',
-    title: '16. 高さを確定',
+    title: '18. 高さを確定',
     description: '「OK」ボタンを押して、高さを確定してください。',
     completeWhen: (ctx) => ctx.heightInputMarkerId == null,
     autoAdvance: true,
@@ -207,7 +230,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'scaffold-start-open',
     targetSelector: '[data-tutorial-id="ashiba-start"]',
     fallbackTargetSelector: ASHIBA_BUTTON,
-    title: '17. 足場開始を開く',
+    title: '19. 足場開始を開く',
     description: '「足場」ボタンを押してメニューを開いてください。メニューをスクロールして「足場開始」を押します。',
     completeWhen: (ctx) => ctx.showScaffoldStart === true,
     autoAdvance: true,
@@ -215,7 +238,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'scaffold-start-confirm',
     targetSelector: '[data-tutorial-id="scaffold-start-confirm"]',
-    title: '18. 足場開始位置を確定',
+    title: '20. 足場開始位置を確定',
     description: '開始する頂点を選び、離れを入力して「足場開始」ボタンで確定してください。',
     completeWhen: (ctx) => !!ctx.canvasData.scaffoldStart1F || !!ctx.canvasData.scaffoldStart2F,
     autoAdvance: true,
@@ -225,7 +248,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'autolayout-open',
     targetSelector: '[data-tutorial-id="ashiba-autolayout"]',
     fallbackTargetSelector: ASHIBA_BUTTON,
-    title: '19. 自動配置を開く',
+    title: '21. 自動配置を開く',
     description: '「足場」ボタンを押してメニューを開き、「自動配置」を押してください。',
     completeWhen: (ctx) => ctx.showAutoLayout === true,
     autoAdvance: true,
@@ -233,7 +256,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'autolayout-calc',
     targetSelector: '[data-tutorial-id="autolayout-calc"]',
-    title: '20. 足場を計算',
+    title: '22. 足場を計算',
     description: '各辺の離れを設定して「計算する」ボタンを押してください。',
     completeWhen: undefined,
     autoAdvance: true,
@@ -241,9 +264,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'autolayout-place',
     targetSelector: '[data-tutorial-id="autolayout-place"]',
-    // 干渉警告が出ると「削除して配置」(autolayout-conflict-ok) が DOM 出現 → そちらを優先ハイライト
     priorityTargetSelector: '[data-tutorial-id="autolayout-conflict-ok"]',
-    title: '21. 足場を配置',
+    title: '23. 足場を配置',
     description:
       '「配置する」ボタンを押して足場を配置してください。干渉の警告が出たら「削除して配置」を押してください。',
     completeWhen: (ctx) =>
@@ -255,7 +277,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'reorder',
     targetSelector: '[data-tutorial-id="ashiba-reorder"]',
     fallbackTargetSelector: ASHIBA_BUTTON,
-    title: '22. 足場の入れ替え（任意）',
+    title: '24. 足場の入れ替え（任意）',
     description:
       '「足場」→「入れ替え」で、色分けされた手摺ライン（同一直線上に2本以上ある辺）をタップすると並べ替えモーダルが開きます。順番を入れ替えて確定し「終了」してから「次へ」を押してください。（任意）',
     completeWhen: undefined,
@@ -265,12 +287,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'areacalc',
     targetSelector: '[data-tutorial-id="ashiba-areacalc"]',
     fallbackTargetSelector: ASHIBA_BUTTON,
-    title: '23. 平米を計算',
+    title: '25. 平米を計算',
     description: '「足場」ボタンを押してメニューを開き、「平米計算」を押すと面積を確認できます。これで完了です！',
     completeWhen: (ctx) => ctx.showAreaCalcModal === true,
     autoAdvance: true,
   },
 ];
 
-/** Phase A.4 完成時の総ステップ数 (= UI に「N/23」 で表示) */
+/** Phase A.5 完成時の総ステップ数 (= UI に「N/25」 で表示) */
 export const TOTAL_STEPS = TUTORIAL_STEPS.length;

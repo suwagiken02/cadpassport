@@ -156,7 +156,7 @@ export default function DirectionInputModal({ onClose }: Props) {
         {!pendingDirectionTarget && (
           <div className="flex flex-wrap gap-1.5">
             {directionDistanceHistory.map(mm => (
-              <button key={mm} onClick={() => setDistanceMm(mm)}
+              <button key={mm} data-tutorial-id={`building-dist-${mm}`} onClick={() => setDistanceMm(mm)}
                 className={`px-2 py-1 rounded text-xs font-mono border transition-colors ${
                   distanceMm === mm ? 'bg-accent text-white border-accent' : 'border-dark-border text-dimension'
                 }`}>{mm}</button>
@@ -169,7 +169,7 @@ export default function DirectionInputModal({ onClose }: Props) {
             className="flex-1 py-2.5 border border-dark-border rounded-xl text-sm text-dimension">
             キャンセル
           </button>
-          <button onClick={handleConfirm}
+          <button onClick={handleConfirm} data-tutorial-id="building-add-wall"
             className="flex-1 py-2.5 bg-accent text-white rounded-xl text-sm font-bold">
             {noWallMode ? 'キャラを移動' : '壁を追加'}
           </button>
