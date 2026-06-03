@@ -155,6 +155,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     description: 'プレビュー部分（光っています）をキャンバスにドラッグして配置してください。',
     completeWhen: (ctx) => ctx.canvasData.obstacles.length > 0,
     autoAdvance: true,
+    dimmed: false,
   },
   {
     id: 'obstacle-close',

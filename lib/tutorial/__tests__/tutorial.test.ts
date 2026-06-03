@@ -142,7 +142,7 @@ describe('tutorialSteps Phase A.3 (= 23 ステップ)', () => {
 describe('dimmed フラグ (= 暗幕調整)', () => {
   it('build-start/build-canvas/height-tap/scaffold-start-confirm は dimmed=false', () => {
     const dimmedFalse = TUTORIAL_STEPS.filter((s) => s.dimmed === false).map((s) => s.id);
-    expect(dimmedFalse).toEqual(['build-start', 'build-canvas', 'height-tap', 'scaffold-start-confirm']);
+    expect(dimmedFalse).toEqual(['build-start', 'build-canvas', 'obstacle-place', 'height-tap', 'scaffold-start-confirm']);
   });
 
   it('それ以外は dimmed 未指定 (= 濃い暗幕)', () => {
