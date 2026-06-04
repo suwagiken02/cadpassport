@@ -320,20 +320,27 @@ export default function TutorialOverlay() {
 
       {/* arrowTarget: canvas 上の交点を指す光る 👇 矢印 (= 交点の少し上に配置して下を指す) */}
       {showArrow && (
+        // 外側 wrapper: 配置のみ (animate-highlight は付けない)。 アニメの transform:scale に
+        // 上書きされず、 先端 (SVG 下端中央) が arrowPos に正確に乗る。
         <div
-          className="absolute animate-highlight"
+          className="absolute"
           style={{
             left: arrowX,
             top: arrowY,
-            // SVG の先端 (= 下端中央) を arrowPos に正確に合わせる (= 余白なしなので -100%)
             transform: 'translate(-50%, -100%)',
             pointerEvents: 'none',
             zIndex: 110,
           }}
           aria-hidden
         >
-          {/* 下向き矢印: 先端は viewBox 下端中央 (14,44)。 余白ゼロで先端が要素の下端中央に一致 */}
-          <svg width="28" height="44" viewBox="0 0 28 44" style={{ display: 'block' }}>
+          {/* 内側 SVG: 点滅のみ。 transformOrigin を下端中央にし scale でも先端が動かない */}
+          <svg
+            className="animate-highlight"
+            width="28"
+            height="44"
+            viewBox="0 0 28 44"
+            style={{ display: 'block', transformOrigin: 'bottom center' }}
+          >
             <line x1="14" y1="3" x2="14" y2="30" stroke="#EF4444" strokeWidth="6" strokeLinecap="round" />
             <polygon points="14,44 3,27 25,27" fill="#EF4444" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
           </svg>
