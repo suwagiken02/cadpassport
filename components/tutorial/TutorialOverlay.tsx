@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTutorialStore } from '@/stores/tutorialStore';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { gridToScreen } from '@/lib/konva/gridUtils';
 import { TUTORIAL_STEPS, TOTAL_STEPS, type TutorialContext } from '@/lib/tutorial/tutorialSteps';
 
 /**
@@ -20,7 +21,8 @@ function queryVisible(selector: string): Element | null {
 
 /**
  * チュートリアル overlay。 isActive のとき表示。
- * 構成: スポットライト暗幕 + 点滅枠 + 吹き出し。 完了検知は store subscribe / DOM ポーリング。
+ * 構成: スポットライト暗幕 + 点滅枠 + 吹き出し + (build-close 時) 始点を指す矢印。
+ * 完了検知は store subscribe / DOM ポーリング。
  */
 export default function TutorialOverlay() {
   const isActive = useTutorialStore((s) => s.isActive);
@@ -30,6 +32,8 @@ export default function TutorialOverlay() {
   const endTutorial = useTutorialStore((s) => s.endTutorial);
 
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  // build-close: 赤い始点 (directionPoints[0]) のスクリーン座標 (= 矢印で指す)
+  const [startArrow, setStartArrow] = useState<{ x: number; y: number } | null>(null);
 
   const step =
     isActive && currentStep >= 0 && currentStep < TUTORIAL_STEPS.length
@@ -87,6 +91,36 @@ export default function TutorialOverlay() {
     return () => {
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
+      clearInterval(interval);
+    };
+  }, [step]);
+
+  // build-close: 赤い始点 (directionPoints[0]) のスクリーン座標を算出して矢印で指す。
+  // pan/zoom 追従は canvasStore.subscribe + resize + 500ms フォールバックで再計算。
+  useEffect(() => {
+    if (step?.id !== 'build-close') {
+      setStartArrow(null);
+      return;
+    }
+    const compute = () => {
+      const s = useCanvasStore.getState();
+      const p0 = s.directionPoints?.[0];
+      if (!p0) {
+        setStartArrow(null);
+        return;
+      }
+      const scr = gridToScreen(p0.x, p0.y, s.panX, s.panY, s.zoom);
+      setStartArrow((prev) => (prev && prev.x === scr.x && prev.y === scr.y ? prev : scr));
+    };
+    compute();
+    const unsub = useCanvasStore.subscribe(compute);
+    window.addEventListener('resize', compute);
+    window.addEventListener('scroll', compute, true);
+    const interval = setInterval(compute, 500);
+    return () => {
+      unsub();
+      window.removeEventListener('resize', compute);
+      window.removeEventListener('scroll', compute, true);
       clearInterval(interval);
     };
   }, [step]);
@@ -182,6 +216,7 @@ export default function TutorialOverlay() {
   if (!step) return null;
 
   // 吹き出し位置: ターゲットに被らないよう反対側の画面端に固定。 target なしは画面最上部に小さく配置。
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 360;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const isTargetInBottomHalf = !!targetRect && targetRect.top > vh / 2;
   const balloonStyle: React.CSSProperties = !targetRect
@@ -209,6 +244,11 @@ export default function TutorialOverlay() {
   const padding = 8;
   // 暗幕の濃さ: dimmed=false (= Konva/モーダル操作で図面を見せたい) は薄く。
   const dimClass = step.dimmed === false ? 'absolute bg-black/20' : 'absolute bg-black/60';
+
+  // build-close 矢印位置 (= 始点の少し上に 👇 を置いて下の始点を指す)。 画面端は簡易クランプ。
+  const showStartArrow = step.id === 'build-close' && !!startArrow;
+  const arrowX = startArrow ? Math.max(24, Math.min(startArrow.x, vw - 24)) : 0;
+  const arrowY = startArrow ? Math.max(48, Math.min(startArrow.y - 48, vh - 24)) : 0;
 
   return (
     <div className="fixed inset-0 z-[100] pointer-events-none">
@@ -268,6 +308,26 @@ export default function TutorialOverlay() {
             }}
           />
         </>
+      )}
+
+      {/* build-close: 赤い始点を指す光る矢印 (= 👇 を始点の少し上に置いて下を指す) */}
+      {showStartArrow && (
+        <div
+          className="absolute animate-highlight"
+          style={{
+            left: arrowX,
+            top: arrowY,
+            transform: 'translateX(-50%)',
+            fontSize: 40,
+            lineHeight: 1,
+            pointerEvents: 'none',
+            zIndex: 110,
+            textShadow: '0 0 10px rgba(0,0,0,0.9), 0 0 6px rgba(239,68,68,0.9)',
+          }}
+          aria-hidden
+        >
+          👇
+        </div>
       )}
 
       {/* 吹き出し */}

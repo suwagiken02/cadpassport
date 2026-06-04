@@ -127,7 +127,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     iconHint: '🔁',
     title: '8. 残りを引いて閉じる',
     description:
-      '同じ要領で残りの辺（例: ↓ 下 → ← 左）を追加し、最後に始点（オレンジの交点）をタップすると建物が閉じて完成します。',
+      '同じ要領で残りの辺（例: ↓ 下 → ← 左）を追加し、最後に【赤い始点】（光る矢印 👇 の先）をタップすると建物が閉じて完成します。',
     completeWhen: (ctx) => ctx.canvasData.buildings.length > 0,
     autoAdvance: true,
     dimmed: false,
