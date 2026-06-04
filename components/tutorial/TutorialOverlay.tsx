@@ -252,10 +252,11 @@ export default function TutorialOverlay() {
   // 暗幕の濃さ: dimmed=false (= Konva/モーダル操作で図面を見せたい) は薄く。
   const dimClass = step.dimmed === false ? 'absolute bg-black/20' : 'absolute bg-black/60';
 
-  // 矢印位置 (= 👇 の下端を交点に重ねる。 emoji を交点の少し上に置く)。 画面端は簡易クランプ。
+  // 矢印位置 (= 交点座標に div の「下端中央」を合わせる。 transform: translate(-50%,-92%) で
+  // 👇 絵文字の指先 (= 下端中央付近、 下に僅かな余白あり) が交点に正確に重なる)。 画面端は簡易クランプ。
   const showArrow = !!arrowPos;
   const arrowX = arrowPos ? Math.max(24, Math.min(arrowPos.x, vw - 24)) : 0;
-  const arrowY = arrowPos ? Math.max(46, Math.min(arrowPos.y - 46, vh - 24)) : 0;
+  const arrowY = arrowPos ? Math.max(44, Math.min(arrowPos.y, vh - 8)) : 0;
 
   return (
     <div className="fixed inset-0 z-[100] pointer-events-none">
@@ -324,7 +325,7 @@ export default function TutorialOverlay() {
           style={{
             left: arrowX,
             top: arrowY,
-            transform: 'translateX(-50%)',
+            transform: 'translate(-50%, -92%)',
             fontSize: 40,
             lineHeight: 1,
             pointerEvents: 'none',
