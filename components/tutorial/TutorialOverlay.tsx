@@ -325,16 +325,18 @@ export default function TutorialOverlay() {
           style={{
             left: arrowX,
             top: arrowY,
-            transform: 'translate(-50%, -86%)',
-            fontSize: 40,
-            lineHeight: 1,
+            // SVG の先端 (= 下端中央) を arrowPos に正確に合わせる (= 余白なしなので -100%)
+            transform: 'translate(-50%, -100%)',
             pointerEvents: 'none',
             zIndex: 110,
-            textShadow: '0 0 10px rgba(0,0,0,0.9), 0 0 6px rgba(239,68,68,0.9)',
           }}
           aria-hidden
         >
-          👇
+          {/* 下向き矢印: 先端は viewBox 下端中央 (14,44)。 余白ゼロで先端が要素の下端中央に一致 */}
+          <svg width="28" height="44" viewBox="0 0 28 44" style={{ display: 'block' }}>
+            <line x1="14" y1="3" x2="14" y2="30" stroke="#EF4444" strokeWidth="6" strokeLinecap="round" />
+            <polygon points="14,44 3,27 25,27" fill="#EF4444" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
         </div>
       )}
 
