@@ -347,24 +347,6 @@ export default function TutorialOverlay() {
         </div>
       )}
 
-      {/* DEBUG(一時): arrowPos の生座標に transform なしの赤点。 交点に乗るか切り分け用。 原因特定後に除去。 */}
-      {showArrow && arrowPos && (
-        <div
-          style={{
-            position: 'absolute',
-            left: arrowPos.x,
-            top: arrowPos.y,
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: 'red',
-            pointerEvents: 'none',
-            zIndex: 110,
-          }}
-          aria-hidden
-        />
-      )}
-
       {/* 吹き出し */}
       <div
         className="bg-dark-surface border-2 border-accent rounded-2xl shadow-2xl p-4 pointer-events-auto"
