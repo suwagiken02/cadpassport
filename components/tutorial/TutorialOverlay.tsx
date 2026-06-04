@@ -21,8 +21,7 @@ function queryVisible(selector: string): Element | null {
 
 /**
  * チュートリアル overlay。 isActive のとき表示。
- * 構成: スポットライト暗幕 + 点滅枠 + 吹き出し + (build-close 時) 始点を指す矢印。
- * 完了検知は store subscribe / DOM ポーリング。
+ * 構成: スポットライト暗幕 + 点滅枠 + 吹き出し + (arrowTarget 指定時) canvas 交点を指す 👇 矢印。
  */
 export default function TutorialOverlay() {
   const isActive = useTutorialStore((s) => s.isActive);
@@ -32,8 +31,8 @@ export default function TutorialOverlay() {
   const endTutorial = useTutorialStore((s) => s.endTutorial);
 
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-  // build-close: 赤い始点 (directionPoints[0]) のスクリーン座標 (= 矢印で指す)
-  const [startArrow, setStartArrow] = useState<{ x: number; y: number } | null>(null);
+  // arrowTarget ステップ: canvas 上の交点を指す 👇 矢印の viewport 座標
+  const [arrowPos, setArrowPos] = useState<{ x: number; y: number } | null>(null);
 
   const step =
     isActive && currentStep >= 0 && currentStep < TUTORIAL_STEPS.length
@@ -95,22 +94,30 @@ export default function TutorialOverlay() {
     };
   }, [step]);
 
-  // build-close: 赤い始点 (directionPoints[0]) のスクリーン座標を算出して矢印で指す。
-  // pan/zoom 追従は canvasStore.subscribe + resize + 500ms フォールバックで再計算。
+  // arrowTarget: canvas 上の交点 (grid 座標) を viewport 座標に変換して矢印で指す。
+  // ⚠️ gridToScreen は canvas コンテナ内ローカル座標を返すため、 コンテナの getBoundingClientRect().left/top を
+  //    必ず加算して viewport 絶対座標にする (= 前回ヘッダ分ずれたバグの修正)。
+  // pan/zoom 追従は canvasStore.subscribe + resize/scroll + 500ms フォールバック。
   useEffect(() => {
-    if (step?.id !== 'build-close') {
-      setStartArrow(null);
+    const fn = step?.arrowTarget;
+    if (!fn) {
+      setArrowPos(null);
       return;
     }
     const compute = () => {
       const s = useCanvasStore.getState();
-      const p0 = s.directionPoints?.[0];
-      if (!p0) {
-        setStartArrow(null);
+      const g = fn(s.directionPoints ?? []);
+      if (!g) {
+        setArrowPos(null);
         return;
       }
-      const scr = gridToScreen(p0.x, p0.y, s.panX, s.panY, s.zoom);
-      setStartArrow((prev) => (prev && prev.x === scr.x && prev.y === scr.y ? prev : scr));
+      const scr = gridToScreen(g.x, g.y, s.panX, s.panY, s.zoom);
+      const container =
+        typeof document !== 'undefined' ? document.querySelector('[data-canvas-container]') : null;
+      const rect = container?.getBoundingClientRect();
+      const vx = scr.x + (rect?.left ?? 0);
+      const vy = scr.y + (rect?.top ?? 0);
+      setArrowPos((prev) => (prev && prev.x === vx && prev.y === vy ? prev : { x: vx, y: vy }));
     };
     compute();
     const unsub = useCanvasStore.subscribe(compute);
@@ -245,10 +252,10 @@ export default function TutorialOverlay() {
   // 暗幕の濃さ: dimmed=false (= Konva/モーダル操作で図面を見せたい) は薄く。
   const dimClass = step.dimmed === false ? 'absolute bg-black/20' : 'absolute bg-black/60';
 
-  // build-close 矢印位置 (= 始点の少し上に 👇 を置いて下の始点を指す)。 画面端は簡易クランプ。
-  const showStartArrow = step.id === 'build-close' && !!startArrow;
-  const arrowX = startArrow ? Math.max(24, Math.min(startArrow.x, vw - 24)) : 0;
-  const arrowY = startArrow ? Math.max(48, Math.min(startArrow.y - 48, vh - 24)) : 0;
+  // 矢印位置 (= 👇 の下端を交点に重ねる。 emoji を交点の少し上に置く)。 画面端は簡易クランプ。
+  const showArrow = !!arrowPos;
+  const arrowX = arrowPos ? Math.max(24, Math.min(arrowPos.x, vw - 24)) : 0;
+  const arrowY = arrowPos ? Math.max(46, Math.min(arrowPos.y - 46, vh - 24)) : 0;
 
   return (
     <div className="fixed inset-0 z-[100] pointer-events-none">
@@ -310,8 +317,8 @@ export default function TutorialOverlay() {
         </>
       )}
 
-      {/* build-close: 赤い始点を指す光る矢印 (= 👇 を始点の少し上に置いて下を指す) */}
-      {showStartArrow && (
+      {/* arrowTarget: canvas 上の交点を指す光る 👇 矢印 (= 交点の少し上に配置して下を指す) */}
+      {showArrow && (
         <div
           className="absolute animate-highlight"
           style={{
