@@ -325,7 +325,7 @@ export default function TutorialOverlay() {
           style={{
             left: arrowX,
             top: arrowY,
-            transform: 'translate(-50%, -92%)',
+            transform: 'translate(-50%, -86%)',
             fontSize: 40,
             lineHeight: 1,
             pointerEvents: 'none',
