@@ -368,17 +368,18 @@ export default function ProjectsPage() {
         <button
           type="button"
           onClick={() => { setPasteModal(true); setPasteUrl(''); setPasteError(''); }}
-          className="w-full mb-3 py-4 bg-dark-surface border border-dark-border text-canvas font-bold rounded-xl text-lg hover:bg-dark-border transition-colors"
+          className="w-full mb-3 sm:mb-6 py-4 bg-dark-surface border border-dark-border text-canvas font-bold rounded-xl text-lg hover:bg-dark-border transition-colors"
         >
           URL から取り込み
         </button>
 
-        {/* 使い方ガイド（チュートリアル）: 白紙の練習図面を開いて自動開始。新規ユーザー向けに少し目立たせる */}
+        {/* 使い方ガイド（チュートリアル）: スマホ専用機能のため sm 未満でのみ表示（PCでは非表示）。
+            白紙の練習図面を開いて自動開始。新規ユーザー向けに少し目立たせる */}
         <button
           type="button"
           onClick={startGuide}
           disabled={guideLoading}
-          className="w-full mb-6 py-4 bg-accent/10 border-2 border-accent text-accent font-bold rounded-xl text-lg hover:bg-accent/20 transition-colors disabled:opacity-50"
+          className="sm:hidden w-full mb-6 py-4 bg-accent/10 border-2 border-accent text-accent font-bold rounded-xl text-lg hover:bg-accent/20 transition-colors disabled:opacity-50"
         >
           {guideLoading ? '読み込み中...' : '📘 使い方を見る（チュートリアル）'}
         </button>
