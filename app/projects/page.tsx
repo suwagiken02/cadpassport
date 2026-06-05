@@ -4,9 +4,29 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore, DEFAULT_COMPANY_ID } from '@/stores/authStore';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
+import { useTutorialStore } from '@/stores/tutorialStore';
 import { supabase } from '@/lib/supabase/client';
 import DarkModeToggle from '@/components/DarkModeToggle';
 import { Project } from '@/types';
+
+/** 白紙の canvas_data テンプレ（createProject と startGuide で共通） */
+function blankCanvasData() {
+  return {
+    version: '1.0',
+    grid: { unitMm: 10, cols: 600, rows: 400 },
+    buildings: [],
+    roofOverhangs: [],
+    obstacles: [],
+    handrails: [],
+    posts: [],
+    antis: [],
+    memos: [],
+    compass: { angle: 0 },
+  };
+}
+
+/** 使い方ガイド（練習用）プロジェクトの識別名 */
+const GUIDE_PROJECT_NAME = '📘 使い方ガイド（練習用）';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -19,6 +39,7 @@ export default function ProjectsPage() {
   const [newAddress, setNewAddress] = useState('');
   const [newContractor, setNewContractor] = useState('');
   const [creating, setCreating] = useState(false);
+  const [guideLoading, setGuideLoading] = useState(false);
 
   // Phase 3b: プロジェクト共有 URL モーダル用 state
   const [shareModal, setShareModal] = useState<{
@@ -91,18 +112,7 @@ export default function ProjectsPage() {
         .insert({
           project_id: data.id,
           title: '平面図',
-          canvas_data: {
-            version: '1.0',
-            grid: { unitMm: 10, cols: 600, rows: 400 },
-            buildings: [],
-            roofOverhangs: [],
-            obstacles: [],
-            handrails: [],
-            posts: [],
-            antis: [],
-            memos: [],
-            compass: { angle: 0 },
-          },
+          canvas_data: blankCanvasData(),
         })
         .select()
         .single();
@@ -211,6 +221,80 @@ export default function ProjectsPage() {
     }
   };
 
+  // 使い方ガイド: 白紙の練習図面を開いてチュートリアルを自動開始する。
+  // 既存の練習用プロジェクトがあれば canvas_data を白紙にリセットして再利用、
+  // 無ければ createProject と同じ insert ロジックで新規作成する。
+  const startGuide = async () => {
+    if (guideLoading) return;
+    setGuideLoading(true);
+    try {
+      let drawingId: string | null = null;
+
+      // (b) 読み込み済み projects から練習用プロジェクトを探す
+      const existing = projects.find((p) => p.name === GUIDE_PROJECT_NAME);
+      if (existing) {
+        // (c) 最古 drawing を取得し canvas_data を白紙にリセット
+        const { data: drawing } = await supabase
+          .from('drawings')
+          .select('id')
+          .eq('project_id', existing.id)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single();
+        if (drawing) {
+          const { error: updateError } = await supabase
+            .from('drawings')
+            .update({ canvas_data: blankCanvasData() })
+            .eq('id', drawing.id);
+          if (updateError) throw updateError;
+          drawingId = drawing.id;
+        }
+      }
+
+      // (d) 見つからない / drawing が無い → createProject と同じロジックで新規作成
+      if (!drawingId) {
+        const currentUser = useAuthStore.getState().user;
+        const ownerId = currentUser ? currentUser.id : null;
+        const companyId = useAuthStore.getState().currentCompanyId;
+
+        const { data: proj, error: projError } = await supabase
+          .from('projects')
+          .insert({
+            owner_id: ownerId,
+            company_id: companyId,
+            name: GUIDE_PROJECT_NAME,
+            address: null,
+            contractor_name: null,
+          })
+          .select()
+          .single();
+        if (projError || !proj) throw projError ?? new Error('プロジェクト作成に失敗しました');
+
+        const { data: drawing, error: drawingError } = await supabase
+          .from('drawings')
+          .insert({
+            project_id: proj.id,
+            title: '平面図',
+            canvas_data: blankCanvasData(),
+          })
+          .select()
+          .single();
+        if (drawingError || !drawing) throw drawingError ?? new Error('図面作成に失敗しました');
+
+        setProjects((prev) => [proj, ...prev]);
+        drawingId = drawing.id;
+      }
+
+      // (e) チュートリアル開始 → (f) 編集画面へ遷移
+      useTutorialStore.getState().startTutorial();
+      router.push(`/editor/${drawingId}`);
+    } catch (e) {
+      // (g) 失敗時はログ出力して loading 解除
+      console.error('[startGuide] error:', e);
+      setGuideLoading(false);
+    }
+  };
+
   const filtered = projects
     .filter((p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -284,9 +368,19 @@ export default function ProjectsPage() {
         <button
           type="button"
           onClick={() => { setPasteModal(true); setPasteUrl(''); setPasteError(''); }}
-          className="w-full mb-6 py-4 bg-dark-surface border border-dark-border text-canvas font-bold rounded-xl text-lg hover:bg-dark-border transition-colors"
+          className="w-full mb-3 py-4 bg-dark-surface border border-dark-border text-canvas font-bold rounded-xl text-lg hover:bg-dark-border transition-colors"
         >
           URL から取り込み
+        </button>
+
+        {/* 使い方ガイド（チュートリアル）: 白紙の練習図面を開いて自動開始。新規ユーザー向けに少し目立たせる */}
+        <button
+          type="button"
+          onClick={startGuide}
+          disabled={guideLoading}
+          className="w-full mb-6 py-4 bg-accent/10 border-2 border-accent text-accent font-bold rounded-xl text-lg hover:bg-accent/20 transition-colors disabled:opacity-50"
+        >
+          {guideLoading ? '読み込み中...' : '📘 使い方を見る（チュートリアル）'}
         </button>
 
         {/* プロジェクト一覧 */}
