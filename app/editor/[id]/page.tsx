@@ -316,7 +316,7 @@ export default function EditorPage() {
     <div className="h-screen flex flex-col bg-dark-bg overflow-hidden">
       {/* ヘッダー */}
       <header className="flex-shrink-0 bg-dark-surface border-b border-dark-border px-3 py-2 flex items-center justify-between z-10">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => {
               if (isDirty) {
@@ -325,16 +325,16 @@ export default function EditorPage() {
                 router.push('/projects');
               }
             }}
-            className="text-accent text-sm px-2 py-1"
+            className="text-accent text-sm px-2 py-1 flex-shrink-0"
           >
             ←
           </button>
           <div
-            className="cursor-pointer"
+            className="cursor-pointer min-w-0"
             onClick={() => setShowProjectEditModal(true)}
           >
-            <h1 className="text-sm font-bold truncate max-w-[150px]">{siteName}</h1>
-            <p className="text-xs text-dimension">{drawingTitle}</p>
+            <h1 className="text-sm font-bold truncate max-w-[90px] sm:max-w-[150px]">{siteName}</h1>
+            <p className="text-xs text-dimension truncate">{drawingTitle}</p>
           </div>
         </div>
 
@@ -457,9 +457,11 @@ export default function EditorPage() {
           )}
           <button
             onClick={() => setShowExportModal(true)}
-            className="px-3 py-1 bg-dark-bg border border-dark-border rounded-lg text-sm text-dimension hover:text-canvas"
+            className="px-2 sm:px-3 py-1 bg-dark-bg border border-dark-border rounded-lg text-sm text-dimension hover:text-canvas flex-shrink-0"
+            title="出力"
           >
-            出力
+            <span className="sm:hidden">📤</span>
+            <span className="hidden sm:inline">出力</span>
           </button>
           {/* ダークモード切替（PC のみ。スマホは下メニュー「設定」内のスイッチで操作） */}
           <DarkModeToggle />
