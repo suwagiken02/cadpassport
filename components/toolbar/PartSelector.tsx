@@ -417,8 +417,9 @@ export default function PartSelector() {
 
   if (mode === 'erase' || mode === 'building') return null;
 
-  // タブ系モードかどうか
-  const isTabMode = mode === 'handrail' || mode === 'post' || mode === 'anti' || mode === 'select';
+  // タブ系モードかどうか（'view' = 図面を開いた直後の閲覧モード。 部材パレットを開いた時点で
+  // タブ＋部材リストを表示する。 配置は mode 非依存のドラッグ&ドロップなのでこれだけで配置可能）
+  const isTabMode = mode === 'handrail' || mode === 'post' || mode === 'anti' || mode === 'select' || mode === 'view';
   const activeTab: PartTab = (mode === 'handrail' || mode === 'post' || mode === 'anti') ? mode : 'handrail';
 
   // --- カーソル追従プレビュー ---
