@@ -1,8 +1,13 @@
 import { Point, BuildingShape, HandrailLengthMm, ScaffoldStartConfig, PriorityConfig, PhaseDCandidate, PhaseDEdgeCandidates } from '@/types';
 import { mmToGrid } from './gridUtils';
 
-// === 使用可能な手摺長さ（mm） ===
+// === 使用可能な手摺長さ（mm・メートル規格フォールバック既定） ===
+// 実呼出は常に store の enabledSizes を渡すため、これは引数省略時のフォールバックのみ。
+// 規格切替は enabledSizes 経由で行われ、baseSize=最大有効サイズの計算ロジックは不変。
 export const HANDRAIL_SIZES: HandrailLengthMm[] = [1800, 1200, 900, 600, 400, 300, 200];
+
+// === インチ規格フォールバック既定（全 8 種） ===
+export const INCH_HANDRAIL_SIZES: HandrailLengthMm[] = [1829, 1524, 1219, 914, 610, 410, 305, 200];
 
 // === 方位 ===
 export type FaceDir = 'north' | 'south' | 'east' | 'west';

@@ -10,8 +10,9 @@ import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstac
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import NumInput from '@/components/ui/NumInput';
 
-/** アンチの既定サイズセット（手摺と intersect してパレット表示する） */
-const ANTI_BASE_LENGTHS: number[] = [1800, 1200, 900, 600, 400];
+/** アンチの既定サイズセット（手摺と intersect してパレット表示する）。規格別。 */
+const ANTI_BASE_LENGTHS_METRIC: number[] = [1800, 1200, 900, 600, 400];
+const ANTI_BASE_LENGTHS_INCH: number[] = [1829, 1524, 1219, 914, 610, 410, 305, 200];
 
 const OBSTACLE_TYPES: { id: ObstacleType; label: string; color: string }[] = [
   { id: 'ecocute', label: 'エコキュート', color: '#B5D4F4' },
@@ -105,15 +106,17 @@ export default function PartSelector() {
     isDarkMode,
   } = useCanvasStore();
   const enabledSizes = useHandrailSettingsStore(s => s.enabledSizes);
+  const unitSystem = useHandrailSettingsStore(s => s.unitSystem);
   // 部材設定に連動したサイズリスト（降順）
   const handrailLengths = useMemo<HandrailLengthMm[]>(
     () => [...enabledSizes].sort((a, b) => b - a),
     [enabledSizes],
   );
-  // アンチは通常のサイズ 1800/1200/900/600/400 のうち、有効なものだけ
+  // アンチは規格別の基本長さのうち、有効なものだけ
+  const antiBaseLengths = unitSystem === 'inch' ? ANTI_BASE_LENGTHS_INCH : ANTI_BASE_LENGTHS_METRIC;
   const antiLengths = useMemo<number[]>(
-    () => ANTI_BASE_LENGTHS.filter(l => (enabledSizes as number[]).includes(l)),
-    [enabledSizes],
+    () => antiBaseLengths.filter(l => (enabledSizes as number[]).includes(l)),
+    [enabledSizes, antiBaseLengths],
   );
   const [expanded, setExpanded] = useState(true);
   const [toolbarDrag, setToolbarDrag] = useState<ToolbarDrag | null>(null);
@@ -530,19 +533,22 @@ export default function PartSelector() {
     </div>
   );
 
+  // アンチ幅は規格別（メートル: 400/250、 インチ: 500/240）
+  const antiWidthWide: AntiWidth = unitSystem === 'inch' ? 500 : 400;
+  const antiWidthNarrow: AntiWidth = unitSystem === 'inch' ? 240 : 250;
   const antiButtons = (
     <div className="space-y-1">
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-amber-500 font-bold w-6 shrink-0">400</span>
+        <span className="text-[11px] text-amber-500 font-bold w-7 shrink-0">{antiWidthWide}</span>
         <div className="flex gap-1 overflow-x-auto sm:flex-wrap">{antiLengths.map((l) => (
-          <button key={`a400-${l}`} onPointerDown={(e) => handleAntiDown(l, 400, direction, e)}
+          <button key={`aw-${l}`} onPointerDown={(e) => handleAntiDown(l, antiWidthWide, direction, e)}
             className="px-2 py-1 rounded text-[11px] font-mono select-none touch-none shrink-0 bg-amber-600 text-white border border-amber-700">{l}</button>
         ))}</div>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-yellow-600 font-bold w-6 shrink-0">250</span>
+        <span className="text-[11px] text-yellow-600 font-bold w-7 shrink-0">{antiWidthNarrow}</span>
         <div className="flex gap-1 overflow-x-auto sm:flex-wrap">{antiLengths.map((l) => (
-          <button key={`a250-${l}`} onPointerDown={(e) => handleAntiDown(l, 250, direction, e)}
+          <button key={`an-${l}`} onPointerDown={(e) => handleAntiDown(l, antiWidthNarrow, direction, e)}
             className="px-2 py-1 rounded text-[11px] font-mono select-none touch-none shrink-0 bg-yellow-500 text-gray-900 border border-yellow-600">{l}</button>
         ))}</div>
       </div>

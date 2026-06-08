@@ -64,13 +64,24 @@ export type Obstacle = {
 };
 
 // === 手摺 ===
-export type HandrailLengthMm = 1800 | 1500 | 1200 | 1000 | 900 | 800 | 600 | 500 | 400 | 300 | 200 | 150 | 100;
+// メートル規格: 1800〜100。 インチ規格(CAD パスポート規格切替): 1829/1524/1219/914/610/410/305/200。
+// union は両規格の全長さを含む（保存済みデータの後方互換も兼ねる）。
+export type HandrailLengthMm =
+  | 1829 | 1800 | 1524 | 1500 | 1219 | 1200 | 1000 | 914 | 900 | 800
+  | 610 | 600 | 500 | 410 | 400 | 305 | 300 | 200 | 150 | 100;
 
-/** 部材設定で選択できる全サイズ（降順） */
+/** 部材設定で選択できる全サイズ（メートル規格・降順） */
 export const ALL_HANDRAIL_SIZES: HandrailLengthMm[] = [1800, 1500, 1200, 1000, 900, 800, 600, 500, 400, 300, 200, 150, 100];
 
-/** デフォルトで ON のサイズ */
+/** デフォルトで ON のサイズ（メートル規格） */
 export const DEFAULT_ENABLED_SIZES: HandrailLengthMm[] = [1800, 1200, 900, 600, 400, 300, 200];
+
+// === インチ規格（CAD パスポート: メートル/インチ規格切替） ===
+/** インチ規格で選択できる全サイズ（降順・全 8 種） */
+export const INCH_ALL_HANDRAIL_SIZES: HandrailLengthMm[] = [1829, 1524, 1219, 914, 610, 410, 305, 200];
+
+/** インチ規格でデフォルト ON のサイズ（全 8 種を既定 ON） */
+export const INCH_DEFAULT_ENABLED_SIZES: HandrailLengthMm[] = [1829, 1524, 1219, 914, 610, 410, 305, 200];
 
 export type HandrailSettings = {
   enabledSizes: HandrailLengthMm[];
@@ -120,8 +131,17 @@ export type Post = {
   floor?: 1 | 2;
 };
 
+/** インチ規格向けデフォルト優先設定（全 8 種を順位付け：メイン1・サブ6・調整1） */
+export const INCH_DEFAULT_PRIORITY_CONFIG: PriorityConfig = {
+  order: [1829, 1524, 1219, 914, 610, 410, 305, 200],
+  mainCount: 1,
+  subCount: 6,
+  adjustCount: 1,
+};
+
 // === アンチ（踏板） ===
-export type AntiWidth = 400 | 250;
+// メートル規格: 幅 400/250、 インチ規格: 幅 500/240。
+export type AntiWidth = 400 | 250 | 500 | 240;
 
 export type Anti = {
   id: string;

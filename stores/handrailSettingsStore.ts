@@ -3,7 +3,19 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore, DEFAULT_COMPANY_ID } from '@/stores/authStore';
-import { HandrailLengthMm, DEFAULT_ENABLED_SIZES, ALL_HANDRAIL_SIZES, PriorityConfig, DEFAULT_PRIORITY_CONFIG } from '@/types';
+import {
+  HandrailLengthMm,
+  DEFAULT_ENABLED_SIZES,
+  ALL_HANDRAIL_SIZES,
+  INCH_DEFAULT_ENABLED_SIZES,
+  INCH_ALL_HANDRAIL_SIZES,
+  PriorityConfig,
+  DEFAULT_PRIORITY_CONFIG,
+  INCH_DEFAULT_PRIORITY_CONFIG,
+} from '@/types';
+
+/** CAD パスポート: メートル/インチ規格 */
+export type UnitSystem = 'metric' | 'inch';
 
 /** Phase 0b: 現在の company_id を取得（authStore 未ロード時は Default Company にフォールバック） */
 const getCompanyId = () => useAuthStore.getState().currentCompanyId ?? DEFAULT_COMPANY_ID;
@@ -46,6 +58,8 @@ function parseDimensionVisibility(raw: unknown): DimensionVisibility {
 }
 
 type HandrailSettingsStore = {
+  /** CAD パスポート: 現在の規格（メートル/インチ）。既定 'metric'。 */
+  unitSystem: UnitSystem;
   /** 現在有効な手摺サイズ（部材パレット・自動割付で使用可能なサイズ） */
   enabledSizes: HandrailLengthMm[];
   /** 優先部材リスト設定（自動割付用） */
@@ -64,13 +78,36 @@ type HandrailSettingsStore = {
   toggleSize: (size: HandrailLengthMm) => Promise<void>;
   /** Phase J-5: 寸法線の段別表示を更新して DB に保存 (楽観的更新) */
   updateDimensionVisibility: (updates: Partial<DimensionVisibility>) => Promise<void>;
+  /** CAD パスポート: 規格を切り替える。enabledSizes / priorityConfig をその規格の既定へ載せ替えて保存。 */
+  setUnitSystem: (unit: UnitSystem) => Promise<void>;
 };
 
-/** enabled_sizes を HandrailLengthMm[] にサニタイズ（不正な値は除去） */
+/** その規格の有効サイズ全集合（保存値のサニタイズ・並べ替えに使用） */
+const ALL_VALID_SIZES = new Set<number>([...ALL_HANDRAIL_SIZES, ...INCH_ALL_HANDRAIL_SIZES]);
+
+/** enabled_sizes を HandrailLengthMm[] にサニタイズ（メートル・インチ両規格の値を許容、不正値は除去） */
 function sanitize(raw: unknown): HandrailLengthMm[] {
   if (!Array.isArray(raw)) return [...DEFAULT_ENABLED_SIZES];
-  const valid = new Set<number>(ALL_HANDRAIL_SIZES);
-  return raw.filter((v): v is HandrailLengthMm => typeof v === 'number' && valid.has(v));
+  return raw.filter((v): v is HandrailLengthMm => typeof v === 'number' && ALL_VALID_SIZES.has(v));
+}
+
+/** サイズ配列を降順・重複排除で整える（規格非依存。メートルでも従来の ALL 順と一致）。 */
+function orderSizes(sizes: HandrailLengthMm[]): HandrailLengthMm[] {
+  return Array.from(new Set(sizes)).sort((a, b) => b - a);
+}
+
+/** 規格 → 既定の enabledSizes / priorityConfig（新しいコピーを返す）。 */
+function defaultsForUnit(unit: UnitSystem): { enabledSizes: HandrailLengthMm[]; priorityConfig: PriorityConfig } {
+  if (unit === 'inch') {
+    return {
+      enabledSizes: [...INCH_DEFAULT_ENABLED_SIZES],
+      priorityConfig: { ...INCH_DEFAULT_PRIORITY_CONFIG, order: [...INCH_DEFAULT_PRIORITY_CONFIG.order] },
+    };
+  }
+  return {
+    enabledSizes: [...DEFAULT_ENABLED_SIZES],
+    priorityConfig: { ...DEFAULT_PRIORITY_CONFIG, order: [...DEFAULT_PRIORITY_CONFIG.order] },
+  };
 }
 
 /** チェック ON/OFF に応じて priorityConfig を調整 (= /settings 画面の local state 用に export)
@@ -117,6 +154,7 @@ export function adjustPriorityOnToggle(
 }
 
 export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get) => ({
+  unitSystem: 'metric',
   enabledSizes: [...DEFAULT_ENABLED_SIZES],
   priorityConfig: { ...DEFAULT_PRIORITY_CONFIG, order: [...DEFAULT_PRIORITY_CONFIG.order] },
   dimensionVisibility: { ...DEFAULT_DIMENSION_VISIBILITY },
@@ -127,12 +165,13 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
       // Day 7 commit C: RLS で auto フィルタ (= auth.uid() = owner_id)、 自分のレコードのみ返る
       const { data, error } = await supabase
         .from('handrail_settings')
-        .select('enabled_sizes, priority_config, dimension_visibility')
+        .select('enabled_sizes, priority_config, dimension_visibility, unit_system')
         .limit(1)
         .maybeSingle();
       if (error) {
         console.warn('[handrailSettings] load error, using defaults:', error.message);
         set({
+          unitSystem: 'metric',
           enabledSizes: [...DEFAULT_ENABLED_SIZES],
           priorityConfig: { ...DEFAULT_PRIORITY_CONFIG, order: [...DEFAULT_PRIORITY_CONFIG.order] },
           dimensionVisibility: { ...DEFAULT_DIMENSION_VISIBILITY },
@@ -140,9 +179,13 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
         });
         return;
       }
-      // enabled_sizes（既存ロジック）
-      const enabledSizes = data?.enabled_sizes ? sanitize(data.enabled_sizes) : [...DEFAULT_ENABLED_SIZES];
-      // priority_config（null/旧データなら DEFAULT フォールバック）
+      // unit_system（null/旧データなら 'metric'）
+      const unitSystem: UnitSystem = data?.unit_system === 'inch' ? 'inch' : 'metric';
+      // enabled_sizes（既存ロジック。保存済み値を尊重し、規格で上書きしない）
+      const enabledSizes = data?.enabled_sizes
+        ? sanitize(data.enabled_sizes)
+        : [...defaultsForUnit(unitSystem).enabledSizes];
+      // priority_config（null/旧データなら規格別 DEFAULT フォールバック）
       const rawPc = data?.priority_config as Partial<PriorityConfig> | null | undefined;
       const priorityConfig: PriorityConfig = rawPc && Array.isArray(rawPc.order)
         ? {
@@ -151,13 +194,14 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
             subCount: typeof rawPc.subCount === 'number' ? rawPc.subCount : DEFAULT_PRIORITY_CONFIG.subCount,
             adjustCount: typeof rawPc.adjustCount === 'number' ? rawPc.adjustCount : DEFAULT_PRIORITY_CONFIG.adjustCount,
           }
-        : { ...DEFAULT_PRIORITY_CONFIG, order: [...DEFAULT_PRIORITY_CONFIG.order] };
+        : { ...defaultsForUnit(unitSystem).priorityConfig };
       // Phase J-5: dimension_visibility（null/旧データなら DEFAULT）
       const dimensionVisibility = parseDimensionVisibility(data?.dimension_visibility);
-      set({ enabledSizes, priorityConfig, dimensionVisibility, loading: false });
+      set({ unitSystem, enabledSizes, priorityConfig, dimensionVisibility, loading: false });
     } catch (e) {
       console.warn('[handrailSettings] load exception:', e);
       set({
+        unitSystem: 'metric',
         enabledSizes: [...DEFAULT_ENABLED_SIZES],
         priorityConfig: { ...DEFAULT_PRIORITY_CONFIG, order: [...DEFAULT_PRIORITY_CONFIG.order] },
         dimensionVisibility: { ...DEFAULT_DIMENSION_VISIBILITY },
@@ -167,8 +211,8 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
   },
 
   saveHandrailSettings: async (sizes) => {
-    // ALL_HANDRAIL_SIZES の順序で並べ、重複排除
-    const ordered = ALL_HANDRAIL_SIZES.filter(s => sizes.includes(s));
+    // 降順・重複排除で並べる（規格非依存。メートルは従来の ALL 順と一致）
+    const ordered = orderSizes(sizes);
     set({ enabledSizes: ordered });
     try {
       // Day 7 commit C: 認証必須 (= ANON 時は middleware で防がれる前提)
@@ -281,6 +325,48 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
       }
     } catch (e) {
       console.warn('[handrailSettings] updateDimensionVisibility exception:', e);
+    }
+  },
+
+  // CAD パスポート: 規格切替。enabledSizes / priorityConfig をその規格の既定へ載せ替えて保存。
+  // 切替は新規割付にだけ効く（既存図面の保存済み部材値は変更しない）。
+  setUnitSystem: async (unit) => {
+    if (get().unitSystem === unit) return;
+    const { enabledSizes, priorityConfig } = defaultsForUnit(unit);
+    // 楽観的更新: 先に state を載せ替えて UI 即応
+    set({ unitSystem: unit, enabledSizes, priorityConfig });
+    try {
+      // Day 7 commit C: 認証必須 (= ANON 時は middleware で防がれる前提)
+      const ownerId = getOwnerId();
+      if (!ownerId) {
+        console.error('[handrailSettings] setUnitSystem skipped: not authenticated');
+        return;
+      }
+      const companyId = getCompanyId();
+      const payload = {
+        unit_system: unit,
+        enabled_sizes: enabledSizes,
+        priority_config: priorityConfig,
+        updated_at: new Date().toISOString(),
+      };
+      // Day 7 commit C: RLS で auto フィルタ。 既存レコードを update、 無ければ insert
+      const { data: existing } = await supabase
+        .from('handrail_settings')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (existing?.id) {
+        await supabase
+          .from('handrail_settings')
+          .update(payload)
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('handrail_settings')
+          .insert({ owner_id: ownerId, company_id: companyId, ...payload });
+      }
+    } catch (e) {
+      console.warn('[handrailSettings] setUnitSystem exception:', e);
     }
   },
 }));

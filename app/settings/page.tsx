@@ -12,6 +12,7 @@ import {
 import { supabase } from '@/lib/supabase/client';
 import {
   ALL_HANDRAIL_SIZES,
+  INCH_ALL_HANDRAIL_SIZES,
   DEFAULT_ENABLED_SIZES,
   DEFAULT_PRIORITY_CONFIG,
   type HandrailLengthMm,
@@ -24,6 +25,8 @@ export default function SettingsPage() {
   const router = useRouter();
   const { user, profile, updateProfile } = useAuthStore();
   const {
+    unitSystem,
+    setUnitSystem,
     enabledSizes: storeEnabledSizes,
     priorityConfig: storePriorityConfig,
     dimensionVisibility: storeDimensionVisibility,
@@ -33,6 +36,9 @@ export default function SettingsPage() {
     savePriorityConfig: storeSavePriorityConfig,
     updateDimensionVisibility: storeUpdateDimensionVisibility,
   } = useHandrailSettingsStore();
+
+  // 規格別の選択可能サイズ全集合（使用部材グリッド / 並べ替え順に使用）
+  const allSizes = unitSystem === 'inch' ? INCH_ALL_HANDRAIL_SIZES : ALL_HANDRAIL_SIZES;
 
   // 既存 state
   const [companyName, setCompanyName] = useState('');
@@ -60,6 +66,8 @@ export default function SettingsPage() {
   }, [loadHandrailSettings]);
 
   // Task A: store 値 → local state 同期 (= 初回ロード後 + 他箇所での変更追従)
+  // 規格切替 (setUnitSystem) も storeEnabledSizes / storePriorityConfig を更新するため
+  // この effect で local が規格の既定へ載せ替わる。
   useEffect(() => {
     if (!handrailLoading) {
       setEnabledSizesLocal([...storeEnabledSizes]);
@@ -99,13 +107,20 @@ export default function SettingsPage() {
       ? enabledSizesLocal.filter((s) => s !== size)
       : [...enabledSizesLocal, size];
     if (next.length === 0) return; // 全 OFF 防止
-    const ordered = ALL_HANDRAIL_SIZES.filter((s) => next.includes(s));
+    // 規格別 ALL 順で並べる（インチ規格はインチ ALL 順）
+    const ordered = allSizes.filter((s) => next.includes(s));
     setEnabledSizesLocal(ordered);
     // priorityConfig 連動 (= adjustPriorityOnToggle 経由、 store 動作再現)
     const nextConfig = adjustPriorityOnToggle(priorityConfigLocal, size, !wasOn);
     if (nextConfig !== priorityConfigLocal) {
       setPriorityConfigLocal(nextConfig);
     }
+  };
+
+  // CAD パスポート: 規格切替（即時に store へ反映・保存。新規割付にだけ効く）
+  const handleSwitchUnit = (unit: 'metric' | 'inch') => {
+    if (unit === unitSystem) return;
+    void setUnitSystem(unit);
   };
 
   // Task A: ロゴ ファイル選択 (= 案 b: 保存時 upload、 ここでは保持のみ)
@@ -206,6 +221,38 @@ export default function SettingsPage() {
         </section>
 
         <section>
+          <h2 className="text-sm text-dimension mb-2 font-bold">規格</h2>
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleSwitchUnit('metric')}
+                disabled={handrailLoading}
+                className={`flex-1 h-10 rounded-md text-sm font-bold transition-colors disabled:opacity-50 ${
+                  unitSystem === 'metric' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                メートル
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchUnit('inch')}
+                disabled={handrailLoading}
+                className={`flex-1 h-10 rounded-md text-sm font-bold transition-colors disabled:opacity-50 ${
+                  unitSystem === 'inch' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                インチ
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-dimension">
+              規格を切り替えると、使用部材・自動割付優先がその規格の既定サイズに載せ替わります。<br />
+              保存済み図面の部材は変わりません（新しく配置・自動割付する部材にだけ効きます）。
+            </p>
+          </div>
+        </section>
+
+        <section>
           <h2 className="text-sm text-dimension mb-2 font-bold">部材設定</h2>
 
           {/* タブ切替 */}
@@ -238,7 +285,7 @@ export default function SettingsPage() {
               OFF のサイズは自動割付・パレットで使用されません。
             </p>
             <div className="grid grid-cols-2 gap-2">
-              {ALL_HANDRAIL_SIZES.map((size) => {
+              {allSizes.map((size) => {
                 const on = enabledSizesLocal.includes(size);
                 const disabled = handrailLoading || (on && enabledSizesLocal.length <= 1);
                 return (
