@@ -97,7 +97,7 @@ function orderSizes(sizes: HandrailLengthMm[]): HandrailLengthMm[] {
 }
 
 /** 規格 → 既定の enabledSizes / priorityConfig（新しいコピーを返す）。 */
-function defaultsForUnit(unit: UnitSystem): { enabledSizes: HandrailLengthMm[]; priorityConfig: PriorityConfig } {
+export function defaultsForUnit(unit: UnitSystem): { enabledSizes: HandrailLengthMm[]; priorityConfig: PriorityConfig } {
   if (unit === 'inch') {
     return {
       enabledSizes: [...INCH_DEFAULT_ENABLED_SIZES],
@@ -328,13 +328,12 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
     }
   },
 
-  // CAD パスポート: 規格切替。enabledSizes / priorityConfig をその規格の既定へ載せ替えて保存。
-  // 切替は新規割付にだけ効く（既存図面の保存済み部材値は変更しない）。
+  // CAD パスポート: 規格(unit_system)を DB に保存し、ストアの保存済み値(unitSystem)を更新する。
+  // 規格の切替自体（enabledSizes / priorityConfig の規格既定への載せ替え）は /settings の
+  // local state 側で行い、即時の DB 自動保存はしない。この経路は保存ボタン押下時にのみ呼ばれ、
+  // unit_system を確実に永続化する（enabled_sizes / priority_config は別アクションで保存）。
   setUnitSystem: async (unit) => {
-    if (get().unitSystem === unit) return;
-    const { enabledSizes, priorityConfig } = defaultsForUnit(unit);
-    // 楽観的更新: 先に state を載せ替えて UI 即応
-    set({ unitSystem: unit, enabledSizes, priorityConfig });
+    set({ unitSystem: unit });
     try {
       // Day 7 commit C: 認証必須 (= ANON 時は middleware で防がれる前提)
       const ownerId = getOwnerId();
@@ -343,12 +342,6 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
         return;
       }
       const companyId = getCompanyId();
-      const payload = {
-        unit_system: unit,
-        enabled_sizes: enabledSizes,
-        priority_config: priorityConfig,
-        updated_at: new Date().toISOString(),
-      };
       // Day 7 commit C: RLS で auto フィルタ。 既存レコードを update、 無ければ insert
       const { data: existing } = await supabase
         .from('handrail_settings')
@@ -358,12 +351,12 @@ export const useHandrailSettingsStore = create<HandrailSettingsStore>((set, get)
       if (existing?.id) {
         await supabase
           .from('handrail_settings')
-          .update(payload)
+          .update({ unit_system: unit, updated_at: new Date().toISOString() })
           .eq('id', existing.id);
       } else {
         await supabase
           .from('handrail_settings')
-          .insert({ owner_id: ownerId, company_id: companyId, ...payload });
+          .insert({ owner_id: ownerId, company_id: companyId, unit_system: unit });
       }
     } catch (e) {
       console.warn('[handrailSettings] setUnitSystem exception:', e);

@@ -6,8 +6,10 @@ import { useAuthStore } from '@/stores/authStore';
 import {
   useHandrailSettingsStore,
   adjustPriorityOnToggle,
+  defaultsForUnit,
   DEFAULT_DIMENSION_VISIBILITY,
   type DimensionVisibility,
+  type UnitSystem,
 } from '@/stores/handrailSettingsStore';
 import { supabase } from '@/lib/supabase/client';
 import {
@@ -37,9 +39,6 @@ export default function SettingsPage() {
     updateDimensionVisibility: storeUpdateDimensionVisibility,
   } = useHandrailSettingsStore();
 
-  // 規格別の選択可能サイズ全集合（使用部材グリッド / 並べ替え順に使用）
-  const allSizes = unitSystem === 'inch' ? INCH_ALL_HANDRAIL_SIZES : ALL_HANDRAIL_SIZES;
-
   // 既存 state
   const [companyName, setCompanyName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -49,12 +48,17 @@ export default function SettingsPage() {
   // Task A: 統一保存ボタン用 local state
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  // CAD パスポート: 規格も他の部材設定と同じく local 編集バッファで保持（保存ボタンまで DB に反映しない）
+  const [unitSystemLocal, setUnitSystemLocal] = useState<UnitSystem>('metric');
   const [enabledSizesLocal, setEnabledSizesLocal] = useState<HandrailLengthMm[]>([...DEFAULT_ENABLED_SIZES]);
   const [priorityConfigLocal, setPriorityConfigLocal] = useState<PriorityConfig>({
     ...DEFAULT_PRIORITY_CONFIG,
     order: [...DEFAULT_PRIORITY_CONFIG.order],
   });
   const [dimensionVisibilityLocal, setDimensionVisibilityLocal] = useState<DimensionVisibility>({ ...DEFAULT_DIMENSION_VISIBILITY });
+
+  // 規格別の選択可能サイズ全集合（使用部材グリッド / 並べ替え順に使用）。local バッファの規格に追従。
+  const allSizes = unitSystemLocal === 'inch' ? INCH_ALL_HANDRAIL_SIZES : ALL_HANDRAIL_SIZES;
 
   useEffect(() => {
     if (profile) setCompanyName(profile.company_name || '');
@@ -65,21 +69,24 @@ export default function SettingsPage() {
     loadHandrailSettings();
   }, [loadHandrailSettings]);
 
-  // Task A: store 値 → local state 同期 (= 初回ロード後 + 他箇所での変更追従)
-  // 規格切替 (setUnitSystem) も storeEnabledSizes / storePriorityConfig を更新するため
-  // この effect で local が規格の既定へ載せ替わる。
+  // Task A: store 値 → local state 同期 (= 初回ロード後 + 他箇所での変更追従 + 保存完了後の確定)
+  // 規格切替 (handleSwitchUnit) は store を変更せず local のみ更新するため、この effect は
+  // 切替では発火せず、ロード時と保存完了時（store.unitSystem 等が確定した時）に local を確定値へ揃える。
   useEffect(() => {
     if (!handrailLoading) {
+      setUnitSystemLocal(unitSystem);
       setEnabledSizesLocal([...storeEnabledSizes]);
       setPriorityConfigLocal({ ...storePriorityConfig, order: [...storePriorityConfig.order] });
       setDimensionVisibilityLocal({ ...storeDimensionVisibility });
     }
-  }, [handrailLoading, storeEnabledSizes, storePriorityConfig, storeDimensionVisibility]);
+  }, [handrailLoading, unitSystem, storeEnabledSizes, storePriorityConfig, storeDimensionVisibility]);
 
   // Task A: dirty 判定
   const isDirty = useMemo(() => {
     if (companyName !== (profile?.company_name || '')) return true;
     if (logoFile !== null) return true;
+    // CAD パスポート: 規格（保存済み store 値との差分）
+    if (unitSystemLocal !== unitSystem) return true;
     // enabledSizes: 配列内容比較 (= sort 済比較)
     const a = [...enabledSizesLocal].sort();
     const b = [...storeEnabledSizes].sort();
@@ -95,6 +102,7 @@ export default function SettingsPage() {
     return false;
   }, [
     companyName, profile, logoFile,
+    unitSystemLocal, unitSystem,
     enabledSizesLocal, storeEnabledSizes,
     priorityConfigLocal, storePriorityConfig,
     dimensionVisibilityLocal, storeDimensionVisibility,
@@ -117,10 +125,14 @@ export default function SettingsPage() {
     }
   };
 
-  // CAD パスポート: 規格切替（即時に store へ反映・保存。新規割付にだけ効く）
-  const handleSwitchUnit = (unit: 'metric' | 'inch') => {
-    if (unit === unitSystem) return;
-    void setUnitSystem(unit);
+  // CAD パスポート: 規格切替（他の部材設定と同じく local バッファのみ更新 → dirty 化。
+  // store / DB へは保存ボタン押下時にまとめて反映する。新規割付にだけ効く設計は維持）。
+  const handleSwitchUnit = (unit: UnitSystem) => {
+    if (unit === unitSystemLocal) return;
+    const { enabledSizes, priorityConfig } = defaultsForUnit(unit);
+    setUnitSystemLocal(unit);
+    setEnabledSizesLocal([...enabledSizes]);
+    setPriorityConfigLocal({ ...priorityConfig, order: [...priorityConfig.order] });
   };
 
   // Task A: ロゴ ファイル選択 (= 案 b: 保存時 upload、 ここでは保持のみ)
@@ -151,6 +163,10 @@ export default function SettingsPage() {
       }
       // profile 更新 (= 会社名 + ロゴ、 logoUrl undefined なら updateProfile 内 if (logoUrl) ガードで既存 logo 維持)
       await updateProfile(companyName, logoUrl);
+      // CAD パスポート: 規格(unit_system)を保存（変更があるときのみ。store.unitSystem も更新 → dirty クリア）
+      if (unitSystemLocal !== unitSystem) {
+        await setUnitSystem(unitSystemLocal);
+      }
       // 部材設定 (= store action 経由、 内部で DB 保存)
       await storeSaveHandrailSettings(enabledSizesLocal);
       await storeSavePriorityConfig(priorityConfigLocal);
@@ -229,7 +245,7 @@ export default function SettingsPage() {
                 onClick={() => handleSwitchUnit('metric')}
                 disabled={handrailLoading}
                 className={`flex-1 h-10 rounded-md text-sm font-bold transition-colors disabled:opacity-50 ${
-                  unitSystem === 'metric' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                  unitSystemLocal === 'metric' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
                 }`}
               >
                 メートル
@@ -239,7 +255,7 @@ export default function SettingsPage() {
                 onClick={() => handleSwitchUnit('inch')}
                 disabled={handrailLoading}
                 className={`flex-1 h-10 rounded-md text-sm font-bold transition-colors disabled:opacity-50 ${
-                  unitSystem === 'inch' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                  unitSystemLocal === 'inch' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
                 }`}
               >
                 インチ
