@@ -339,11 +339,31 @@ export type SequentialCandidate = {
   side: SequentialCandidateSide;
   variationIdx: number;     // この delta 内で何番目の rails パターンか (0-based, score 降順)
   variationCount: number;   // この delta 内の総 rails パターン数 (UI の (m/N) 表示用)
+  /** CAD パスポート rule5: ±END_DISTANCE_TOLERANCE_MM 内に制約内解が無いとき、
+   *  離れを動かさず残した端数(mm)。通常は 0(rails が離れにぴったり)。 */
+  remainder?: number;
 };
+
+/** CAD パスポート: 1辺(1面)の自動割付ルール用定数 */
+// 離れ(終点離れ)をぴったりに合わせられないとき、動かしてよい上限 (mm)
+export const END_DISTANCE_TOLERANCE_MM = 50;
+// 1辺で使える非メイン(サブ+調整)部材の最大本数。メイン部材は無制限。
+export const MAX_NON_MAIN_PER_EDGE = 3;
+
+/** サイズが priorityConfig のメイン帯に属するか */
+function isMainSize(size: HandrailLengthMm, priorityConfig: PriorityConfig): boolean {
+  return getSectionOfSize(size, priorityConfig) === 'main';
+}
 
 /**
  * 指定された targetEndDistanceMm をぴったり実現する手摺の組み合わせを全て見つける。
- * DFS で列挙、深さ20本・結果100件で打ち切り。
+ * DFS で列挙、結果100件で打ち切り。
+ *
+ * priorityConfig を渡すと「1面の部材数ルール」を適用する:
+ *   - 非メイン(サブ+調整)部材は合計 MAX_NON_MAIN_PER_EDGE 本まで(超える枝は枝刈り)
+ *   - メイン部材は無制限(総本数上限はメイン本数で頭打ちにしない)
+ *   - 除外(excluded)サイズは使用しない
+ * priorityConfig 省略時は従来動作(総本数 MAX_DEPTH=20・制約なし)で完全後方互換。
  */
 function findAllCombinationsForEnd(
   edgeLengthMm: number,
@@ -351,6 +371,7 @@ function findAllCombinationsForEnd(
   targetEndDistanceMm: number,
   isNextConvex: boolean,
   enabledSizes: HandrailLengthMm[],
+  priorityConfig?: PriorityConfig,
 ): HandrailLengthMm[][] {
   const endContribution = isNextConvex ? targetEndDistanceMm : -targetEndDistanceMm;
   const requiredRailsTotal = startContribution + edgeLengthMm + endContribution;
@@ -358,7 +379,13 @@ function findAllCombinationsForEnd(
   if (requiredRailsTotal <= 0) return [];
   if (enabledSizes.length === 0) return [];
 
-  const sortedSizes: HandrailLengthMm[] = [...enabledSizes].sort((a, b) => b - a);
+  // priorityConfig あり: 除外(excluded)サイズは使用不可なので外す
+  const usableSizes: HandrailLengthMm[] = priorityConfig
+    ? enabledSizes.filter(s => getSectionOfSize(s, priorityConfig) !== 'excluded')
+    : [...enabledSizes];
+  if (usableSizes.length === 0) return [];
+
+  const sortedSizes: HandrailLengthMm[] = [...usableSizes].sort((a, b) => b - a);
 
   // 早期枝刈り: requiredRailsTotal が GCD の倍数でなければ達成不可能
   const computeGcd = (a: number, b: number): number => {
@@ -370,10 +397,13 @@ function findAllCombinationsForEnd(
   if (requiredRailsTotal % stepGcd !== 0) return [];
 
   const results: HandrailLengthMm[][] = [];
-  const MAX_DEPTH = 20;
   const MAX_RESULTS = 100;
+  // メイン無制限のため、総本数上限はメイン本数で頭打ちにならない大きめの値にする。
+  // 非メイン本数は maxNonMain で別途制限する(priorityConfig あり時のみ)。
+  const MAX_DEPTH = priorityConfig ? 200 : 20;
+  const maxNonMain = priorityConfig ? MAX_NON_MAIN_PER_EDGE : Infinity;
 
-  const dfs = (remaining: number, current: HandrailLengthMm[], maxIndex: number): void => {
+  const dfs = (remaining: number, current: HandrailLengthMm[], maxIndex: number, nonMainCount: number): void => {
     if (results.length >= MAX_RESULTS) return;
     if (remaining === 0) {
       results.push([...current]);
@@ -383,15 +413,135 @@ function findAllCombinationsForEnd(
     for (let i = maxIndex; i < sortedSizes.length; i++) {
       const size = sortedSizes[i];
       if (size > remaining) continue;
+      const nonMain = priorityConfig ? !isMainSize(size, priorityConfig) : false;
+      if (nonMain && nonMainCount >= maxNonMain) continue;
       current.push(size);
-      dfs(remaining - size, current, i);
+      dfs(remaining - size, current, i, nonMainCount + (nonMain ? 1 : 0));
       current.pop();
       if (results.length >= MAX_RESULTS) return;
     }
   };
 
-  dfs(requiredRailsTotal, [], 0);
+  dfs(requiredRailsTotal, [], 0, 0);
   return results;
+}
+
+/**
+ * CAD パスポート: priorityConfig あり時の 1辺候補生成（1面の部材数ルール）。
+ * - 非メイン(サブ+調整)は MAX_NON_MAIN_PER_EDGE 本まで・メイン無制限（findAllCombinationsForEnd で担保）
+ * - rule2/3: 終点離れを ±END_DISTANCE_TOLERANCE_MM 以内で動かし、制約内解のうち
+ *            scoreCombination 最大（メイン多・非メイン少）→|離れ差|小 をデフォルト(大物案)に。
+ * - rule4: 制約を満たす「離れ厳守(差0)案」がデフォルトと別に存在すれば 2 つ目に並べる(2択)。
+ * - rule5: ±許容内に制約内解が無ければ、非メイン≤3 を守ったまま最も近い解を採り、
+ *          離れは動かさず差分を端数(remainder)で表示する。
+ * 操作系(←/→・部材変更)はこのルールでは無効化（2択固定）するため、
+ * 非デフォルト引数(offset/variation)では候補を返さない。
+ */
+function generateConstrainedCandidates(
+  edgeLengthMm: number,
+  startContribution: number,
+  desiredEndDistanceMm: number,
+  isNextConvex: boolean,
+  enabledSizes: HandrailLengthMm[],
+  priorityConfig: PriorityConfig,
+  largerOffsetIdx: number,
+  smallerOffsetIdx: number,
+  largerVariationIdx: number,
+  smallerVariationIdx: number,
+): SequentialCandidate[] {
+  const isDefaultArgs =
+    largerOffsetIdx === 0 && smallerOffsetIdx === 0 &&
+    largerVariationIdx === 0 && smallerVariationIdx === 0;
+  if (!isDefaultArgs) return [];
+
+  type C = { rails: HandrailLengthMm[]; targetEnd: number; diff: number };
+
+  const nonMainCount = (rails: HandrailLengthMm[]): number =>
+    rails.filter(r => getSectionOfSize(r, priorityConfig) !== 'main').length;
+  const score = (rails: HandrailLengthMm[]): number => scoreCombination(rails, priorityConfig);
+
+  // 候補比較: スコア降順 → |離れ差|昇順 → 非メイン本数昇順 → 総本数昇順
+  const cmp = (a: C, b: C): number => {
+    const sa = score(a.rails), sb = score(b.rails);
+    if (Math.abs(sa - sb) > 1e-9) return sb - sa;
+    const da = Math.abs(a.diff), db = Math.abs(b.diff);
+    if (da !== db) return da - db;
+    const na = nonMainCount(a.rails), nb = nonMainCount(b.rails);
+    if (na !== nb) return na - nb;
+    return a.rails.length - b.rails.length;
+  };
+
+  const combosAt = (targetEnd: number): C[] => {
+    if (targetEnd < 0) return [];
+    const list = findAllCombinationsForEnd(
+      edgeLengthMm, startContribution, targetEnd, isNextConvex, enabledSizes, priorityConfig,
+    );
+    return list.map(rails => ({ rails, targetEnd, diff: targetEnd - desiredEndDistanceMm }));
+  };
+
+  const sideOf = (diff: number): SequentialCandidateSide =>
+    diff === 0 ? 'exact' : (diff < 0 ? 'smaller' : 'larger');
+  const railsKey = (rails: HandrailLengthMm[]): string =>
+    [...rails].sort((a, b) => b - a).join(',');
+  const build = (c: C, side: SequentialCandidateSide, remainder = 0): SequentialCandidate => ({
+    rails: c.rails,
+    totalMm: c.rails.reduce((a, b) => a + b, 0),
+    actualEndDistanceMm: c.targetEnd,
+    diffFromDesired: c.diff,
+    side,
+    variationIdx: 0,
+    variationCount: 1,
+    remainder,
+  });
+
+  // rule2/3: ±許容内の制約内解を全収集 → 大物案デフォルト
+  const TOL = END_DISTANCE_TOLERANCE_MM;
+  const windowCands: C[] = [];
+  for (let d = -TOL; d <= TOL; d++) {
+    windowCands.push(...combosAt(desiredEndDistanceMm + d));
+  }
+
+  if (windowCands.length > 0) {
+    windowCands.sort(cmp);
+    const best = windowCands[0];
+    const result: SequentialCandidate[] = [build(best, sideOf(best.diff))];
+
+    // rule4: 離れ厳守(差0)の制約内解(最良)がデフォルトと別なら2つ目
+    const exactCands = windowCands.filter(c => c.diff === 0);
+    if (exactCands.length > 0) {
+      exactCands.sort(cmp);
+      const bestExact = exactCands[0];
+      if (railsKey(bestExact.rails) !== railsKey(best.rails)) {
+        result.push(build(bestExact, 'exact'));
+      }
+    }
+    return result;
+  }
+
+  // rule5: ±許容内に制約内解なし → 非メイン≤3 のまま最も近い解。離れは動かさず端数表示。
+  const T0 = startContribution + edgeLengthMm + (isNextConvex ? desiredEndDistanceMm : -desiredEndDistanceMm);
+  const MAX_DELTA = 1000;
+  let nearest: C | null = null;
+  for (let d = TOL + 1; d <= MAX_DELTA && !nearest; d++) {
+    const here = [...combosAt(desiredEndDistanceMm - d), ...combosAt(desiredEndDistanceMm + d)];
+    if (here.length > 0) {
+      here.sort(cmp);
+      nearest = here[0];
+    }
+  }
+  if (!nearest) return [];
+
+  const comboTotal = nearest.rails.reduce((a, b) => a + b, 0);
+  return [{
+    rails: nearest.rails,
+    totalMm: comboTotal,
+    actualEndDistanceMm: desiredEndDistanceMm, // 離れは動かさない
+    diffFromDesired: 0,
+    side: 'exact',
+    variationIdx: 0,
+    variationCount: 1,
+    remainder: T0 - comboTotal, // +: 不足, -: 突出
+  }];
 }
 
 export function generateSequentialCandidates(
@@ -421,6 +571,25 @@ export function generateSequentialCandidates(
   // requiredRailsTotal の計算には prevEdgeStartDistanceMm を使う。
   void startDistanceMm;
   const startContribution = isPrevConvex ? prevEdgeStartDistanceMm : -prevEdgeStartDistanceMm;
+
+  // === CAD パスポート: priorityConfig あり経路（1面の部材数ルール）===
+  // 非メイン≤3・メイン無制限の制約下で「大物案デフォルト＋離れ厳守の2択」を返す。
+  // priorityConfig なし(既存テスト/旧呼出)は従来の exact/smaller/larger ロジックを完全維持。
+  if (priorityConfig) {
+    return generateConstrainedCandidates(
+      edgeLengthMm,
+      startContribution,
+      desiredEndDistanceMm,
+      isNextConvex,
+      enabledSizes,
+      priorityConfig,
+      largerOffsetIdx,
+      smallerOffsetIdx,
+      largerVariationIdx,
+      smallerVariationIdx,
+    );
+  }
+
   const MAX_DELTA = 1000;
 
   // priorityConfig なしは本数少ない順
@@ -808,10 +977,10 @@ export function sequentialResultToAutoLayoutResult(
       : (er.edge.p2.y > er.edge.p1.y ? 1 : -1);
     const cursorEndAdjusted = er.cursorStart + sign * railsTotalGrid;
 
-    // 暫定: 提案モーダル発火抑止のため remainder=0
+    // 端数は候補の remainder を使用（通常0。CAD パスポート rule5 の「離れを動かさず残した端数」のみ非0）
     const candidates: LayoutCombination[] = er.candidates.map(c => ({
       rails: c.rails,
-      remainder: 0,
+      remainder: c.remainder ?? 0,
       count: c.rails.length,
     }));
 
