@@ -83,6 +83,76 @@ function renderLabel(
   ];
 }
 
+/* ===== 円形建物 (templateId==='circle') の判定 + 寸法情報 ===== */
+// 円は正36角形。微小辺の細分をやめ Φ(直径)/R(半径) で表示するための情報を返す。
+// 直径は templateDims.diameter を採用するが、頂点手編集などで BBox 幅と >2% 乖離した
+// 場合は陳腐化とみなし BBox 幅(mm)をフォールバック採用する。
+function getCircleInfo(b: BuildingShape): {
+  D: number; cx: number; cy: number;
+  minX: number; maxX: number; minY: number; maxY: number;
+  roofD: number | null; rMinX: number; rMaxX: number; rMinY: number; rMaxY: number;
+} | null {
+  if (b.templateId !== 'circle') return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of b.points) {
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+  }
+  if (!(minX < maxX && minY < maxY)) return null;
+
+  const bbWmm = Math.round(gridToMm(maxX - minX));
+  const declared = b.templateDims?.diameter;
+  // 宣言値が BBox 幅と 2% 以内なら宣言値、それ以外(陳腐化)は BBox 幅を採用
+  const D = (declared != null && Math.abs(declared - bbWmm) <= bbWmm * 0.02) ? declared : bbWmm;
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+
+  let roofD: number | null = null;
+  let rMinX = minX, rMaxX = maxX, rMinY = minY, rMaxY = maxY;
+  if (b.roof && b.roof.roofType !== 'none') {
+    const ohs = getEdgeOverhangs(b, b.roof);
+    const rp = computeOffsetPolygon(b.points, ohs);
+    rMinX = Infinity; rMinY = Infinity; rMaxX = -Infinity; rMaxY = -Infinity;
+    for (const p of rp) {
+      rMinX = Math.min(rMinX, p.x); rMinY = Math.min(rMinY, p.y);
+      rMaxX = Math.max(rMaxX, p.x); rMaxY = Math.max(rMaxY, p.y);
+    }
+    roofD = Math.round(gridToMm(rMaxX - rMinX));
+  }
+  return { D, cx, cy, minX, maxX, minY, maxY, roofD, rMinX, rMaxX, rMinY, rMaxY };
+}
+
+/* ===== 円用寸法線 (主線 + 両端目盛りのみ + Φ ラベル、内側細分なし) ===== */
+function renderCircleDimLine(
+  k: string, isH: boolean, axis: number, innerDir: number,
+  lineS: number, lineE: number, label: string,
+  fs: number, color: string, lw: number,
+  padX: number, padY: number, tickLen: number,
+): React.ReactElement[] {
+  const els: React.ReactElement[] = [];
+  els.push(
+    <Line key={`${k}L`}
+      points={isH ? [lineS, axis, lineE, axis] : [axis, lineS, axis, lineE]}
+      stroke={color} strokeWidth={lw} listening={false} />,
+  );
+  [lineS, lineE].forEach((px, ti) => {
+    els.push(
+      <Line key={`${k}t${ti}`}
+        points={isH
+          ? [px, axis, px, axis + innerDir * tickLen]
+          : [axis, px, axis + innerDir * tickLen, px]}
+        stroke={color} strokeWidth={lw} listening={false} />,
+    );
+  });
+  const mid = (lineS + lineE) / 2;
+  const outerOff = -innerDir * (tickLen + fs / 2 + padY * 2);
+  els.push(...renderLabel(
+    isH ? mid : axis + outerOff,
+    isH ? axis + outerOff : mid,
+    label, fs, `${k}O`, color, padX, padY,
+  ));
+  return els;
+}
+
 /* ===== 1 本の寸法線 (主線 + 目盛り + 各 span ラベル + 合計ラベル) ===== */
 function renderDimLine(
   k: string, isH: boolean, axis: number,
@@ -499,6 +569,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       };
 
       for (const b of floorBuildings) {
+        if (b.templateId === 'circle') continue; // 円は微小辺の集約をやめ Φ/R で別描画
         const bodyEdges = getFaceEdges(b.points);
         for (const f of ['north', 'south', 'east', 'west'] as Face[]) {
           wallEdges[f].push(...bodyEdges[f]);
@@ -544,9 +615,11 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           }));
           const total = spans.reduce((sum, sp) => sum + sp.mm, 0);
           const lineColor = previewMm?.key === scaffoldKey ? DRAG_COLOR : color;
+          // floor が全部円のときは足場段も細分せず合計のみ (内側細分を抑止)
+          const scfShowInner = spans.length > 1 && floorBuildings.some(b => b.templateId !== 'circle');
           els.push(...renderDimLine(
             `D${floor}S${face}`, isH, axisScaffold, innerDir, spans,
-            spans.length > 1, total, fs, lineColor, LW * zoom, PAD_X * zoom, PAD_Y * zoom, TICK_LEN * zoom,
+            scfShowInner, total, fs, lineColor, LW * zoom, PAD_X * zoom, PAD_Y * zoom, TICK_LEN * zoom,
           ));
           infos.push({
             key: scaffoldKey, face, isH, axis: axisScaffold,
@@ -602,6 +675,54 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
             lineStart: lineStartPx, lineEnd: lineEndPx,
           });
         }
+      }
+
+      // === 円形建物 (templateId==='circle'): Φ/R 表示 (微小辺の細分なし) ===
+      const wallVisKey = floor === 1 ? 'wall1F' : 'wall2F';
+      const roofVisKey = floor === 1 ? 'roof1F' : 'roof2F';
+      for (const b of floorBuildings) {
+        const ci = getCircleInfo(b);
+        if (!ci) continue;
+        const lineColorW = previewMm?.key === wallKey ? DRAG_COLOR : color;
+        const lineColorR = previewMm?.key === roofKey ? DRAG_COLOR : color;
+        for (const face of ['north', 'south', 'east', 'west'] as Face[]) {
+          const isH = face === 'north' || face === 'south';
+          const sign = (face === 'north' || face === 'west') ? -1 : 1;
+          const innerDir = -sign;
+          const refGrid = isH
+            ? (face === 'north' ? overallBB.minY : overallBB.maxY)
+            : (face === 'west' ? overallBB.minX : overallBB.maxX);
+          const refPx = isH ? gy(refGrid) : gx(refGrid);
+
+          // 外壁段: Φ(直径)
+          if (dimensionVisibility[wallVisKey]) {
+            const axisWall = refPx + sign * offWall;
+            const lineS = isH ? gx(ci.minX) : gy(ci.minY);
+            const lineE = isH ? gx(ci.maxX) : gy(ci.maxY);
+            els.push(...renderCircleDimLine(
+              `D${floor}CW${b.id}${face}`, isH, axisWall, innerDir, lineS, lineE,
+              `Φ${ci.D}`, fs, lineColorW, LW * zoom, PAD_X * zoom, PAD_Y * zoom, TICK_LEN * zoom,
+            ));
+            infos.push({ key: wallKey, face, isH, axis: axisWall, lineStart: lineS, lineEnd: lineE });
+          }
+
+          // 屋根段: Φ(屋根直径)。屋根ありのときのみ
+          if (ci.roofD != null && dimensionVisibility[roofVisKey]) {
+            const axisRoof = refPx + sign * offRoof;
+            const lineS = isH ? gx(ci.rMinX) : gy(ci.rMinY);
+            const lineE = isH ? gx(ci.rMaxX) : gy(ci.rMaxY);
+            els.push(...renderCircleDimLine(
+              `D${floor}CO${b.id}${face}`, isH, axisRoof, innerDir, lineS, lineE,
+              `Φ${ci.roofD}`, fs, lineColorR, LW * zoom, PAD_X * zoom, PAD_Y * zoom, TICK_LEN * zoom,
+            ));
+            infos.push({ key: roofKey, face, isH, axis: axisRoof, lineStart: lineS, lineEnd: lineE });
+          }
+        }
+        // 中心に R(半径) ラベル
+        els.push(...renderLabel(
+          gx(ci.cx), gy(ci.cy), `R${Math.round(ci.D / 2)}`,
+          fs, `D${floor}CR${b.id}`, color, PAD_X * zoom, PAD_Y * zoom,
+        ));
       }
     }
 
