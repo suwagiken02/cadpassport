@@ -30,7 +30,7 @@ import {
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
-import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances } from '@/lib/konva/labelUtils';
+import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
 type Props = { onClose: () => void; onOpenScaffoldStart: () => void };
 
@@ -295,14 +295,12 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     if (!scaffoldStart || targetFloor !== 'both' || !building2F || !normalizedBuilding2F) {
       return scaffoldStart;
     }
-    const oldIdx = scaffoldStart.startVertexIndex ?? 0;
-    const oldStart = building2F.points[oldIdx];
-    if (!oldStart) return scaffoldStart;
-    const newIdx = normalizedBuilding2F.points.findIndex(p =>
-      Math.abs(p.x - oldStart.x) < 0.001 && Math.abs(p.y - oldStart.y) < 0.001,
+    // H-3d-7 修正: ⭐ 起点を単一規約 (CW 辺順) で再解決する。
+    // 旧実装は生 points 配列を CW 辺 index で引いており CCW 格納で別頂点を指していた。
+    const { vertexIndex } = resolveScaffoldStartOnNormalized(
+      building2F, normalizedBuilding2F, scaffoldStart.startVertexIndex ?? 0,
     );
-    if (newIdx < 0) return scaffoldStart;
-    return { ...scaffoldStart, startVertexIndex: newIdx };
+    return { ...scaffoldStart, startVertexIndex: vertexIndex };
   }, [scaffoldStart, targetFloor, building2F, normalizedBuilding2F]);
 
   // bothモード時、2F 全辺（連動表示の参照用）
@@ -318,11 +316,13 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // Phase H-3d-6: 共通起点 ⭐ の絶対座標。 1F 下屋 label の起点判定 (最近接) に使用。
   // 優先順: scaffoldStart2F (= normalizedScaffoldStart 経由) → scaffoldStart1F → null
   const commonStartPoint = useMemo<Point | null>(() => {
-    // 2F の ⭐ あり: normalizedBuilding2F.points[startVertexIndex] を採用
+    // 2F の ⭐ あり: edges2FAll と同一規約 (CW 辺順) で ⭐ 座標を採る。
+    // H-3d-7 修正: 生 points[idx] ではなく getBuildingEdgesClockwise の p1 を使用。
     if (normalizedScaffoldStart && normalizedBuilding2F) {
-      const idx = (normalizedScaffoldStart.startVertexIndex ?? 0)
-        % normalizedBuilding2F.points.length;
-      return normalizedBuilding2F.points[idx] ?? null;
+      const normEdges = getBuildingEdgesClockwise(normalizedBuilding2F);
+      if (normEdges.length === 0) return null;
+      const idx = (normalizedScaffoldStart.startVertexIndex ?? 0) % normEdges.length;
+      return normEdges[idx]?.p1 ?? null;
     }
     // 2F の ⭐ なし、 1F の ⭐ あり: building1F.points[startVertexIndex] を採用
     // (1F は normalize 不要、 raw building1F の頂点座標をそのまま使う)

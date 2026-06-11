@@ -148,6 +148,52 @@ export function relabelByFace1F(
 }
 
 /**
+ * H-3d-7 修正: bothmode ⭐(足場開始)起点解決の単一規約。
+ *
+ * scaffoldStart.startVertexIndex は getBuildingEdgesClockwise(building) の辺順
+ * (= edge.p1 列上の位置) として保存されている(types/index.ts:298)。normalize
+ * (splitBuilding2FAt1FVertices)で頂点が増減・winding が変わっても、⭐ の絶対座標
+ * を基準に「正規化後ポリゴンの CW 辺順で p1 が ⭐ に一致する辺の index」を一意に返す。
+ *
+ * 全消費側(normalizedScaffoldStart / commonStartPoint / edges2FAll /
+ * getBothmodeEdgesWithRelativeLabels)がこの index を共有することで、生 points 配列を
+ * CW 辺 index で引いていた旧実装の winding 不整合(⭐ が左上にズレる)を解消する。
+ *
+ * @returns vertexIndex は normalizedBuilding の getBuildingEdgesClockwise 上の index、
+ *          point は ⭐ の絶対座標(= その辺の p1)。最近接マッチ(一致頂点があれば距離0)。
+ */
+export function resolveScaffoldStartOnNormalized(
+  rawBuilding: BuildingShape,
+  normalizedBuilding: BuildingShape,
+  rawStartVertexIndex: number,
+): { vertexIndex: number; point: Point } {
+  const normEdges = getBuildingEdgesClockwise(normalizedBuilding);
+  if (normEdges.length === 0) {
+    const fallback = normalizedBuilding.points[0] ?? rawBuilding.points[0] ?? { x: 0, y: 0 };
+    return { vertexIndex: 0, point: fallback };
+  }
+  const rawEdges = getBuildingEdgesClockwise(rawBuilding);
+  // ⭐ 絶対座標: startVertexIndex は CW 辺順(edge.p1 列)の index として保存されている
+  const star = rawEdges.length > 0
+    ? rawEdges[((rawStartVertexIndex % rawEdges.length) + rawEdges.length) % rawEdges.length].p1
+    : normEdges[0].p1;
+  // 正規化後 CW 辺順で ⭐ に最も近い p1 の index
+  let best = 0;
+  let bestDsq = Infinity;
+  for (let i = 0; i < normEdges.length; i++) {
+    const p = normEdges[i].p1;
+    const dx = p.x - star.x;
+    const dy = p.y - star.y;
+    const dsq = dx * dx + dy * dy;
+    if (dsq < bestDsq) {
+      bestDsq = dsq;
+      best = i;
+    }
+  }
+  return { vertexIndex: best, point: normEdges[best].p1 };
+}
+
+/**
  * Phase H-3e (共通根 1、 案 1A'): bothmode で raw building の入力欄に ⭐-relative
  * ラベルを表示するための helper 関数。
  *
