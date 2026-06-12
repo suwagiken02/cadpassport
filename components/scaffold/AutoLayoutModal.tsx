@@ -2034,6 +2034,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                       {activeEdgeResult.edge.label}面の割付候補
                     </div>
 
+                    {/* 空候補フォールバック: 無言の空白を撲滅 (戻り導線はフッターの「前の辺に戻る」) */}
+                    {activeEdgeResult.candidates.length === 0 && (
+                      <div className="mx-4 mb-3 px-3 py-3 rounded-xl bg-dark-bg border border-dark-border text-center">
+                        <p className="text-xs text-dimension">この辺に配置可能な候補がありません。</p>
+                        <p className="text-[10px] text-dimension/70 mt-1">
+                          下の「← 前の辺に戻る」で前の辺の離れを調整してください。
+                        </p>
+                      </div>
+                    )}
+
                     {/* 候補カードリスト */}
                     <div className="px-4 pb-4 space-y-2">
                       {activeEdgeResult.candidates.map((cand, idx) => {

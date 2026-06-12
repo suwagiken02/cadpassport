@@ -478,7 +478,11 @@ export function computeAutoLayoutSequential(
     let selectedIndex = userSelections?.[edge.index] ?? 0;
     if (selectedIndex >= candidates.length) selectedIndex = 0;
 
-    const isAutoProgress = candidates.length === 1;
+    // 自動進行は「候補1件 かつ 離れ差0 かつ 端数0」のみ。
+    // 離れが動く案(diff≠0)や端数あり(rule5)はモーダルで提案する。
+    const isAutoProgress = candidates.length === 1
+      && candidates[0].diffFromDesired === 0
+      && (candidates[0].remainder ?? 0) === 0;
     if (!isLocked && !isAutoProgress) hasUnresolved = true;
 
     intermediate[i] = {
@@ -1422,7 +1426,11 @@ export function computeBothmode2FLayout(
     let selectedIndex = userSelections?.[segKey] ?? 0;
     if (selectedIndex >= candidates.length) selectedIndex = 0;
 
-    const isAutoProgress = candidates.length === 1;
+    // 自動進行は「候補1件 かつ 離れ差0 かつ 端数0」のみ。
+    // 離れが動く案(diff≠0)や端数あり(rule5)はモーダルで提案する。
+    const isAutoProgress = candidates.length === 1
+      && candidates[0].diffFromDesired === 0
+      && (candidates[0].remainder ?? 0) === 0;
     // Phase H-3d-2 仕様簡素化: locked 概念廃止。常に false (互換性のためフィールド維持)。
     const isLocked = false;
 
@@ -1828,7 +1836,11 @@ export function computeBothmode1FLayout(
 
     let selectedIndex = userSelections?.[segKey] ?? 0;
     if (selectedIndex >= candidates.length) selectedIndex = 0;
-    const isAutoProgress = candidates.length === 1;
+    // 自動進行は「候補1件 かつ 離れ差0 かつ 端数0」のみ。
+    // 離れが動く案(diff≠0)や端数あり(rule5)はモーダルで提案する。
+    const isAutoProgress = candidates.length === 1
+      && candidates[0].diffFromDesired === 0
+      && (candidates[0].remainder ?? 0) === 0;
     // Phase H-3d-2 仕様簡素化: locked 概念廃止。常に false (互換性のためフィールド維持)。
     const isLocked = false;
 
