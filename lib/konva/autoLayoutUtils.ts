@@ -939,6 +939,33 @@ export function isCollinearWith(edge1F: EdgeInfo, edge2F: EdgeInfo): boolean {
 }
 
 /**
+ * edge1F が edge2F と「同一壁の隣接継続」か判定する (面一の含有 collinear とは別の第3区分)。
+ * 同じ handrailDir・同じ固定軸座標・同じ外向き法線で、edge1F の始点が edge2F の終点に
+ * 一致し同方向に延長する場合 true。例: 2F東(y0-4000) の続きの 1F東(y4000-7000)。
+ * 面一(isCollinearWith=含有)でも pillar(下屋への折れ)でもなく、足場は1本の連続ラインになる。
+ */
+export function isWallContinuation(edge2F: EdgeInfo, edge1F: EdgeInfo): boolean {
+  if (edge1F.handrailDir !== edge2F.handrailDir) return false;
+  if (edge1F.nx !== edge2F.nx || edge1F.ny !== edge2F.ny) return false;
+  // 固定軸座標一致
+  if (edge2F.handrailDir === 'horizontal') {
+    if (edge1F.p1.y !== edge2F.p1.y) return false;
+  } else {
+    if (edge1F.p1.x !== edge2F.p1.x) return false;
+  }
+  // 1F の始点が 2F の終点に一致 (= 2F の続きから始まる)
+  const eq = (a: Point, b: Point) =>
+    Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
+  if (!eq(edge1F.p1, edge2F.p2)) return false;
+  // 同方向に延長
+  const d2 = edge2F.handrailDir === 'horizontal'
+    ? Math.sign(edge2F.p2.x - edge2F.p1.x) : Math.sign(edge2F.p2.y - edge2F.p1.y);
+  const d1 = edge1F.handrailDir === 'horizontal'
+    ? Math.sign(edge1F.p2.x - edge1F.p1.x) : Math.sign(edge1F.p2.y - edge1F.p1.y);
+  return d1 === d2 && d1 !== 0;
+}
+
+/**
  * 建物全体の連動ペア (1F辺 ↔ 2F辺) を抽出する。
  * 各 1F 辺について、isCollinearWith(edge1F, edge2F) が true になる
  * 最初の 2F 辺をペアとして登録 (1F 辺 1 本に対して 2F 辺は最大 1 本対応する想定)。
@@ -1372,7 +1399,11 @@ export function computeBothmode2FLayout(
     let nextCornerIsConvex: boolean;
     if (desiredEndSource.kind === '1F-face-pillar') {
       const pillarEdge1F = edges1F.find(e => e.index === desiredEndSource.edge1FIndex);
-      if (pillarEdge1F) {
+      if (pillarEdge1F && isWallContinuation(edge2F, pillarEdge1F)) {
+        // 同一壁の隣接継続(面一の続き): 直線継続として角を越えて cursor を延長し、
+        // 1F 側の続きと足場ラインを連続させる(端で内引きして隙間を作らない)。
+        nextCornerIsConvex = true;
+      } else if (pillarEdge1F) {
         const ax = edge2F.p2.x - edge2F.p1.x;
         const ay = edge2F.p2.y - edge2F.p1.y;
         const bx = pillarEdge1F.p2.x - pillarEdge1F.p1.x;
@@ -1666,6 +1697,7 @@ export function computeBothmode1FLayout(
   userAdjustments?: Record<string, EdgeAdjustment>,
 ): Bothmode1FResult {
   const edges1F = getBuildingEdgesClockwise(building1F);
+  const edges2F = getBuildingEdgesClockwise(building2F);
   const n1F = edges1F.length;
   if (n1F < 3) return { edgeSegments: [], hasUnresolved: false };
 
@@ -1762,7 +1794,16 @@ export function computeBothmode1FLayout(
     const prevPillarMatchForDist = pillarPoints.find(p =>
       pointsMatch(p.point, edge.p1) && p.edge1FIndex === i,
     );
-    const prevEdgeStartDist: number = prevPillarMatchForDist
+    // 同一壁の隣接継続(2F東→1F東 等): 始点側の張り出しは 2F 側で消化済みのため
+    // effective に二重計上しない (prevEdgeStartDist=0)。scaffoldCoord の離れ(perp offset)は
+    // 下の startDist 側で 2F の離れを引き継ぐので、足場ラインは同じ位置で連続する。
+    const contEdge2FForDist = prevPillarMatchForDist
+      ? edges2F.find(e => e.index === prevPillarMatchForDist.edge2FIndex)
+      : undefined;
+    const isContinuationStart = !!(contEdge2FForDist && isWallContinuation(contEdge2FForDist, edge));
+    const prevEdgeStartDist: number = isContinuationStart
+      ? 0
+      : prevPillarMatchForDist
       ? (result2F.edgeSegments.find(s => s.edge2FIndex === prevPillarMatchForDist.edge2FIndex)
           ?.startDistanceMm ?? distances1F[edge.index] ?? 900)
       : (prevSegmentStartDist ?? distances1F[edges1F[(i - 1 + n1F) % n1F].index] ?? 900);
