@@ -1786,7 +1786,8 @@ export function computeBothmode1FLayout(
     // cornerConvex: 物理凸 (cross>0) or 直線継続 (cross=0) のどちらでも convex 扱い
     // （2F 面一境界の継続始点のみ下で凹ラップに上書きする）
     let prevCornerIsConvex = cornerConvexity1F[(i - 1 + n1F) % n1F] || isPrevStraight1F;
-    const nextCornerIsConvex = cornerConvexity1F[i] || isNextStraight1F;
+    // 終端が平行面一(collinear-with-2F)のときは下で凹ラップに上書きする
+    let nextCornerIsConvex = cornerConvexity1F[i] || isNextStraight1F;
     const segKey = `${i}-0`;
     const adj = userAdjustments?.[segKey] ?? DEFAULT_EDGE_ADJUSTMENT;
     // 1F の最初のセグメントが pillar-from-2F の場合、prev は 2F edge (= B1 等)。
@@ -1871,6 +1872,11 @@ export function computeBothmode1FLayout(
       const chained = chainedFixedEnd(nextEdgeIdx);
       desiredEndDist = chained ?? distances1F[nextEdgeIdx] ?? 900;
     }
+
+    // 平行面一(collinear-with-2F)の終端: 2F 境界へ端点一致させるため凹ラップ扱いにし、
+    // candidate 末端の凸+900 突出をやめる(effective を cursor span=壁長に一致)。
+    // 接続点は cursor 2nd pass で連動先2Fセグメントの近い端に揃える(支柱共有)。
+    if (endConstraint.kind === 'collinear-with-2F') nextCornerIsConvex = false;
 
     const candidates = generateSequentialCandidates(
       edge.lengthMm, startDist, desiredEndDist,
@@ -1983,6 +1989,11 @@ export function computeBothmode1FLayout(
       const seg2F = result2F.edgeSegments.find(seg2 => seg2.edge2FIndex === linked);
       if (seg2F && seg2F.handrailDir !== s.handrailDir) {
         cursorEnd = seg2F.scaffoldCoord;
+      } else if (seg2F) {
+        // 平行面一: 連動先2Fセグメントの近い方の端(cursor)に端点一致させる(角の支柱を共有)
+        const endVar = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+        cursorEnd = Math.abs(seg2F.cursorStart - endVar) <= Math.abs(seg2F.cursorEnd - endVar)
+          ? seg2F.cursorStart : seg2F.cursorEnd;
       } else {
         cursorEnd = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
       }
