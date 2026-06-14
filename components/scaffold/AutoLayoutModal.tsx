@@ -32,7 +32,7 @@ import {
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
-type Props = { onClose: () => void; onOpenScaffoldStart: () => void };
+type Props = { onClose: () => void; onOpenScaffoldStart: (lockFloor?: 1 | 2) => void };
 
 /** 建物プレビューSVG（辺ラベル付き、1F+2F同時対応） */
 function PreviewSVG({ points, edges, focusedIndex, conflictHandrails, blinkEdgeIndex, subPoints, subEdges, subHighlightIndices, focusedSubIndex, scaffoldStart, showFloorPrefix }: {
@@ -1261,6 +1261,15 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                   : `✓ 2F全周配置 + 1Fの下屋辺 ${uncoveredEdges1F.length} 本にも配置`}
               </p>
             )}
+            {targetFloor === 'both' && !!building1F && !!building2F && !scaffoldStart && (
+              <button
+                type="button"
+                onClick={() => { onClose(); onOpenScaffoldStart(2); }}
+                className="mt-1.5 w-full py-2 rounded-lg text-xs font-bold border border-accent text-accent hover:bg-accent/10 transition-colors"
+              >
+                ⭐ 足場開始位置を2Fに設定する
+              </button>
+            )}
           </div>
 
           {!building && (
@@ -2193,7 +2202,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 onClick={() => {
                   setShowLockedAlert(false);
                   onClose();
-                  onOpenScaffoldStart();
+                  onOpenScaffoldStart(targetFloor === 'both' ? 2 : undefined);
                 }}
                 className="flex-1 py-2.5 bg-accent text-white font-bold rounded-xl text-sm"
               >

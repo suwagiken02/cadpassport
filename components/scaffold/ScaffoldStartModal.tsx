@@ -10,8 +10,9 @@ import { mmToGrid } from '@/lib/konva/gridUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import { getBuildingEdgesClockwise, EdgeInfo } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
+import { isScaffoldFloorBlocked } from './scaffoldStartGuard';
 
-type Props = { onClose: () => void };
+type Props = { onClose: () => void; lockFloor?: 1 | 2 };
 
 const FACE_LABEL: Record<string, string> = {
   north: '北面', south: '南面', east: '東面', west: '西面',
@@ -27,7 +28,7 @@ function vertexToCorner(vtx: Point, center: Point): StartCorner {
   return 'sw';
 }
 
-export default function ScaffoldStartModal({ onClose }: Props) {
+export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
   const { setScaffoldStart, canvasData, addHandrail } = useCanvasStore();
   const enabledSizes = useHandrailSettingsStore(s => s.enabledSizes);
 
@@ -37,8 +38,8 @@ export default function ScaffoldStartModal({ onClose }: Props) {
     [enabledSizes],
   );
 
-  // 対象階の選択（初期は 1F）
-  const [targetFloor, setTargetFloor] = useState<1 | 2>(1);
+  // 対象階の選択（初期は 1F。bothmode 経由(lockFloor)なら固定階で開く）
+  const [targetFloor, setTargetFloor] = useState<1 | 2>(lockFloor ?? 1);
 
   // 対象階に合致する最初の建物
   const targetBuilding = useMemo(
@@ -91,6 +92,7 @@ export default function ScaffoldStartModal({ onClose }: Props) {
   }, [edgeInfo, selectedIdx]);
 
   const handleConfirm = () => {
+    if (isScaffoldFloorBlocked(lockFloor, targetFloor)) return; // 入口ガード: 固定階以外は確定不可
     if (!edgeInfo || !targetBuilding) { onClose(); return; }
     const { edges, pts, center } = edgeInfo;
     const n = edges.length;
@@ -175,21 +177,30 @@ export default function ScaffoldStartModal({ onClose }: Props) {
           <div>
             <label className="block text-sm text-dimension mb-2">対象階</label>
             <div className="flex gap-2">
-              {([1, 2] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setTargetFloor(f)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
-                    targetFloor === f
-                      ? 'border-accent bg-accent/15 text-accent'
-                      : 'border-dark-border text-dimension hover:border-accent/50'
-                  }`}
-                >
-                  {f}F
-                </button>
-              ))}
+              {([1, 2] as const).map((f) => {
+                const blocked = isScaffoldFloorBlocked(lockFloor, f);
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => { if (!blocked) setTargetFloor(f); }}
+                    disabled={blocked}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
+                      targetFloor === f
+                        ? 'border-accent bg-accent/15 text-accent'
+                        : 'border-dark-border text-dimension hover:border-accent/50'
+                    } ${blocked ? 'opacity-40 cursor-not-allowed hover:border-dark-border' : ''}`}
+                  >
+                    {f}F
+                  </button>
+                );
+              })}
             </div>
+            {lockFloor === 2 && (
+              <p className="text-[11px] text-yellow-500 mt-2">
+                1F+2F同時割付では足場開始(⭐)を2Fに設定します。
+              </p>
+            )}
             {!targetBuilding && (
               <p className="text-[11px] text-yellow-500 mt-2">
                 {targetFloor === 2 ? '2F建物が未作成です。' : '建物が未作成です。'}

@@ -143,6 +143,8 @@ export default function EditorPage() {
   const [showBuilding2FModal, setShowBuilding2FModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showScaffoldStartModal, setShowScaffoldStartModal] = useState(false);
+  // bothmode から⭐設定を開いた場合の固定階(2F誘導)。通常起動は undefined。
+  const [scaffoldStartLockFloor, setScaffoldStartLockFloor] = useState<1 | 2 | undefined>(undefined);
   const [showRoofModal, setShowRoofModal] = useState(false);
   const [showUdekiModal, setShowUdekiModal] = useState(false);
   const [showAutoLayoutModal, setShowAutoLayoutModal] = useState(false);
@@ -727,7 +729,7 @@ export default function EditorPage() {
         />
       )}
       {(showScaffoldStartModal || showScaffoldStart) && (
-        <ScaffoldStartModal onClose={() => { setShowScaffoldStartModal(false); setShowScaffoldStart(false); }} />
+        <ScaffoldStartModal onClose={() => { setShowScaffoldStartModal(false); setShowScaffoldStart(false); setScaffoldStartLockFloor(undefined); }} lockFloor={scaffoldStartLockFloor} />
       )}
       {(showUdekiModal || showInnerPost) && (
         <UdekiModal onClose={() => { setShowUdekiModal(false); setShowInnerPost(false); }} />
@@ -761,7 +763,7 @@ export default function EditorPage() {
         />
       )}
       {(showAutoLayoutModal || showAutoLayout) && (
-        <AutoLayoutModal onClose={() => { setShowAutoLayoutModal(false); setShowAutoLayout(false); }} onOpenScaffoldStart={() => setShowScaffoldStartModal(true)} />
+        <AutoLayoutModal onClose={() => { setShowAutoLayoutModal(false); setShowAutoLayout(false); }} onOpenScaffoldStart={(lockFloor) => { setScaffoldStartLockFloor(lockFloor); setShowScaffoldStartModal(true); }} />
       )}
       {selectedLineIds.length >= 2 && (
         <HandrailReorderModal
