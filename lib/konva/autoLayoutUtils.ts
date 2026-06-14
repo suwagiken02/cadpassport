@@ -1784,7 +1784,8 @@ export function computeBothmode1FLayout(
     const isStraightContinuation1F = isPrevStraight1F;
 
     // cornerConvex: 物理凸 (cross>0) or 直線継続 (cross=0) のどちらでも convex 扱い
-    const prevCornerIsConvex = cornerConvexity1F[(i - 1 + n1F) % n1F] || isPrevStraight1F;
+    // （2F 面一境界の継続始点のみ下で凹ラップに上書きする）
+    let prevCornerIsConvex = cornerConvexity1F[(i - 1 + n1F) % n1F] || isPrevStraight1F;
     const nextCornerIsConvex = cornerConvexity1F[i] || isNextStraight1F;
     const segKey = `${i}-0`;
     const adj = userAdjustments?.[segKey] ?? DEFAULT_EDGE_ADJUSTMENT;
@@ -1794,15 +1795,20 @@ export function computeBothmode1FLayout(
     const prevPillarMatchForDist = pillarPoints.find(p =>
       pointsMatch(p.point, edge.p1) && p.edge1FIndex === i,
     );
-    // 同一壁の隣接継続(2F東→1F東 等): 始点側の張り出しは 2F 側で消化済みのため
-    // effective に二重計上しない (prevEdgeStartDist=0)。scaffoldCoord の離れ(perp offset)は
-    // 下の startDist 側で 2F の離れを引き継ぐので、足場ラインは同じ位置で連続する。
+    // 同一壁の隣接継続(2F東→1F東 等): 面一でも特別な始点細工をせず通常の始点終点ルールで割付する。
+    // 2F 境界を「離れラップ(凹)コーナー」として扱い、始点側張り出しは 2F 境界セグメントの
+    // 張り出し量(desiredEnd)を凹寄与(−)で計上する。底側の凸(+)と相殺して effective を壁長に
+    // 一致させ、独立辺(ノッチ壁)と同値割付になる。接続は cursor 側で「2F境界の終端に端点一致」。
     const contEdge2FForDist = prevPillarMatchForDist
       ? edges2F.find(e => e.index === prevPillarMatchForDist.edge2FIndex)
       : undefined;
     const isContinuationStart = !!(contEdge2FForDist && isWallContinuation(contEdge2FForDist, edge));
+    const contSeg2F = isContinuationStart && prevPillarMatchForDist
+      ? result2F.edgeSegments.find(s => s.edge2FIndex === prevPillarMatchForDist.edge2FIndex)
+      : undefined;
+    if (isContinuationStart) prevCornerIsConvex = false; // 2F 境界 = 凹ラップ
     const prevEdgeStartDist: number = isContinuationStart
-      ? 0
+      ? (contSeg2F?.desiredEndDistanceMm ?? distances1F[edge.index] ?? 900)
       : prevPillarMatchForDist
       ? (result2F.edgeSegments.find(s => s.edge2FIndex === prevPillarMatchForDist.edge2FIndex)
           ?.startDistanceMm ?? distances1F[edge.index] ?? 900)
@@ -1933,6 +1939,9 @@ export function computeBothmode1FLayout(
       );
       if (seg2F && seg2F.handrailDir !== s.handrailDir) {
         cursorStart = seg2F.scaffoldCoord;
+      } else if (seg2F) {
+        // 同一壁の隣接継続: 2F 境界セグメントの終端に接続 (端点一致・始点細工しない)
+        cursorStart = seg2F.cursorEnd;
       } else {
         cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
       }
