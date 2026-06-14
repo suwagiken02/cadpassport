@@ -478,9 +478,6 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const [focusedEdgeIndex, setFocusedEdgeIndex] = useState<number | null>(null);
   const [showConflictConfirm, setShowConflictConfirm] = useState(false);
   const [showLockedAlert, setShowLockedAlert] = useState(false);
-  // リリース戦略: 1F+2F モードは近日実装予定のためブロック表示
-  // (= bothmode 関連実装は Phase H-3e (commit 0ed4ac5) で完成済、 「保留資産」 として温存)
-  const [showComingSoonModal, setShowComingSoonModal] = useState(false);
   const [pendingHandrails, setPendingHandrails] = useState<Handrail[]>([]);
   const [conflictIds, setConflictIds] = useState<string[]>([]);
   // Phase H-3b-2-1 / H-3d-1: 順次決定の状態管理を 2F / 1F の 2 本立てに拡張
@@ -1241,7 +1238,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
               ))}
               <button
                 type="button"
-                onClick={() => setShowComingSoonModal(true)}
+                onClick={() => setTargetFloor('both')}
                 className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
                   targetFloor === 'both'
                     ? 'border-accent bg-accent/15 text-accent'
@@ -1257,6 +1254,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                   ? '⚠️ 2F建物が未作成です。先に2Fを作成してください'
                   : !building1F
                   ? '⚠️ 1F建物が未作成です'
+                  : !scaffoldStart
+                  ? '⚠️ 足場開始位置(⭐)を2Fに設定してください（1F+2Fは2F起点で割り付けます）'
                   : uncoveredEdges1F.length === 0
                   ? '✓ 1F全辺が2Fで覆われます: 2F全周のみ配置、1F足場不要'
                   : `✓ 2F全周配置 + 1Fの下屋辺 ${uncoveredEdges1F.length} 本にも配置`}
@@ -1438,7 +1437,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
           {/* 計算ボタン */}
           <button onClick={handleCalc} data-tutorial-id="autolayout-calc"
-            className="w-full py-2.5 bg-dark-bg border border-accent text-accent font-bold rounded-xl text-sm hover:bg-accent/10 transition-colors"
+            disabled={targetFloor === 'both' && !!building1F && !!building2F && !scaffoldStart}
+            className="w-full py-2.5 bg-dark-bg border border-accent text-accent font-bold rounded-xl text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-dark-bg"
           >
             計算する
           </button>
@@ -2204,24 +2204,6 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         </div>
       )}
 
-      {showComingSoonModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-6">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowComingSoonModal(false)} />
-          <div className="relative bg-dark-surface border border-dark-border rounded-2xl p-5 w-full max-w-sm shadow-2xl">
-            <p className="font-bold text-sm mb-2">近日実装予定</p>
-            <p className="text-xs text-dimension leading-relaxed mb-4">
-              1F+2F モードは近日実装予定です。<br />
-              現在は 1Fのみ または 2Fのみ モードをご利用ください。
-            </p>
-            <button
-              onClick={() => setShowComingSoonModal(false)}
-              className="w-full py-2.5 bg-accent text-white font-bold rounded-xl text-sm"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
