@@ -1395,7 +1395,12 @@ export function computeBothmode2FLayout(
     //       1F edge の natural direction (p1→p2) をそのまま使う
     //       例: B1(0,+300) × 1C(+300,0) = -90000 < 0 → 凹 (下屋に凹む)
     //       例: B2(0,+400) × 1E(-300,0) = +120000 > 0 → 凸
-    const prevCornerIsConvex = cornerConvexity2F[(i - 1 + n2F) % n2F] || isPrevStraight;
+    // 直線継続(壁が同一面で続く)では、前セグメントが下屋接続点で +離れ 張り出した分だけ
+    // 当該セグメントの始点を逆向き(凹)に揃えて連続させる(二重張り出し=重複/T字を防ぐ)。
+    // prevConvex = !前セグメントの nextConvex。先頭(前なし)は従来どおり凸(直線扱い)。
+    const prevCornerIsConvex = (isPrevStraight && intermediate.length > 0)
+      ? !intermediate[intermediate.length - 1].nextCornerIsConvex
+      : (cornerConvexity2F[(i - 1 + n2F) % n2F] || isPrevStraight);
     let nextCornerIsConvex: boolean;
     if (desiredEndSource.kind === '1F-face-pillar') {
       const pillarEdge1F = edges1F.find(e => e.index === desiredEndSource.edge1FIndex);
