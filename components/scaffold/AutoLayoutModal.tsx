@@ -30,7 +30,7 @@ import {
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
-import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized } from '@/lib/konva/labelUtils';
+import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
 type Props = { onClose: () => void; onOpenScaffoldStart: () => void };
 
@@ -173,9 +173,11 @@ function PreviewSVG({ points, edges, focusedIndex, conflictHandrails, blinkEdgeI
           );
         })}
         {/* スタート角★マーカー（最前面） */}
-        {scaffoldStart && scaffoldStart.startVertexIndex !== undefined && points.length > 0 && (() => {
-          const idx = scaffoldStart.startVertexIndex! % points.length;
-          const svgPt = toSvg(points[idx]);
+        {scaffoldStart && scaffoldStart.startVertexIndex !== undefined && edges.length > 0 && (() => {
+          // startVertexIndex は CW 辺order の index 規約。生 points[idx] ではなく CW 辺の p1 を使う
+          // (CCW 格納の建物で SE 等に誤描画されるのを防ぐ)。
+          const idx = scaffoldStart.startVertexIndex! % edges.length;
+          const svgPt = toSvg(edges[idx].p1);
           return (
             <text
               x={svgPt.x}
@@ -328,8 +330,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // (1F は normalize 不要、 raw building1F の頂点座標をそのまま使う)
     const ss1F = canvasData.scaffoldStart1F;
     if (ss1F && building1F) {
-      const idx = (ss1F.startVertexIndex ?? 0) % building1F.points.length;
-      return building1F.points[idx] ?? null;
+      // 生 points[idx] ではなく CW 辺order の p1 を使う (2F の ⭐ 規約と統一)。
+      return getStartVertexPoint(building1F, ss1F.startVertexIndex ?? 0);
     }
     return null;
   }, [normalizedScaffoldStart, normalizedBuilding2F, canvasData.scaffoldStart1F, building1F]);

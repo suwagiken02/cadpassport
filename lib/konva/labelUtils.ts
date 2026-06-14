@@ -194,6 +194,27 @@ export function resolveScaffoldStartOnNormalized(
 }
 
 /**
+ * ⭐(足場開始)マーカーの表示起点座標を求める。
+ *
+ * scaffoldStart.startVertexIndex は getBuildingEdgesClockwise(building) の辺順
+ * (= CW 辺の p1 列)の index 規約(types/index.ts:298)。表示消費側が building.points
+ * (生 polygon 順)で読むと CCW 格納の建物で別頂点(SE 等)に⭐を誤描画するため、
+ * 計算側(resolveScaffoldStartOnNormalized 等)と同じ CW 辺order の p1 を返す。
+ *
+ * @returns ⭐ の絶対座標。辺が無い場合は null。
+ */
+export function getStartVertexPoint(
+  building: BuildingShape,
+  startVertexIndex: number,
+): Point | null {
+  const edges = getBuildingEdgesClockwise(building);
+  const n = edges.length;
+  if (n === 0) return null;
+  const idx = ((startVertexIndex % n) + n) % n;
+  return edges[idx].p1;
+}
+
+/**
  * Phase H-3e (共通根 1、 案 1A'): bothmode で raw building の入力欄に ⭐-relative
  * ラベルを表示するための helper 関数。
  *

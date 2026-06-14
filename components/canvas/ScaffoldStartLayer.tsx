@@ -4,6 +4,7 @@ import React from 'react';
 import { Layer, Text } from 'react-konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
+import { getStartVertexPoint } from '@/lib/konva/labelUtils';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
 
 /**
@@ -21,10 +22,9 @@ function getStartPoint(
   building: BuildingShape,
   ss: ScaffoldStartConfig,
 ): { x: number; y: number } | null {
-  const pts = building.points;
-  if (!pts || pts.length === 0) return null;
-  const idx = (ss.startVertexIndex ?? 0) % pts.length;
-  return pts[idx];
+  // startVertexIndex は CW 辺order の index 規約。生 building.points で読むと
+  // CCW 格納の建物で別頂点(SE 等)に誤描画されるため、CW 辺order の p1 を使う。
+  return getStartVertexPoint(building, ss.startVertexIndex ?? 0);
 }
 
 export default function ScaffoldStartLayer() {
