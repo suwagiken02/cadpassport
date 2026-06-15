@@ -35,7 +35,7 @@ export type BuildingShape = {
   points: Point[];
   fill: string;
   roof?: RoofConfig;
-  floor?: 1 | 2;
+  floor?: number;
   templateId?: string;
   templateDims?: Record<string, number>;
 };
@@ -119,7 +119,7 @@ export type Handrail = {
   direction: HandrailDirection;
   color: string;
   /** 所属階。undefined は 1F 相当（既存データ後方互換） */
-  floor?: 1 | 2;
+  floor?: number;
 };
 
 // === 支柱 ===
@@ -128,7 +128,7 @@ export type Post = {
   x: number;
   y: number;
   /** 所属階。undefined は 1F 相当 */
-  floor?: 1 | 2;
+  floor?: number;
 };
 
 /** インチ規格向けデフォルト優先設定（全 8 種を順位付け：メイン1・サブ6・調整1） */
@@ -151,11 +151,11 @@ export type Anti = {
   lengthMm: number;
   direction: 'horizontal' | 'vertical';
   /** 所属階。undefined は 1F 相当 */
-  floor?: 1 | 2;
+  floor?: number;
 };
 
 /** 部材の所属階を取得。floor 未設定は 1F 扱い（既存データ後方互換）。*/
-export function getFloor(item: { floor?: 1 | 2 }): 1 | 2 {
+export function getFloor(item: { floor?: number }): number {
   return item.floor ?? 1;
 }
 
@@ -187,7 +187,7 @@ export type MagnetPin = {
   x: number;
   y: number;
   /** 階指定（undefined なら全階共通、スタート角★と同じ扱い）*/
-  floor?: 1 | 2;
+  floor?: number;
   /** 基準点の情報（履歴として保持、表示には使わない）
    * undefined なら任意位置から作成
    */
@@ -222,7 +222,7 @@ export type HeightMarker = {
   /** 高さ (mm 単位) */
   heightMm: number;
   /** 階指定 (= undefined は全階共通、 既存 MagnetPin と同パターン) */
-  floor?: 1 | 2;
+  floor?: number;
 };
 
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===
@@ -304,7 +304,7 @@ export type ScaffoldStartConfig = {
   face1FirstHandrail: HandrailLengthMm;
   face2FirstHandrail: HandrailLengthMm;
   /** 対象階。undefined は 1F 相当（既存データ後方互換） */
-  floor?: 1 | 2;
+  floor?: number;
 };
 
 // === 出力設定 ===
