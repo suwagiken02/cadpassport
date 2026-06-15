@@ -18,6 +18,10 @@ export type FaceDir = 'north' | 'south' | 'east' | 'west';
 // === 辺情報 ===
 export type EdgeInfo = {
   index: number;
+  /** 元の building.points 順での物理辺index（時計回り並べ替え前）。
+   *  roofUtils の getEdgeOverhangs / computeOffsetPolygon は元順indexで参照するため、
+   *  屋根出幅の辺別キーはこちらを使う。 */
+  originalIndex: number;
   label: string;
   p1: Point;
   p2: Point;
@@ -135,8 +139,12 @@ export function getBuildingEdgesClockwise(building: BuildingShape): EdgeInfo[] {
     const handrailDir: 'horizontal' | 'vertical' =
       (face === 'north' || face === 'south') ? 'horizontal' : 'vertical';
 
+    // 元 points 順の物理辺index。CW のときは並べ替えなしで i に一致、
+    // CCW で reverse したときは orderedPts[i]→[i+1] が元辺 (n-2-i) に対応する。
+    const originalIndex = cw ? i : (((n - 2 - i) % n) + n) % n;
     edges.push({
       index: i,
+      originalIndex,
       label: String.fromCharCode(65 + i),
       p1, p2, lengthMm, face, handrailDir, nx, ny,
     });
@@ -2071,6 +2079,7 @@ function bothmodeSegmentToEdgeLayout(seg: {
 
   const edge: EdgeInfo = {
     index: edgeIndex,
+    originalIndex: edgeIndex,
     // Phase H-3d-4: 中間層では label を生成しない (= 表示時に edges2FAll/subEdgesRelabeled から
     // edge.index 経由で lookup する H-3d-3 方針)。 EdgeInfo.label は必須型のため空文字で型を満たす。
     // 1F-origin entry を 2F セクションに混在させて誤 collision していた問題も修正 #1 で解消済み。

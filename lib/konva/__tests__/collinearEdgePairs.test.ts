@@ -113,13 +113,13 @@ describe('isCollinearWith / findCollinearEdgePairs', () => {
   it('Y 一致でも X 範囲が重ならない辺 → 連動なし', () => {
     // 同じ Y=0 の北向き辺だが、X 範囲が完全に分離
     const e1: EdgeInfo = {
-      index: 0, label: 'A',
+      index: 0, originalIndex: 0, label: 'A',
       p1: { x: 0, y: 0 }, p2: { x: 3000, y: 0 },
       lengthMm: 3000, face: 'north', handrailDir: 'horizontal',
       nx: 0, ny: -1,
     };
     const e2: EdgeInfo = {
-      index: 0, label: 'A',
+      index: 0, originalIndex: 0, label: 'A',
       p1: { x: 6000, y: 0 }, p2: { x: 9000, y: 0 },
       lengthMm: 3000, face: 'north', handrailDir: 'horizontal',
       nx: 0, ny: -1,
@@ -130,13 +130,13 @@ describe('isCollinearWith / findCollinearEdgePairs', () => {
 
   it('法線方向が逆 (北向き vs 南向き) → 連動なし', () => {
     const e1: EdgeInfo = {
-      index: 0, label: 'A',
+      index: 0, originalIndex: 0, label: 'A',
       p1: { x: 0, y: 0 }, p2: { x: 9000, y: 0 },
       lengthMm: 9000, face: 'north', handrailDir: 'horizontal',
       nx: 0, ny: -1,
     };
     const e2: EdgeInfo = {
-      index: 0, label: 'A',
+      index: 0, originalIndex: 0, label: 'A',
       p1: { x: 0, y: 0 }, p2: { x: 9000, y: 0 },
       lengthMm: 9000, face: 'south', handrailDir: 'horizontal',
       nx: 0, ny: 1, // 法線が逆
@@ -146,13 +146,13 @@ describe('isCollinearWith / findCollinearEdgePairs', () => {
 
   it('handrailDir が一致しない (horizontal vs vertical) → 連動なし', () => {
     const eH: EdgeInfo = {
-      index: 0, label: 'A',
+      index: 0, originalIndex: 0, label: 'A',
       p1: { x: 0, y: 0 }, p2: { x: 9000, y: 0 },
       lengthMm: 9000, face: 'north', handrailDir: 'horizontal',
       nx: 0, ny: -1,
     };
     const eV: EdgeInfo = {
-      index: 0, label: 'A',
+      index: 0, originalIndex: 0, label: 'A',
       p1: { x: 0, y: 0 }, p2: { x: 0, y: 9000 },
       lengthMm: 9000, face: 'west', handrailDir: 'vertical',
       nx: -1, ny: 0,

@@ -51,7 +51,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
   const [edgeOverhangs, setEdgeOverhangs] = useState<Record<number, number>>(() => {
     if (initialRoof?.edgeOverhangsMm) return { ...initialRoof.edgeOverhangsMm };
     const d: Record<number, number> = {};
-    if (edges) edges.forEach(e => { d[e.index] = DEFAULT_OVERHANG; });
+    if (edges) edges.forEach(e => { d[e.originalIndex] = DEFAULT_OVERHANG; });
     return d;
   });
 
@@ -171,8 +171,8 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
                   </span>
                   <span className="text-[10px] text-dimension w-6 shrink-0">{FACE_LABEL[edge.face]}</span>
                   <NumInput
-                    value={edgeOverhangs[edge.index] ?? DEFAULT_OVERHANG}
-                    onChange={(v) => setEdgeOverhangs(prev => ({ ...prev, [edge.index]: v }))}
+                    value={edgeOverhangs[edge.originalIndex] ?? DEFAULT_OVERHANG}
+                    onChange={(v) => setEdgeOverhangs(prev => ({ ...prev, [edge.originalIndex]: v }))}
                     min={0} step={50}
                     className="flex-1 bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm"
                   />

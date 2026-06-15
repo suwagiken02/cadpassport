@@ -241,6 +241,7 @@ describe('relabelByFace1F', () => {
     // 合成: 27 個の edge、 全部 uncovered 扱い。 巡回順 = 配列順。
     const synth: EdgeInfo[] = Array.from({ length: 27 }, (_, i) => ({
       index: i,
+      originalIndex: i,
       label: '?',
       p1: { x: i * 100, y: 0 },
       p2: { x: i * 100 + 50, y: 0 },

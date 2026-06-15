@@ -1757,6 +1757,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             : subEdgesRelabeled.find(e => e.index === cur.edgeIndex);
           const synthEdge: EdgeInfo = {
             index: cur.edgeIndex,
+            originalIndex: cur.edgeIndex,
             label: relabeledSelf?.label ?? String.fromCharCode(65 + cur.edgeIndex),
             p1: seg.startPoint,
             p2: seg.endPoint,

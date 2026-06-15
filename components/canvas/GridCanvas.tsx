@@ -321,6 +321,13 @@ export default function GridCanvas({ width, height }: Props) {
       }
       // Delete / Backspace: 選択中の要素を削除
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        // 入力欄（モーダルの数値入力など）にフォーカス中は削除を発火させない。
+        // これがないと初期値の Backspace 消去で選択中の建物が消え、モーダルが閉じてしまう。
+        const ae = document.activeElement as HTMLElement | null;
+        const tag = ae?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable) {
+          return;
+        }
         const s = useCanvasStore.getState();
         if (s.selectedIds.length > 0) {
           e.preventDefault();
