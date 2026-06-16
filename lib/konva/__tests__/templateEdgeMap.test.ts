@@ -15,8 +15,6 @@ import { BuildingTemplateId, Point } from '@/types';
  *
  * 除外 = 単一辺の実長と一致し得ない設計上の例外（本不変条件の対象外）:
  *  - t_cross の hw/vh: 全幅・全高。十字は4方対称で「その長さの単一辺」が存在しない（総寸法）
- *  - l_ne の tw: 全幅だが欠けで上辺が短く、tw が full-width 下辺(E4)に割当られていない
- *    （指定6形状の対象外。別途要検討）
  *  - circle: diameter は辺ではない（36角形の弦）→ ケース自体を対象外
  *  - rect: 台形入力に対応し side が斜辺になり得るため、矩形寸法で検証
  */
@@ -31,7 +29,7 @@ type Case = { id: BuildingTemplateId; dims: Record<string, number>; skip?: strin
 
 const CASES: Case[] = [
   { id: 'rect', dims: { top: 9000, right: 7000, bottom: 9000, left: 7000 } },
-  { id: 'l_ne', dims: { tw: 9000, th: 7000, cw: 3000, ch: 2000 }, skip: ['tw'] },
+  { id: 'l_ne', dims: { tw: 9000, th: 7000, cw: 3000, ch: 2000 } },
   { id: 'l_nw', dims: { tw: 9000, th: 7000, cw: 3000, ch: 2000 } },
   { id: 'l_se', dims: { tw: 9000, th: 7000, cw: 3000, ch: 2000 } },
   { id: 'l_sw', dims: { tw: 9000, th: 7000, cw: 3000, ch: 2000 } },
