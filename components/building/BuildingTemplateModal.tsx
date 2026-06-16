@@ -77,7 +77,7 @@ function getKeyEdgeMap(id: BuildingTemplateId): Record<string, number> {
     case 'convex_w': return { tw: 0, th: 1, pw: 5, ph: 6, py: 7 };
     case 'u_s': return { tw: 0, th: 1, ow: 4, od: 3 };
     case 'u_n': return { tw: 5, th: 6, ow: 2, od: 3 };
-    case 't_cross': return { vw: 0, vh: 6, hw: 3, hh: 4 };
+    case 't_cross': return { vw: 0, hw: 2, hh: 3, vh: 11 };
     case 'circle': return { diameter: 0 };
     default: return {};
   }
