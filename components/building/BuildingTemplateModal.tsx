@@ -63,25 +63,9 @@ function getIndependentKeys(id: BuildingTemplateId): Set<string> {
   return new Set(tpl.dimensions.map(d => d.key));
 }
 
-/** Map dimension keys to polygon edge indices */
-function getKeyEdgeMap(id: BuildingTemplateId): Record<string, number> {
-  switch (id) {
-    case 'rect': return { top: 0, right: 1, bottom: 2, left: 3 };
-    case 'l_ne': return { tw: 0, ch: 1, cw: 2, th: 5 };
-    case 'l_nw': return { tw: 1, th: 2, cw: 4, ch: 5 };
-    case 'l_se': return { tw: 0, cw: 2, ch: 3, th: 5 };
-    case 'l_sw': return { tw: 0, th: 1, cw: 3, ch: 4 };
-    case 'convex_s': return { tw: 0, th: 1, pw: 4, ph: 3, px: 6 };
-    case 'convex_n': return { pw: 0, ph: 1, tw: 3, th: 4, px: 7 };
-    case 'convex_e': return { tw: 0, th: 1, pw: 3, ph: 4, py: 2 };
-    case 'convex_w': return { tw: 0, th: 1, pw: 5, ph: 6, py: 7 };
-    case 'u_s': return { tw: 0, th: 1, ow: 4, od: 3 };
-    case 'u_n': return { tw: 5, th: 6, ow: 2, od: 3 };
-    case 't_cross': return { vw: 0, hw: 2, hh: 3, vh: 11 };
-    case 'circle': return { diameter: 0 };
-    default: return {};
-  }
-}
+/** Map dimension keys to polygon edge indices.
+ *  定義は検証テスト (templateEdgeMap.test.ts) と共有するため lib 側の純 ts モジュールへ移設。 */
+import { getKeyEdgeMap } from '@/lib/konva/templateEdgeMap';
 
 function getDimLabel(_id: BuildingTemplateId, key: string): string {
   const map = getKeyEdgeMap(_id);
