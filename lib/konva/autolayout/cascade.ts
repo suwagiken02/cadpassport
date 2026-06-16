@@ -1,0 +1,159 @@
+// ============================================================
+// N階一般化 P3-1: 統合フロア関数のスケルトン＋統一セグメント型（"器"のみ）
+// ------------------------------------------------------------
+// 本ファイルは P3-2 以降で「上→下の N 階カスケード割付」本体を載せるための器。
+// この時点ではロジックを書かず、型と関数シグネチャだけを定義する。
+// どこにも import / 配線しない（既存の computeBothmode2FLayout / computeBothmode1FLayout
+// と Bothmode2F/1FEdgeSegment は無改変のまま残し、P3-2 で parity 比較する）。
+//
+// ── 統合フロア関数の役割（computeFloorLayout）──
+//   ・buildingAbove === null … 最上階。上に階が無いので全周を自前で割付（= 現 computeBothmode2FLayout の全周 walk 相当）。
+//   ・buildingBelow === null … 最下階（= 現 computeBothmode1FLayout 相当。直下は地面）。
+//   ・both 有り             … 中間階。上階結果を継承しつつ、直下階向けの段差（柱）も仕込む。
+//
+// ── 共有ルール（Q2 確定）──
+//   隣接階との関係で各辺を分類し、
+//     ・面一（collinear / 同一直線）            → 上階の足場ラインと共有（自前セグメントを持たない）
+//     ・それ以外（引っ込み＝下屋 / 出っ張り＝せり出し）→ 自前の足場ラインを持つ
+//   引っ込み・出っ張りは「同じ段差・向きが逆」なので、P3-2 では
+//   edgesNotCoveredBy / collinearPairs（P3-0 で用意した上下中立ヘルパ）を
+//   上下両方向に対称適用して扱う。
+// ============================================================
+
+import {
+  Point,
+  BuildingShape,
+  HandrailLengthMm,
+  ScaffoldStartConfig,
+  PriorityConfig,
+} from '@/types';
+import type { FaceDir, EdgeAdjustment } from '../autoLayoutUtils';
+import type { SequentialCandidate } from './candidates';
+
+/**
+ * 階セグメントの始点制約（= 旧 Bothmode1FSegmentStartConstraint の上下中立版）。
+ *  - pillar-from-upper      : 上階が仕込んだ柱点から 90° 接続して始まる
+ *  - cascade-from-prev-segment: 同じ階の前セグメントから cascade 継承
+ *  - collinear-with-upper    : 上階辺と面一連動（共有ライン）
+ */
+export type FloorSegmentStartConstraint =
+  | { kind: 'pillar-from-upper'; pillarPoint: Point }
+  | { kind: 'cascade-from-prev-segment' }
+  | { kind: 'collinear-with-upper'; upperEdgeIndex: number };
+
+/**
+ * 階セグメントの終点制約（= 旧 Bothmode1FSegmentEndConstraint の上下中立版）。
+ *  - pillar-to-upper    : 上階の柱点へ 90° 接続して終わる
+ *  - collinear-with-upper: 上階辺と面一連動（共有ライン）
+ *  - next-face          : 同じ階の次辺へ続く
+ */
+export type FloorSegmentEndConstraint =
+  | { kind: 'pillar-to-upper'; pillarPoint: Point }
+  | { kind: 'collinear-with-upper'; upperEdgeIndex: number }
+  | { kind: 'next-face'; edgeIndex: number };
+
+/**
+ * 統一セグメント型。
+ * Bothmode2FEdgeSegment と Bothmode1FEdgeSegment の共通フィールドに、
+ * 上方向参照（desiredEndSource・旧 2F 側）と隣接階境界制約（start/endConstraint・旧 1F 側）を
+ * "任意" で持たせ、最上階・中間階・最下階のどのセグメントも 1 つの型で表現する。
+ */
+export type FloorEdgeSegment = {
+  /** このセグメントが属する物理階番号 */
+  floor: number;
+  /** この階のポリゴン上の辺 index（= 旧 edge2FIndex / edge1FIndex を中立化） */
+  edgeIndex: number;
+  segmentIndex: number;
+  segmentCount: number;
+
+  // ── セグメント自体の物理情報（2F/1F 共通）──
+  startPoint: Point;
+  endPoint: Point;
+  segmentLengthMm: number;
+  face: FaceDir;
+  handrailDir: 'horizontal' | 'vertical';
+  nx: number;
+  ny: number;
+
+  // ── 離れ情報（2F/1F 共通）──
+  startDistanceMm: number;
+  desiredEndDistanceMm: number;
+
+  // ── 上方向の終点参照（任意・旧 2F の desiredEndSource を中立化）──
+  //   ・next-face          : 同じ階の次辺の希望離れを使う
+  //   ・lower-face-pillar   : 直下階の独立辺（下屋境界）に柱を仕込む
+  //   ・upper-face-pillar   : 直上階のはみ出し辺（せり出し境界）に柱を仕込む（P3-2 せり出し対称化用）
+  desiredEndSource?:
+    | { kind: 'next-face'; edgeIndex: number }
+    | { kind: 'lower-face-pillar'; lowerEdgeIndex: number }
+    | { kind: 'upper-face-pillar'; upperEdgeIndex: number };
+
+  // ── 隣接階との境界制約（任意・旧 1F の start/endConstraint を中立化）──
+  startConstraint?: FloorSegmentStartConstraint;
+  endConstraint?: FloorSegmentEndConstraint;
+
+  // ── 候補と選択（2F/1F 共通）──
+  candidates: SequentialCandidate[];
+  selectedIndex: number;
+  isLocked: boolean;
+  isAutoProgress: boolean;
+  prevCornerIsConvex: boolean;
+  nextCornerIsConvex: boolean;
+
+  // ── 描画用座標（2F/1F 共通）──
+  scaffoldCoord: number;
+  cursorStart: number;
+  cursorEnd: number;
+  effectiveMm: number;
+};
+
+/** 1 階分の割付結果。 */
+export type FloorLayoutResult = {
+  floor: number;
+  edgeSegments: FloorEdgeSegment[];
+  hasUnresolved: boolean;
+};
+
+/**
+ * 統合フロア関数（スケルトン）。
+ * 1 つの階 `buildingThis` を、上階（`buildingAbove` / `resultAbove`）と
+ * 直下階（`buildingBelow`）の文脈で割付する。N 階カスケードのドライバ（P3-3）は
+ * これを最上階→最下階の順に呼び、各回 `resultAbove` に前回（上階）の結果を渡す。
+ *
+ * @param floor            この階の物理階番号
+ * @param buildingThis     この階のポリゴン（呼び出し側で splitLowerAtUpper / splitUpperAtLower 適用済み想定）
+ * @param buildingAbove    直上階のポリゴン。null なら最上階（全周自前割付）
+ * @param buildingBelow    直下階のポリゴン。null なら最下階（柱仕込み不要）
+ * @param resultAbove      直上階の割付結果。null なら最上階。面一/柱の境界継承に使う
+ * @param distancesByFloor 階ごと・辺ごとの希望離れ mm（this と below の双方を参照する）
+ * @param scaffoldStart    最上階のスタート角。下階は上階から継承するため null
+ * @returns                この階のセグメント列（+ 直下階が継承に使える境界情報を内包）
+ *
+ * 本体は P3-2 で実装する。スケルトン段階では呼ばれたら明示エラー。
+ */
+export function computeFloorLayout(
+  floor: number,
+  buildingThis: BuildingShape,
+  buildingAbove: BuildingShape | null,
+  buildingBelow: BuildingShape | null,
+  resultAbove: FloorLayoutResult | null,
+  distancesByFloor: Record<number, Record<number, number>>,
+  scaffoldStart: ScaffoldStartConfig | null,
+  enabledSizes?: HandrailLengthMm[],
+  priorityConfig?: PriorityConfig,
+  userSelections?: Record<string, number>,
+  userAdjustments?: Record<string, EdgeAdjustment>,
+): FloorLayoutResult {
+  // P3-2 でカスケード本体を実装する。それまでは誤配線を検出するため明示的に失敗させる。
+  void buildingThis;
+  void buildingAbove;
+  void buildingBelow;
+  void resultAbove;
+  void distancesByFloor;
+  void scaffoldStart;
+  void enabledSizes;
+  void priorityConfig;
+  void userSelections;
+  void userAdjustments;
+  throw new Error(`computeFloorLayout(floor=${floor}): P3-2 で実装予定（現在はスケルトン）`);
+}
