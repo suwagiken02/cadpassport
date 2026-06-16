@@ -27,7 +27,8 @@ import {
   ScaffoldStartConfig,
   PriorityConfig,
 } from '@/types';
-import type { FaceDir, EdgeAdjustment } from '../autoLayoutUtils';
+import { computeBothmode2FLayout } from '../autoLayoutUtils';
+import type { FaceDir, EdgeAdjustment, Bothmode2FEdgeSegment } from '../autoLayoutUtils';
 import type { SequentialCandidate } from './candidates';
 
 /**
@@ -129,8 +130,48 @@ export type FloorLayoutResult = {
  * @param scaffoldStart    最上階のスタート角。下階は上階から継承するため null
  * @returns                この階のセグメント列（+ 直下階が継承に使える境界情報を内包）
  *
- * 本体は P3-2 で実装する。スケルトン段階では呼ばれたら明示エラー。
+ * P3-2(1/3): above===null（最上階）ブランチを実装。安全のため既存 computeBothmode2FLayout に
+ * 委譲し、その結果を FloorEdgeSegment へマッピングして返す（ロジック重複ゼロ＝parity 自動保証）。
+ * above non-null（中間階/最下階）と せり出し対称化は後続ステップで実装する。
  */
+
+/** Bothmode2FEdgeSegment → FloorEdgeSegment へのマッピング（最上階用、委譲 parity の橋渡し）。*/
+function bothmode2FSegToFloorSeg(seg: Bothmode2FEdgeSegment, floor: number): FloorEdgeSegment {
+  return {
+    floor,
+    edgeIndex: seg.edge2FIndex,
+    segmentIndex: seg.segmentIndex,
+    segmentCount: seg.segmentCount,
+    startPoint: seg.startPoint,
+    endPoint: seg.endPoint,
+    segmentLengthMm: seg.segmentLengthMm,
+    face: seg.face,
+    handrailDir: seg.handrailDir,
+    nx: seg.nx,
+    ny: seg.ny,
+    startDistanceMm: seg.startDistanceMm,
+    desiredEndDistanceMm: seg.desiredEndDistanceMm,
+    // 旧 2F の desiredEndSource を中立名へ写像。
+    //   next-2F-face   → next-face（同じ階の次辺）
+    //   1F-face-pillar → lower-face-pillar（直下階の独立辺=下屋境界に柱）
+    desiredEndSource:
+      seg.desiredEndSource.kind === 'next-2F-face'
+        ? { kind: 'next-face', edgeIndex: seg.desiredEndSource.edge2FIndex }
+        : { kind: 'lower-face-pillar', lowerEdgeIndex: seg.desiredEndSource.edge1FIndex },
+    // 最上階は隣接階境界制約（start/endConstraint）を持たない
+    candidates: seg.candidates,
+    selectedIndex: seg.selectedIndex,
+    isLocked: seg.isLocked,
+    isAutoProgress: seg.isAutoProgress,
+    prevCornerIsConvex: seg.prevCornerIsConvex,
+    nextCornerIsConvex: seg.nextCornerIsConvex,
+    scaffoldCoord: seg.scaffoldCoord,
+    cursorStart: seg.cursorStart,
+    cursorEnd: seg.cursorEnd,
+    effectiveMm: seg.effectiveMm,
+  };
+}
+
 export function computeFloorLayout(
   floor: number,
   buildingThis: BuildingShape,
@@ -144,16 +185,39 @@ export function computeFloorLayout(
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
 ): FloorLayoutResult {
-  // P3-2 でカスケード本体を実装する。それまでは誤配線を検出するため明示的に失敗させる。
-  void buildingThis;
-  void buildingAbove;
-  void buildingBelow;
+  if (buildingAbove === null) {
+    // ── 最上階ブランチ（全周スパイン）──
+    // 既存 computeBothmode2FLayout に委譲して parity を自動保証する。
+    // （せり出し対称化や above non-null は本ステップでは未実装）
+    if (buildingBelow === null) {
+      // 単一階（below 無し）の最上階は現状 bothmode ではなく別経路。後続ステップで対応。
+      throw new Error('computeFloorLayout: 単一階（below 無し）の最上階は本ステップ未対応');
+    }
+    if (!scaffoldStart) {
+      throw new Error('computeFloorLayout: 最上階には scaffoldStart が必要');
+    }
+    // 連続積層前提: 直下階の物理階番号 = floor - 1
+    const distancesThis = distancesByFloor[floor] ?? {};
+    const distancesBelow = distancesByFloor[floor - 1] ?? {};
+    const r2 = computeBothmode2FLayout(
+      buildingThis,
+      buildingBelow,
+      distancesThis,
+      distancesBelow,
+      scaffoldStart,
+      enabledSizes,
+      priorityConfig,
+      userSelections,
+      userAdjustments,
+    );
+    return {
+      floor,
+      edgeSegments: r2.edgeSegments.map((seg) => bothmode2FSegToFloorSeg(seg, floor)),
+      hasUnresolved: r2.hasUnresolved,
+    };
+  }
+
+  // ── above non-null（中間階/最下階）は P3-2(2/3) 以降で実装 ──
   void resultAbove;
-  void distancesByFloor;
-  void scaffoldStart;
-  void enabledSizes;
-  void priorityConfig;
-  void userSelections;
-  void userAdjustments;
-  throw new Error(`computeFloorLayout(floor=${floor}): P3-2 で実装予定（現在はスケルトン）`);
+  throw new Error(`computeFloorLayout(floor=${floor}, above 有り): P3-2(2/3) で実装予定`);
 }
