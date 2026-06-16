@@ -1126,6 +1126,42 @@ export function splitBuilding2FAt1FVertices(
 }
 
 // ============================================================
+// N階一般化 P3-0: 上下中立エイリアス（中身は既存関数への委譲のみ・挙動不変）
+// ------------------------------------------------------------
+// カスケード(P3-1以降)では「1F/2F」ではなく「上(upper)/下(lower)」の隣接ペアで
+// 幾何ヘルパを呼ぶ。既存の階固定名・実装・挙動・呼び出し箇所は一切変えず、
+// 中立な呼び名を足すだけ。下の各関数は元から2引数の純関数で上下中立に呼べる。
+// isWallContinuation(a, b) は既に中立名のため別名は設けず、そのまま使う。
+// ============================================================
+
+/** 下階ポリゴンを上階の頂点で分割する（= splitBuilding1FAtBuilding2FVertices の中立名）。*/
+export const splitLowerAtUpper = (lower: BuildingShape, upper: BuildingShape): BuildingShape =>
+  splitBuilding1FAtBuilding2FVertices(lower, upper);
+
+/** 上階ポリゴンを下階の頂点で分割する（= splitBuilding2FAt1FVertices の中立名）。
+ *  ※既存 splitBuilding2FAt1FVertices(building1F, building2F) は引数順が (下, 上) のため、
+ *    委譲時は (lower, upper) の順で渡す。*/
+export const splitUpperAtLower = (upper: BuildingShape, lower: BuildingShape): BuildingShape =>
+  splitBuilding2FAt1FVertices(lower, upper);
+
+/** target 辺のうち cover に覆われない辺（= getEdgesNotCoveredBy の中立別名）。
+ *  下屋は edgesNotCoveredBy(lower, upper)、せり出しは edgesNotCoveredBy(upper, lower) で対称に呼べる。*/
+export const edgesNotCoveredBy = (target: BuildingShape, cover: BuildingShape): EdgeInfo[] =>
+  getEdgesNotCoveredBy(target, cover);
+
+/** 2辺が同一直線上で連動するか（= isCollinearWith の中立別名）。引数の上下は不問。*/
+export const isCollinear = (a: EdgeInfo, b: EdgeInfo): boolean =>
+  isCollinearWith(a, b);
+
+/** 隣接ペアの連動辺ペア（= findCollinearEdgePairs の中立別名）。
+ *  戻り値のキーは既存どおり { edge1FIndex(=下階), edge2FIndex(=上階) }。*/
+export const collinearPairs = (
+  lower: BuildingShape,
+  upper: BuildingShape,
+): Array<{ edge1FIndex: number; edge2FIndex: number }> =>
+  findCollinearEdgePairs(lower, upper);
+
+// ============================================================
 // Phase H-3d-2 Stage 3: bothmode 専用の 2F 計算関数
 //
 // 2F 面が 1F 下屋と交差する場合、その 2F 面を N 個のセグメントに分割。
