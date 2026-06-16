@@ -11,6 +11,7 @@ import ModeToolbar from '@/components/toolbar/ModeToolbar';
 import PartSelector from '@/components/toolbar/PartSelector';
 import CompassWidget from '@/components/canvas/CompassWidget';
 import BuildingTemplateModal from '@/components/building/BuildingTemplateModal';
+import FloorSelector from '@/components/toolbar/FloorSelector';
 import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofSettingsModal from '@/components/building/RoofSettingsModal';
@@ -714,10 +715,11 @@ export default function EditorPage() {
       {(showBuilding2FModal || showBuilding2FModalStore) && (
         <BuildingTemplateModal
           floor={2}
-          floor1Building={canvasData.buildings.find(b => !b.floor || b.floor === 1)}
+          floor1Building={[...canvasData.buildings].sort((a, b) => (b.floor ?? 1) - (a.floor ?? 1))[0]}
           onClose={() => { setShowBuilding2FModal(false); setShowBuilding2FModalStore(false); }}
         />
       )}
+      <FloorSelector />
       {showExportModal && (
         <ExportModal
           onClose={() => setShowExportModal(false)}

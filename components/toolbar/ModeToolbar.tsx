@@ -141,13 +141,21 @@ export default function ModeToolbar() {
             </button>
             <button
               onClick={() => {
-                useCanvasStore.getState().setShowBuilding2FModal(true);
+                const s = useCanvasStore.getState();
+                // N階一般化 P2: 既存最上階+1 を追加 (上限8階)。実際の階番号は配置時に算出。
+                const maxFloor = s.canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
+                if (maxFloor >= 8) {
+                  s.setAlertMessage('足場図は8階まで対応しています');
+                  setShowKutaiMenu(false);
+                  return;
+                }
+                s.setShowBuilding2FModal(true);
                 setShowKutaiMenu(false);
               }}
               className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
             >
               <span className="text-3xl mb-1">⌂</span>
-              <span className="text-sm font-bold">建物2F</span>
+              <span className="text-sm font-bold">上の階を追加</span>
             </button>
             <button
               data-tutorial-id="kutai-obstacle"

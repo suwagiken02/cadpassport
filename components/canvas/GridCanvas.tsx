@@ -412,16 +412,20 @@ export default function GridCanvas({ width, height }: Props) {
             x: p.x + draft2FPos.x,
             y: p.y + draft2FPos.y,
           }));
+          // N階一般化 P2: 新フロアは既存最上階+1 (上限8階)。下階をなぞった draft をその階で確定。
+          const existingMaxFloor = useCanvasStore.getState().canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
+          const targetFloor = Math.min(8, Math.max(existingMaxFloor, 1) + 1);
           useCanvasStore.getState().addBuilding({
             id: uuidv4(),
             type: 'polygon',
             points: finalPoints,
             fill: building2FDraft.fill,
-            floor: 2,
+            floor: targetFloor,
             roof: building2FDraft.roof,
             templateId: building2FDraft.templateId,
             templateDims: building2FDraft.templateDims,
           });
+          useCanvasStore.getState().setActiveFloor(targetFloor);
           useCanvasStore.getState().clearBuilding2FDraft();
           setDraft2FPos(null);
           return;
@@ -482,7 +486,9 @@ export default function GridCanvas({ width, height }: Props) {
           const WEAK_SNAP = 8;     // 辺スナップ
           let bestDist = Infinity;
 
-          for (const b of s.canvasData.buildings.filter(b => !b.floor || b.floor === 1)) {
+          // N階一般化 P2: 直下階 (= 現在の最上階) の建物をなぞってスナップ。
+          const snapFloor = s.canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
+          for (const b of s.canvasData.buildings.filter(b => (b.floor ?? 1) === snapFloor)) {
             // 頂点への強スナップ
             for (const p of b.points) {
               const d = Math.hypot(p.x - gridX, p.y - gridY);

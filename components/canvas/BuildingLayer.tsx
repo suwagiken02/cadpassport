@@ -8,7 +8,7 @@ import { Point } from '@/types';
 import { getEdgeOverhangs, computeOffsetPolygon } from '@/lib/konva/roofUtils';
 
 export default function BuildingLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
   // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
@@ -51,7 +51,9 @@ export default function BuildingLayer() {
           p.x * gridPx + panX, p.y * gridPx + panY,
         ]);
         const isSelected = effectiveSelectedIds.includes(building.id);
-        const is2F = building.floor === 2;
+        // N階一般化 P2: activeFloor 以外の階を薄表示 (= 変数名は後方互換で is2F のまま)。
+        // activeFloor に建物が無い (= 切替直後/stale) ときは薄表示しない (= 全階くっきり、安全側)。
+        const is2F = canvasData.buildings.some((b) => (b.floor ?? 1) === activeFloor) && (building.floor ?? 1) !== activeFloor;
         const fillColor = is2F ? '#A0A0A0' : (isDarkMode ? '#555555' : '#3d3d3a');
         const strokeColor = isSelected ? '#FF6B35' : (is2F ? '#888888' : (isDarkMode ? '#888888' : '#1a1a18'));
 

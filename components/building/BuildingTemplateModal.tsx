@@ -374,7 +374,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
     <div className="fixed inset-0 modal-overlay flex items-end sm:items-center justify-center z-50" onClick={onClose}>
       <div className="bg-dark-surface border-t sm:border border-dark-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="sticky top-0 bg-dark-surface px-4 py-3 border-b border-dark-border flex items-center justify-between">
-          <h2 className="font-bold text-lg">{floor === 2 ? '2F建物入力' : '建物入力'}</h2>
+          <h2 className="font-bold text-lg">{floor === 2 ? '上階建物入力' : '建物入力'}</h2>
           <button onClick={onClose} className="text-dimension hover:text-canvas px-2">✕</button>
         </div>
 
