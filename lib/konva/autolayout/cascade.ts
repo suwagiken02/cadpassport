@@ -27,8 +27,14 @@ import {
   ScaffoldStartConfig,
   PriorityConfig,
 } from '@/types';
-import { computeBothmode2FLayout } from '../autoLayoutUtils';
-import type { FaceDir, EdgeAdjustment, Bothmode2FEdgeSegment } from '../autoLayoutUtils';
+import { computeBothmode2FLayout, computeBothmode1FLayout } from '../autoLayoutUtils';
+import type {
+  FaceDir,
+  EdgeAdjustment,
+  Bothmode2FEdgeSegment,
+  Bothmode2FResult,
+  Bothmode1FEdgeSegment,
+} from '../autoLayoutUtils';
 import type { SequentialCandidate } from './candidates';
 
 /**
@@ -217,7 +223,136 @@ export function computeFloorLayout(
     };
   }
 
-  // ── above non-null（中間階/最下階）は P3-2(2/3) 以降で実装 ──
-  void resultAbove;
-  throw new Error(`computeFloorLayout(floor=${floor}, above 有り): P3-2(2/3) で実装予定`);
+  // ── above 有り・below 無し = 最下階ブランチ ──
+  // 既存 computeBothmode1FLayout に委譲して parity を保証する。
+  // resultAbove(FloorLayoutResult) を computeBothmode1FLayout が必要とする
+  // Bothmode2FResult 相当へ往復復元してから渡す（往復無損失が肝）。
+  if (buildingBelow === null) {
+    if (resultAbove === null) {
+      throw new Error('computeFloorLayout: 最下階（above 有り）には resultAbove が必要');
+    }
+    const distancesThis = distancesByFloor[floor] ?? {};
+    const result2F = floorResultToBothmode2FResult(resultAbove);
+    const r1 = computeBothmode1FLayout(
+      buildingThis,
+      buildingAbove,
+      result2F,
+      distancesThis,
+      enabledSizes,
+      priorityConfig,
+      userSelections,
+      userAdjustments,
+    );
+    return {
+      floor,
+      edgeSegments: r1.edgeSegments.map((seg) => bothmode1FSegToFloorSeg(seg, floor)),
+      hasUnresolved: r1.hasUnresolved,
+    };
+  }
+
+  // ── 中間階（above も below も非 null）と せり出し対称化は P3-2(3/3) で実装 ──
+  throw new Error(`computeFloorLayout(floor=${floor}, 中間階): P3-2(3/3) で実装予定`);
+}
+
+// ============================================================
+// 委譲 parity 用の往復マッピング（最下階ブランチ）
+// ============================================================
+
+/**
+ * FloorLayoutResult → Bothmode2FResult への復元（最上階ブランチの forward マッピングの逆）。
+ * computeBothmode1FLayout は上階結果から柱点(desiredEndSource='1F-face-pillar')・各 seg の
+ * startDistanceMm/scaffoldCoord/cursorStart/End/desiredEndDistanceMm/endPoint 等を読むため、
+ * 無損失で戻す必要がある。forward(bothmode2FSegToFloorSeg) と完全対称。
+ */
+function floorResultToBothmode2FResult(fr: FloorLayoutResult): Bothmode2FResult {
+  return {
+    hasUnresolved: fr.hasUnresolved,
+    edgeSegments: fr.edgeSegments.map((fs): Bothmode2FEdgeSegment => {
+      // desiredEndSource を旧 2F 名へ逆写像。
+      //   next-face         → next-2F-face
+      //   lower-face-pillar → 1F-face-pillar
+      const des = fs.desiredEndSource;
+      let desiredEndSource: Bothmode2FEdgeSegment['desiredEndSource'];
+      if (des?.kind === 'lower-face-pillar') {
+        desiredEndSource = { kind: '1F-face-pillar', edge1FIndex: des.lowerEdgeIndex };
+      } else if (des?.kind === 'next-face') {
+        desiredEndSource = { kind: 'next-2F-face', edge2FIndex: des.edgeIndex };
+      } else {
+        // 最上階セグメントは forward マッピング不変で必ず next-face / lower-face-pillar のいずれか。
+        throw new Error('floorResultToBothmode2FResult: 想定外の desiredEndSource（最上階結果ではない）');
+      }
+      return {
+        edge2FIndex: fs.edgeIndex,
+        segmentIndex: fs.segmentIndex,
+        segmentCount: fs.segmentCount,
+        startPoint: fs.startPoint,
+        endPoint: fs.endPoint,
+        segmentLengthMm: fs.segmentLengthMm,
+        face: fs.face,
+        handrailDir: fs.handrailDir,
+        nx: fs.nx,
+        ny: fs.ny,
+        startDistanceMm: fs.startDistanceMm,
+        desiredEndDistanceMm: fs.desiredEndDistanceMm,
+        desiredEndSource,
+        candidates: fs.candidates,
+        selectedIndex: fs.selectedIndex,
+        isLocked: fs.isLocked,
+        isAutoProgress: fs.isAutoProgress,
+        prevCornerIsConvex: fs.prevCornerIsConvex,
+        nextCornerIsConvex: fs.nextCornerIsConvex,
+        scaffoldCoord: fs.scaffoldCoord,
+        cursorStart: fs.cursorStart,
+        cursorEnd: fs.cursorEnd,
+        effectiveMm: fs.effectiveMm,
+      };
+    }),
+  };
+}
+
+/** Bothmode1FEdgeSegment → FloorEdgeSegment へのマッピング（最下階用、委譲 parity の橋渡し）。*/
+function bothmode1FSegToFloorSeg(seg: Bothmode1FEdgeSegment, floor: number): FloorEdgeSegment {
+  // 旧 1F の start/endConstraint を上下中立名へ写像。
+  const sc = seg.startConstraint;
+  const startConstraint: FloorSegmentStartConstraint =
+    sc.kind === 'pillar-from-2F'
+      ? { kind: 'pillar-from-upper', pillarPoint: sc.pillarPoint }
+      : sc.kind === 'collinear-with-2F'
+      ? { kind: 'collinear-with-upper', upperEdgeIndex: sc.edge2FIndex }
+      : { kind: 'cascade-from-prev-segment' };
+  const ec = seg.endConstraint;
+  const endConstraint: FloorSegmentEndConstraint =
+    ec.kind === 'pillar-to-2F'
+      ? { kind: 'pillar-to-upper', pillarPoint: ec.pillarPoint }
+      : ec.kind === 'collinear-with-2F'
+      ? { kind: 'collinear-with-upper', upperEdgeIndex: ec.edge2FIndex }
+      : { kind: 'next-face', edgeIndex: ec.edge1FIndex };
+  return {
+    floor,
+    edgeIndex: seg.edge1FIndex,
+    segmentIndex: seg.segmentIndex,
+    segmentCount: seg.segmentCount,
+    startPoint: seg.startPoint,
+    endPoint: seg.endPoint,
+    segmentLengthMm: seg.segmentLengthMm,
+    face: seg.face,
+    handrailDir: seg.handrailDir,
+    nx: seg.nx,
+    ny: seg.ny,
+    startDistanceMm: seg.startDistanceMm,
+    desiredEndDistanceMm: seg.desiredEndDistanceMm,
+    // 最下階は隣接「上」階制約を持つ（desiredEndSource は持たない）
+    startConstraint,
+    endConstraint,
+    candidates: seg.candidates,
+    selectedIndex: seg.selectedIndex,
+    isLocked: seg.isLocked,
+    isAutoProgress: seg.isAutoProgress,
+    prevCornerIsConvex: seg.prevCornerIsConvex,
+    nextCornerIsConvex: seg.nextCornerIsConvex,
+    scaffoldCoord: seg.scaffoldCoord,
+    cursorStart: seg.cursorStart,
+    cursorEnd: seg.cursorEnd,
+    effectiveMm: seg.effectiveMm,
+  };
 }
