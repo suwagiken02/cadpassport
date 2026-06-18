@@ -5,7 +5,7 @@ import {
   splitBuilding2FAt1FVertices,
   type Bothmode2FResult,
 } from '../autoLayoutUtils';
-import { computeFloorLayout, walkFloorUpperRole } from '../autolayout/cascade';
+import { computeFloorLayout, walkFloorUpperRole, walkFloorLowerRole } from '../autolayout/cascade';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
 
 // ============================================================
@@ -509,5 +509,119 @@ describe('walkFloorUpperRole（A 上階ロール移植）= computeBothmode2FLayo
     const distances1F = { 0: 900, 1: 600, 2: 1200, 3: 900, 4: 600, 5: 1200 };
     const distances2F = { 0: 600, 1: 1200, 2: 900, 3: 1200, 4: 600, 5: 900 };
     expectUpperWalkParity(building1F, building2F, distances1F, distances2F, ssMixed);
+  });
+});
+
+// ============================================================
+// P3-2(3/3) A 下端 parity: walkFloorLowerRole = computeBothmode1FLayout（byte 一致）
+// ============================================================
+
+/**
+ * walkFloorLowerRole の出力が、最下階委譲経路 computeFloorLayout(below=null) と完全一致するか。
+ * 委譲経路は computeBothmode1FLayout のマッピングなので、これが byte parity を意味する。
+ * cascade 本番と同じく resultAbove(FloorLayoutResult) を継承する流れで照合する（統合walk下端アンカー）。
+ */
+function expectLowerWalkParity(
+  building1F: BuildingShape,
+  building2F: BuildingShape,
+  distances1F: Record<number, number>,
+  distances2F: Record<number, number>,
+  scaffold: ScaffoldStartConfig = ss,
+) {
+  const norm2F = splitBuilding2FAt1FVertices(building1F, building2F);
+  const distByFloor = { 1: distances1F, 2: distances2F };
+  const resultAbove = computeFloorLayout(2, norm2F, null, building1F, null, distByFloor, scaffold);
+  const viaDelegate = computeFloorLayout(1, building1F, norm2F, null, resultAbove, distByFloor, null);
+  const viaWalk = walkFloorLowerRole(1, building1F, norm2F, resultAbove, distances1F);
+  expect(viaWalk).toEqual(viaDelegate);
+}
+
+describe('walkFloorLowerRole（A 下階ロール移植）= computeBothmode1FLayout parity', () => {
+  it('下屋なし（1F=2F）: edgeSegments=0', () => {
+    const square: BuildingShape = {
+      id: 'b', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 900, y: 0 }, { x: 900, y: 900 }, { x: 0, y: 900 }],
+      fill: '#000', floor: 1,
+    };
+    expectLowerWalkParity(square, square, dist(4), dist(4));
+  });
+
+  it('凸型1F（B面側下屋）: pillar-from-upper / collinear / next-face', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    expectLowerWalkParity(building1F, building2F, dist(6), dist(8));
+  });
+
+  it('B面側に中央のみ下屋: independent 3 辺・各種終点制約', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 5000 }, { x: 9000, y: 5000 },
+        { x: 9000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    expectLowerWalkParity(building1F, building2F, dist(8), dist(8));
+  });
+
+  it('B面側に下屋 2 個: independent 6 辺', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 9000 }, { x: 0, y: 9000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 1000 }, { x: 12000, y: 1000 },
+        { x: 12000, y: 3000 }, { x: 9000, y: 3000 },
+        { x: 9000, y: 5000 }, { x: 12000, y: 5000 },
+        { x: 12000, y: 7000 }, { x: 9000, y: 7000 },
+        { x: 9000, y: 9000 }, { x: 0, y: 9000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    expectLowerWalkParity(building1F, building2F, dist(12), dist(12));
+  });
+
+  it('非デフォルト離れ（face1=600/face2=1200・辺ごと差）', () => {
+    const ssMixed: ScaffoldStartConfig = { ...ss, face1DistanceMm: 600, face2DistanceMm: 1200 };
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const distances1F = { 0: 900, 1: 600, 2: 1200, 3: 900, 4: 600, 5: 1200 };
+    const distances2F = { 0: 600, 1: 1200, 2: 900, 3: 1200, 4: 600, 5: 900 };
+    expectLowerWalkParity(building1F, building2F, distances1F, distances2F, ssMixed);
   });
 });

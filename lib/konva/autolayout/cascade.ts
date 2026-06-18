@@ -34,6 +34,7 @@ import {
   findCollinearEdgePairs,
   isConvexCorner,
   isWallContinuation,
+  isPointInPolygon,
   generateSequentialCandidates,
   DEFAULT_EDGE_ADJUSTMENT,
   HANDRAIL_SIZES,
@@ -591,5 +592,310 @@ export function walkFloorUpperRole(
     };
   }
 
+  return { floor, edgeSegments: intermediate, hasUnresolved };
+}
+
+/** 下階ロール: this 辺を above に対して分類した結果（covered/collinear/independent）。 */
+type LowerEdgeClassification =
+  | { kind: 'covered' }
+  | { kind: 'collinear'; upperEdgeIndex: number; fixedDistanceMm: number }
+  | { kind: 'independent' };
+
+/**
+ * 統合フロア walk の「下階ロール」= 上階継承部分。
+ * computeBothmode1FLayout の論理を中立名で移植した独立実装（挙動完全一致を parity で固定）。
+ *
+ *  - buildingThis 各辺を above に対して covered/collinear/independent 分類。
+ *    collinear/covered はセグメントを出さず（covered=上階下に隠れる・collinear=上階ラインと共有）、
+ *    independent（下屋）のみ自前セグメント。※Q2（covered も自前ライン）は中間階用で本関数では未適用。
+ *  - resultAbove（上階結果）から柱点（desiredEndSource='lower-face-pillar'）・seg 境界
+ *    （startDistanceMm/scaffoldCoord/cursor 等）を読み、始点制約・cursor 整合に使う。
+ *
+ * 既存 computeBothmode1FLayout は無改変。最下階(below=null)で既存 1F と byte 一致することを
+ * cascade.test.ts で固定する（A の下端 parity アンカー）。
+ */
+export function walkFloorLowerRole(
+  floor: number,
+  buildingThis: BuildingShape,
+  buildingAbove: BuildingShape,
+  resultAbove: FloorLayoutResult,
+  distancesThis: Record<number, number>,
+  enabledSizes: HandrailLengthMm[] = HANDRAIL_SIZES,
+  priorityConfig?: PriorityConfig,
+  userSelections?: Record<string, number>,
+  userAdjustments?: Record<string, EdgeAdjustment>,
+): FloorLayoutResult {
+  const edgesThis = getBuildingEdgesClockwise(buildingThis);
+  const edgesAbove = getBuildingEdgesClockwise(buildingAbove);
+  const nThis = edgesThis.length;
+  if (nThis < 3) return { floor, edgeSegments: [], hasUnresolved: false };
+
+  // 連動ペア {edge1FIndex(=this/下), edge2FIndex(=above/上)}
+  const pairs = findCollinearEdgePairs(buildingThis, buildingAbove);
+
+  // resultAbove から下階向け柱点を抽出（desiredEndSource='lower-face-pillar'）。
+  const pillarPoints: Array<{ point: Point; lowerEdgeIndex: number; upperEdgeIndex: number }> = [];
+  for (const seg of resultAbove.edgeSegments) {
+    if (seg.desiredEndSource?.kind === 'lower-face-pillar') {
+      pillarPoints.push({
+        point: seg.endPoint,
+        lowerEdgeIndex: seg.desiredEndSource.lowerEdgeIndex,
+        upperEdgeIndex: seg.edgeIndex,
+      });
+    }
+  }
+
+  // this 開始辺: 進行順最初の柱点が指す this 辺、なければ 0
+  const startEdgeThisIndex = pillarPoints.length > 0 ? pillarPoints[0].lowerEdgeIndex % nThis : 0;
+
+  // 各 this 辺を分類
+  const classifications: LowerEdgeClassification[] = edgesThis.map((edge): LowerEdgeClassification => {
+    const cp = pairs.find(p => p.edge1FIndex === edge.index);
+    if (cp) {
+      const matchSeg = resultAbove.edgeSegments.find(s => s.edgeIndex === cp.edge2FIndex);
+      const fixedDistanceMm = matchSeg?.startDistanceMm ?? 900;
+      return { kind: 'collinear', upperEdgeIndex: cp.edge2FIndex, fixedDistanceMm };
+    }
+    const midX = (edge.p1.x + edge.p2.x) / 2;
+    const midY = (edge.p1.y + edge.p2.y) / 2;
+    if (isPointInPolygon(midX + edge.nx * 1, midY + edge.ny * 1, buildingAbove.points)) {
+      return { kind: 'covered' };
+    }
+    return { kind: 'independent' };
+  });
+
+  // チェイン look-ahead（1 段限定）
+  const chainedFixedEnd = (startIdx: number): number | undefined => {
+    const c0 = classifications[startIdx];
+    if (c0.kind === 'collinear') return c0.fixedDistanceMm;
+    if (c0.kind === 'independent') {
+      const c1 = classifications[(startIdx + 1) % nThis];
+      if (c1.kind === 'collinear') return c1.fixedDistanceMm;
+    }
+    return undefined;
+  };
+
+  const cornerConvexity: boolean[] = [];
+  for (let i = 0; i < nThis; i++) {
+    cornerConvexity.push(isConvexCorner(edgesThis[i], edgesThis[(i + 1) % nThis]));
+  }
+
+  const pointsMatch = (a: Point, b: Point) =>
+    Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
+
+  const intermediate: FloorEdgeSegment[] = [];
+  let prevEndDistanceMm: number | undefined = undefined;
+  let prevSegmentStartDist: number | undefined = undefined;
+
+  for (let k = 0; k < nThis; k++) {
+    const i = (startEdgeThisIndex + k) % nThis;
+    const edge = edgesThis[i];
+    const cls = classifications[i];
+    if (cls.kind === 'covered') continue;
+
+    const prevEdge = edgesThis[(i - 1 + nThis) % nThis];
+    const nextEdge = edgesThis[(i + 1) % nThis];
+    const isPrevStraight = prevEdge.face === edge.face && prevEdge.handrailDir === edge.handrailDir;
+    const isNextStraight = nextEdge.face === edge.face && nextEdge.handrailDir === edge.handrailDir;
+    const isStraightContinuation = isPrevStraight;
+
+    let prevCornerIsConvex = cornerConvexity[(i - 1 + nThis) % nThis] || isPrevStraight;
+    let nextCornerIsConvex = cornerConvexity[i] || isNextStraight;
+    const segKey = `${i}-0`;
+    const adj = userAdjustments?.[segKey] ?? DEFAULT_EDGE_ADJUSTMENT;
+
+    const prevPillarMatchForDist = pillarPoints.find(p => pointsMatch(p.point, edge.p1) && p.lowerEdgeIndex === i);
+    const contEdgeAboveForDist = prevPillarMatchForDist
+      ? edgesAbove.find(e => e.index === prevPillarMatchForDist.upperEdgeIndex)
+      : undefined;
+    const isContinuationStart = !!(contEdgeAboveForDist && isWallContinuation(contEdgeAboveForDist, edge));
+    const contSegAbove = isContinuationStart && prevPillarMatchForDist
+      ? resultAbove.edgeSegments.find(s => s.edgeIndex === prevPillarMatchForDist.upperEdgeIndex)
+      : undefined;
+    if (isContinuationStart) prevCornerIsConvex = false;
+    const prevEdgeStartDist: number = isContinuationStart
+      ? (contSegAbove?.desiredEndDistanceMm ?? distancesThis[edge.index] ?? 900)
+      : prevPillarMatchForDist
+      ? (resultAbove.edgeSegments.find(s => s.edgeIndex === prevPillarMatchForDist.upperEdgeIndex)
+          ?.startDistanceMm ?? distancesThis[edge.index] ?? 900)
+      : (prevSegmentStartDist ?? distancesThis[edgesThis[(i - 1 + nThis) % nThis].index] ?? 900);
+
+    if (cls.kind === 'collinear') {
+      prevEndDistanceMm = cls.fixedDistanceMm;
+      prevSegmentStartDist = cls.fixedDistanceMm;
+      continue;
+    }
+
+    // cls.kind === 'independent'
+    let startConstraint: FloorSegmentStartConstraint;
+    let startDist: number;
+    const prevPillarMatch = pillarPoints.find(p => pointsMatch(p.point, edge.p1) && p.lowerEdgeIndex === i);
+    if (prevPillarMatch) {
+      startConstraint = { kind: 'pillar-from-upper', pillarPoint: prevPillarMatch.point };
+      const segA = resultAbove.edgeSegments.find(s => s.edgeIndex === prevPillarMatch.upperEdgeIndex);
+      startDist = segA?.startDistanceMm ?? distancesThis[edge.index] ?? 900;
+    } else if (isStraightContinuation) {
+      startConstraint = { kind: 'cascade-from-prev-segment' };
+      startDist = prevSegmentStartDist ?? distancesThis[edge.index] ?? 900;
+    } else {
+      startConstraint = { kind: 'cascade-from-prev-segment' };
+      startDist = prevEndDistanceMm ?? distancesThis[edge.index] ?? 900;
+    }
+
+    const nextEdgeIdx = (i + 1) % nThis;
+    const nextCls = classifications[nextEdgeIdx];
+    let endConstraint: FloorSegmentEndConstraint;
+    let desiredEndDist: number;
+    if (nextCls.kind === 'collinear') {
+      endConstraint = { kind: 'collinear-with-upper', upperEdgeIndex: nextCls.upperEdgeIndex };
+      desiredEndDist = nextCls.fixedDistanceMm;
+    } else if (nextCls.kind === 'covered') {
+      const endPillarMatch = pillarPoints.find(p => pointsMatch(p.point, edge.p2) && p.lowerEdgeIndex === nextEdgeIdx);
+      if (endPillarMatch) {
+        endConstraint = { kind: 'pillar-to-upper', pillarPoint: endPillarMatch.point };
+        const segA = resultAbove.edgeSegments.find(s => s.edgeIndex === endPillarMatch.upperEdgeIndex);
+        desiredEndDist = segA?.startDistanceMm ?? distancesThis[nextEdgeIdx] ?? 900;
+      } else {
+        endConstraint = { kind: 'next-face', edgeIndex: nextEdgeIdx };
+        desiredEndDist = distancesThis[nextEdgeIdx] ?? 900;
+      }
+    } else {
+      endConstraint = { kind: 'next-face', edgeIndex: nextEdgeIdx };
+      const chained = chainedFixedEnd(nextEdgeIdx);
+      desiredEndDist = chained ?? distancesThis[nextEdgeIdx] ?? 900;
+    }
+
+    if (endConstraint.kind === 'collinear-with-upper') nextCornerIsConvex = false;
+
+    const candidates = generateSequentialCandidates(
+      edge.lengthMm, startDist, desiredEndDist,
+      prevCornerIsConvex, nextCornerIsConvex,
+      prevEdgeStartDist,
+      enabledSizes, priorityConfig,
+      adj.larger.offsetIdx, adj.smaller.offsetIdx,
+      adj.larger.variationIdx, adj.smaller.variationIdx,
+    );
+
+    let selectedIndex = userSelections?.[segKey] ?? 0;
+    if (selectedIndex >= candidates.length) selectedIndex = 0;
+    const isAutoProgress = candidates.length === 1
+      && candidates[0].diffFromDesired === 0
+      && (candidates[0].remainder ?? 0) === 0;
+    const isLocked = false;
+
+    const railsTotal = candidates[selectedIndex]?.totalMm ?? edge.lengthMm;
+    // 1st pass 描画座標（computeDrawCoords 相当）
+    const distGrid = mmToGrid(startDist);
+    const scaffoldCoord1 = edge.handrailDir === 'horizontal'
+      ? edge.p1.y + edge.ny * distGrid
+      : edge.p1.x + edge.nx * distGrid;
+    const dx1 = edge.p2.x - edge.p1.x;
+    const dy1 = edge.p2.y - edge.p1.y;
+    const sign1 = edge.handrailDir === 'horizontal' ? (dx1 >= 0 ? 1 : -1) : (dy1 >= 0 ? 1 : -1);
+    const cursorStart1 = edge.handrailDir === 'horizontal' ? edge.p1.x : edge.p1.y;
+    const cursorEnd1 = cursorStart1 + sign1 * (railsTotal / 10);
+
+    intermediate.push({
+      floor,
+      edgeIndex: i,
+      segmentIndex: 0,
+      segmentCount: 1,
+      startPoint: edge.p1,
+      endPoint: edge.p2,
+      segmentLengthMm: edge.lengthMm,
+      face: edge.face,
+      handrailDir: edge.handrailDir,
+      nx: edge.nx,
+      ny: edge.ny,
+      startDistanceMm: startDist,
+      desiredEndDistanceMm: desiredEndDist,
+      startConstraint,
+      endConstraint,
+      candidates,
+      selectedIndex,
+      isLocked,
+      isAutoProgress,
+      prevCornerIsConvex,
+      nextCornerIsConvex,
+      scaffoldCoord: scaffoldCoord1,
+      cursorStart: cursorStart1,
+      cursorEnd: cursorEnd1,
+      effectiveMm: railsTotal,
+    });
+
+    if (candidates.length > 0) {
+      prevEndDistanceMm = candidates[selectedIndex].actualEndDistanceMm;
+    } else {
+      prevEndDistanceMm = desiredEndDist;
+    }
+    prevSegmentStartDist = startDist;
+  }
+
+  // 2nd pass: cursor 整合（startConstraint/endConstraint に応じて resultAbove の
+  // scaffoldCoord/cursor へ揃える）。computeBothmode1FLayout の cursor 修正と同一。
+  for (let k = 0; k < intermediate.length; k++) {
+    const s = intermediate[k];
+    const dx = s.endPoint.x - s.startPoint.x;
+    const dy = s.endPoint.y - s.startPoint.y;
+    const sign = s.handrailDir === 'horizontal' ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? 1 : -1);
+
+    let cursorStart: number;
+    const scStart = s.startConstraint;
+    if (scStart?.kind === 'pillar-from-upper') {
+      const pp = scStart.pillarPoint;
+      const segA = resultAbove.edgeSegments.find(seg2 =>
+        Math.abs(seg2.endPoint.x - pp.x) < 0.001 && Math.abs(seg2.endPoint.y - pp.y) < 0.001);
+      if (segA && segA.handrailDir !== s.handrailDir) cursorStart = segA.scaffoldCoord;
+      else if (segA) cursorStart = segA.cursorEnd;
+      else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+    } else if (scStart?.kind === 'cascade-from-prev-segment') {
+      const prev = k > 0 ? intermediate[k - 1] : undefined;
+      if (prev && prev.handrailDir !== s.handrailDir) cursorStart = prev.scaffoldCoord;
+      else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+    } else if (scStart?.kind === 'collinear-with-upper') {
+      const segA = resultAbove.edgeSegments.find(seg2 => seg2.edgeIndex === scStart.upperEdgeIndex);
+      if (segA && segA.handrailDir !== s.handrailDir) cursorStart = segA.scaffoldCoord;
+      else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+    } else {
+      cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+    }
+
+    let cursorEnd: number;
+    const ecEnd = s.endConstraint;
+    if (ecEnd?.kind === 'pillar-to-upper') {
+      const pp = ecEnd.pillarPoint;
+      const segA = resultAbove.edgeSegments.find(seg2 =>
+        Math.abs(seg2.startPoint.x - pp.x) < 0.001 && Math.abs(seg2.startPoint.y - pp.y) < 0.001);
+      if (segA && segA.handrailDir !== s.handrailDir) cursorEnd = segA.scaffoldCoord;
+      else cursorEnd = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+    } else if (ecEnd?.kind === 'collinear-with-upper') {
+      const segA = resultAbove.edgeSegments.find(seg2 => seg2.edgeIndex === ecEnd.upperEdgeIndex);
+      if (segA && segA.handrailDir !== s.handrailDir) cursorEnd = segA.scaffoldCoord;
+      else if (segA) {
+        const endVar = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+        cursorEnd = Math.abs(segA.cursorStart - endVar) <= Math.abs(segA.cursorEnd - endVar)
+          ? segA.cursorStart : segA.cursorEnd;
+      } else cursorEnd = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+    } else {
+      // next-face: 次の this segment との接続
+      const next = k < intermediate.length - 1 ? intermediate[k + 1] : undefined;
+      if (next && next.handrailDir !== s.handrailDir) {
+        if (s.nextCornerIsConvex) {
+          const nextDistGrid = mmToGrid(next.startDistanceMm);
+          const endVar = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+          cursorEnd = endVar + sign * nextDistGrid;
+        } else cursorEnd = next.scaffoldCoord;
+      } else cursorEnd = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+    }
+
+    intermediate[k] = {
+      ...s,
+      cursorStart,
+      cursorEnd,
+      effectiveMm: Math.max(0, Math.round(Math.abs(cursorEnd - cursorStart) * 10)),
+    };
+  }
+
+  const hasUnresolved = intermediate.some(s => !s.isLocked && !s.isAutoProgress);
   return { floor, edgeSegments: intermediate, hasUnresolved };
 }
