@@ -262,8 +262,24 @@ export function computeFloorLayout(
     };
   }
 
-  // ── 中間階（above も below も非 null）と せり出し対称化は P3-2(3/3) で実装 ──
-  throw new Error(`computeFloorLayout(floor=${floor}, 中間階): P3-2(3/3) で実装予定`);
+  // ── 中間階（above も below も非 null）= 上階継承＋下階柱マーカー（下屋/面一のみ）──
+  // せり出し対称化（Q2: covered も自前ライン）は増分2b-ii で導入する。
+  if (resultAbove === null) {
+    throw new Error('computeFloorLayout: 中間階には resultAbove が必要');
+  }
+  const distancesThisMid = distancesByFloor[floor] ?? {};
+  return walkFloorMiddle(
+    floor,
+    buildingThis,
+    buildingAbove,
+    resultAbove,
+    buildingBelow,
+    distancesThisMid,
+    enabledSizes,
+    priorityConfig,
+    userSelections,
+    userAdjustments,
+  );
 }
 
 // ============================================================
@@ -898,4 +914,68 @@ export function walkFloorLowerRole(
 
   const hasUnresolved = intermediate.some(s => !s.isLocked && !s.isAutoProgress);
   return { floor, edgeSegments: intermediate, hasUnresolved };
+}
+
+/**
+ * 統合フロア walk の「中間階」= 上階継承（下階ロール）＋ 下階向け柱マーカー生成。
+ *
+ * walkFloorLowerRole（上階継承・無改変）で this のセグメントを作り、その各セグメントへ
+ * 直下階の下屋境界の柱マーカー（desiredEndSource='lower-face-pillar'）を後段で graft する。
+ * 中間階の自前ジオメトリ（離れ/凸凹/cursor）は上階由来のまま。下階は this の実セグメント位置を
+ * 読んで追従するため、柱マーカー（メタ情報）の付与だけで下階継承が成立する。
+ *
+ * ※本増分(2b-i)は下屋/面一のみ（既存分類: covered→スキップ / collinear→共有 / independent→自前）。
+ *   せり出し対称化（Q2: covered も自前ライン）は増分2b-ii で導入する。
+ */
+export function walkFloorMiddle(
+  floor: number,
+  buildingThis: BuildingShape,
+  buildingAbove: BuildingShape,
+  resultAbove: FloorLayoutResult,
+  buildingBelow: BuildingShape,
+  distancesThis: Record<number, number>,
+  enabledSizes?: HandrailLengthMm[],
+  priorityConfig?: PriorityConfig,
+  userSelections?: Record<string, number>,
+  userAdjustments?: Record<string, EdgeAdjustment>,
+): FloorLayoutResult {
+  // 1) 上階継承で this のセグメントを作る（下階ロールを無改変で利用）。
+  const base = walkFloorLowerRole(
+    floor, buildingThis, buildingAbove, resultAbove, distancesThis,
+    enabledSizes, priorityConfig, userSelections, userAdjustments,
+  );
+
+  // 2) 直下階向けの柱マーカーを graft（upper-role の柱検出を流用）。
+  const edgesThis = getBuildingEdgesClockwise(buildingThis);
+  const edgesBelow = getBuildingEdgesClockwise(buildingBelow);
+  const nThis = edgesThis.length;
+  // 連動ペア {edge1FIndex(=below/下), edge2FIndex(=this/上)}
+  const pairsBelow = findCollinearEdgePairs(buildingBelow, buildingThis);
+  const eqPt = (a: Point, b: Point) =>
+    Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
+  // this 辺終点が「below 下屋境界（below 独立辺の端点・非連動）」か検出
+  const findPillarEdgeBelowAtEndpoint = (
+    endPoint: Point, thisEdgeIndex: number, nextThisEdgeIndex: number,
+  ): number | null => {
+    for (const eb of edgesBelow) {
+      if (!eqPt(eb.p1, endPoint) && !eqPt(eb.p2, endPoint)) continue;
+      if (pairsBelow.some(p => p.edge1FIndex === eb.index && p.edge2FIndex === thisEdgeIndex)) continue;
+      if (pairsBelow.some(p => p.edge1FIndex === eb.index && p.edge2FIndex === nextThisEdgeIndex)) continue;
+      return eb.index;
+    }
+    return null;
+  };
+
+  const edgeSegments = base.edgeSegments.map((seg) => {
+    const nextThisEdgeIndex = (seg.edgeIndex + 1) % nThis;
+    const pillarBelowIdx = findPillarEdgeBelowAtEndpoint(seg.endPoint, seg.edgeIndex, nextThisEdgeIndex);
+    // 下階消費（floorResultToBothmode2FResult / walkFloorLowerRole）が読めるよう、全セグメントに
+    // desiredEndSource を付与（下屋境界=lower-face-pillar、それ以外=next-face）。最上階結果と同じ形。
+    const des: FloorEdgeSegment['desiredEndSource'] = pillarBelowIdx !== null
+      ? { kind: 'lower-face-pillar', lowerEdgeIndex: pillarBelowIdx }
+      : { kind: 'next-face', edgeIndex: nextThisEdgeIndex };
+    return { ...seg, desiredEndSource: des };
+  });
+
+  return { floor, edgeSegments, hasUnresolved: base.hasUnresolved };
 }

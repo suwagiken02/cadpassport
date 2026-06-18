@@ -3,9 +3,16 @@ import {
   computeBothmode2FLayout,
   computeBothmode1FLayout,
   splitBuilding2FAt1FVertices,
+  splitLowerAtUpper,
   type Bothmode2FResult,
 } from '../autoLayoutUtils';
-import { computeFloorLayout, walkFloorUpperRole, walkFloorLowerRole } from '../autolayout/cascade';
+import {
+  computeFloorLayout,
+  walkFloorUpperRole,
+  walkFloorLowerRole,
+  type FloorEdgeSegment,
+} from '../autolayout/cascade';
+import { findScaffoldViolations, type ScaffoldHandrail } from '../scaffoldViolations';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
 
 // ============================================================
@@ -623,5 +630,97 @@ describe('walkFloorLowerRole（A 下階ロール移植）= computeBothmode1FLayo
     const distances1F = { 0: 900, 1: 600, 2: 1200, 3: 900, 4: 600, 5: 1200 };
     const distances2F = { 0: 600, 1: 1200, 2: 900, 3: 1200, 4: 600, 5: 900 };
     expectLowerWalkParity(building1F, building2F, distances1F, distances2F, ssMixed);
+  });
+});
+
+// ============================================================
+// P3-2(3/3) 増分2b-i: 中間階（下屋/面一）の N=3 検証
+// ============================================================
+
+/** FloorEdgeSegment[] を ScaffoldHandrail[] へ変換（rails を cursor span に沿って敷き詰め）。*/
+function segmentsToHandrails(segs: FloorEdgeSegment[]): ScaffoldHandrail[] {
+  const out: ScaffoldHandrail[] = [];
+  for (const s of segs) {
+    const rails = s.candidates[s.selectedIndex]?.rails ?? [];
+    const sign = s.cursorEnd >= s.cursorStart ? 1 : -1;
+    let cursor = s.cursorStart;
+    for (const lenMm of rails) {
+      const lenGrid = lenMm / 10;
+      const startVar = sign > 0 ? cursor : cursor - lenGrid; // toSeg は +lengthMm 方向のため下端を始点に
+      out.push(
+        s.handrailDir === 'horizontal'
+          ? { x: startVar, y: s.scaffoldCoord, lengthMm: lenMm, direction: 'horizontal' }
+          : { x: s.scaffoldCoord, y: startVar, lengthMm: lenMm, direction: 'vertical' },
+      );
+      cursor += sign * lenGrid;
+    }
+  }
+  return out;
+}
+
+/** target を others 全ての頂点で分割（= cascade ドライバの前処理相当。純幾何 splitLowerAtUpper を流用）。*/
+function splitAtAll(target: BuildingShape, others: BuildingShape[]): BuildingShape {
+  let result = target;
+  for (const o of others) result = splitLowerAtUpper(result, o);
+  return result;
+}
+
+describe('computeFloorLayout 中間階 N=3（下屋/面一・増分2b-i）', () => {
+  it('(a) 総3階・全辺面一: 最上階のみフル周、中下階は共有で空、findScaffoldViolations=0', () => {
+    const sq = (id: string, floor: number): BuildingShape => ({
+      id, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    const f3 = sq('3f', 3), f2 = sq('2f', 2), f1 = sq('1f', 1);
+    const D = { 1: dist(4), 2: dist(4), 3: dist(4) };
+
+    const r3 = computeFloorLayout(3, f3, null, f2, null, D, ss);
+    const r2 = computeFloorLayout(2, f2, f3, f1, r3, D, null);
+    const r1 = computeFloorLayout(1, f1, f2, null, r2, D, null);
+
+    expect(r3.edgeSegments.length).toBe(4); // 最上階フル周
+    expect(r2.edgeSegments.length).toBe(0); // 中間階は全面一→共有→空
+    expect(r1.edgeSegments.length).toBe(0); // 最下階も全面一→空
+
+    const handrails = [
+      ...segmentsToHandrails(r3.edgeSegments),
+      ...segmentsToHandrails(r2.edgeSegments),
+      ...segmentsToHandrails(r1.edgeSegments),
+    ];
+    expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
+  });
+
+  it('(b) 下屋積層（1F>2F>3F 東に階段状）: 各段差で自前ライン・中間階が下階へ柱・findScaffoldViolations=0', () => {
+    const mk = (id: string, floor: number, east: number): BuildingShape => ({
+      id, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: east, y: 0 }, { x: east, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    const f3 = mk('3f', 3, 6000);
+    const f2 = mk('2f', 2, 9000);
+    const f1 = mk('1f', 1, 12000);
+    // 各階を他の全階の頂点で分割（cascade ドライバ相当の前処理＝多階で整合）
+    const n3 = splitAtAll(f3, [f2, f1]);
+    const n2 = splitAtAll(f2, [f3, f1]);
+    const n1 = splitAtAll(f1, [f3, f2]);
+    const D = { 1: dist(10), 2: dist(10), 3: dist(10) };
+
+    const r3 = computeFloorLayout(3, n3, null, n2, null, D, ss);
+    const r2 = computeFloorLayout(2, n2, n3, n1, r3, D, null);
+    const r1 = computeFloorLayout(1, n1, n2, null, r2, D, null);
+
+    // 中間階(2F)は east 下屋部に自前セグメントを持ち、1F へ柱マーカーを出す
+    expect(r2.edgeSegments.length).toBeGreaterThan(0);
+    expect(r2.edgeSegments.some(s => s.desiredEndSource?.kind === 'lower-face-pillar')).toBe(true);
+    // 最下階(1F)も east 下屋部に自前セグメント
+    expect(r1.edgeSegments.length).toBeGreaterThan(0);
+
+    const handrails = [
+      ...segmentsToHandrails(r3.edgeSegments),
+      ...segmentsToHandrails(r2.edgeSegments),
+      ...segmentsToHandrails(r1.edgeSegments),
+    ];
+    expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
   });
 });
