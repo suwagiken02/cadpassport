@@ -236,30 +236,25 @@ export function computeFloorLayout(
   }
 
   // ── above 有り・below 無し = 最下階ブランチ ──
-  // 既存 computeBothmode1FLayout に委譲して parity を保証する。
-  // resultAbove(FloorLayoutResult) を computeBothmode1FLayout が必要とする
-  // Bothmode2FResult 相当へ往復復元してから渡す（往復無損失が肝）。
+  // native walkFloorLowerRole に配線（下端 parity 済み＝下屋/面一は byte 不変）。
+  // ※増分2b-ii: Q2(covered→自前) を最下階にも効かせるため委譲ではなく native を使う。
+  //   1F が上階の下に引っ込むせり出しでも、その引っ込んだ壁に足場を出す。
   if (buildingBelow === null) {
     if (resultAbove === null) {
       throw new Error('computeFloorLayout: 最下階（above 有り）には resultAbove が必要');
     }
     const distancesThis = distancesByFloor[floor] ?? {};
-    const result2F = floorResultToBothmode2FResult(resultAbove);
-    const r1 = computeBothmode1FLayout(
+    return walkFloorLowerRole(
+      floor,
       buildingThis,
       buildingAbove,
-      result2F,
+      resultAbove,
       distancesThis,
       enabledSizes,
       priorityConfig,
       userSelections,
       userAdjustments,
     );
-    return {
-      floor,
-      edgeSegments: r1.edgeSegments.map((seg) => bothmode1FSegToFloorSeg(seg, floor)),
-      hasUnresolved: r1.hasUnresolved,
-    };
   }
 
   // ── 中間階（above も below も非 null）= 上階継承＋下階柱マーカー（下屋/面一のみ）──
@@ -672,10 +667,13 @@ export function walkFloorLowerRole(
       const fixedDistanceMm = matchSeg?.startDistanceMm ?? 900;
       return { kind: 'collinear', upperEdgeIndex: cp.edge2FIndex, fixedDistanceMm };
     }
+    // Q2(増分2b-ii): 面一(collinear)以外は、引っ込み(covered=上階の下に隠れる辺) も
+    // 出っ張り(independent=下屋) も「自前ライン」にする確定物理（せり出しで下の壁にも足場が要る）。
+    // 旧「covered→スキップ」を廃止し independent に統一。引っ込み判定だけ残す（将来のせり出し端点整合の足掛かり）。
     const midX = (edge.p1.x + edge.p2.x) / 2;
     const midY = (edge.p1.y + edge.p2.y) / 2;
     if (isPointInPolygon(midX + edge.nx * 1, midY + edge.ny * 1, buildingAbove.points)) {
-      return { kind: 'covered' };
+      return { kind: 'independent' };
     }
     return { kind: 'independent' };
   });

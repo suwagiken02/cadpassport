@@ -724,3 +724,79 @@ describe('computeFloorLayout 中間階 N=3（下屋/面一・増分2b-i）', () 
     expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
   });
 });
+
+// ============================================================
+// P3-2(3/3) 増分2b-ii: せり出し（Q2 covered→自前）の N=3 検証
+// ============================================================
+
+describe('computeFloorLayout せり出し N=3（Q2 covered→自前・増分2b-ii）', () => {
+  it('(c) せり出し積層（1F<2F<3F 上が東に張り出す）: 引っ込んだ下階壁に自前ライン・findScaffoldViolations=0', () => {
+    // upper ほど東に大きい（張り出し）。1F=6000, 2F=9000, 3F=12000、全て y[0..7000]。
+    const mk = (id: string, floor: number, east: number): BuildingShape => ({
+      id, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: east, y: 0 }, { x: east, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    const f3 = mk('3f', 3, 12000);
+    const f2 = mk('2f', 2, 9000);
+    const f1 = mk('1f', 1, 6000);
+    const n3 = splitAtAll(f3, [f2, f1]);
+    const n2 = splitAtAll(f2, [f3, f1]);
+    const n1 = splitAtAll(f1, [f3, f2]);
+    const D = { 1: dist(10), 2: dist(10), 3: dist(10) };
+
+    const r3 = computeFloorLayout(3, n3, null, n2, null, D, ss);
+    const r2 = computeFloorLayout(2, n2, n3, n1, r3, D, null);
+    const r1 = computeFloorLayout(1, n1, n2, null, r2, D, null);
+
+    // Q2: 上階の下に引っ込んだ east 壁にも自前ラインが出る（旧仕様ならスキップ＝空だった）。
+    // 1F east は x=6000 の縦壁、2F east は x=9000 の縦壁。
+    expect(r1.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 6000)).toBe(true);
+    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 9000)).toBe(true);
+
+    const handrails = [
+      ...segmentsToHandrails(r3.edgeSegments),
+      ...segmentsToHandrails(r2.edgeSegments),
+      ...segmentsToHandrails(r1.edgeSegments),
+    ];
+    expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
+  });
+
+  it('(d) 混在（中間階が上階に対し西=引っ込み・東=下屋）: 両側に自前ライン・findScaffoldViolations=0', () => {
+    // 3F[0..8000], 2F[4000..12000](西は3F下に引っ込み/東は3Fより張り出す), 1F[4000..16000]
+    const f3: BuildingShape = {
+      id: '3f', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 8000, y: 0 }, { x: 8000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 3,
+    };
+    const f2: BuildingShape = {
+      id: '2f', type: 'polygon',
+      points: [{ x: 4000, y: 0 }, { x: 12000, y: 0 }, { x: 12000, y: 7000 }, { x: 4000, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const f1: BuildingShape = {
+      id: '1f', type: 'polygon',
+      points: [{ x: 4000, y: 0 }, { x: 16000, y: 0 }, { x: 16000, y: 7000 }, { x: 4000, y: 7000 }],
+      fill: '#000', floor: 1,
+    };
+    const n3 = splitAtAll(f3, [f2, f1]);
+    const n2 = splitAtAll(f2, [f3, f1]);
+    const n1 = splitAtAll(f1, [f3, f2]);
+    const D = { 1: dist(12), 2: dist(12), 3: dist(12) };
+
+    const r3 = computeFloorLayout(3, n3, null, n2, null, D, ss);
+    const r2 = computeFloorLayout(2, n2, n3, n1, r3, D, null);
+    const r1 = computeFloorLayout(1, n1, n2, null, r2, D, null);
+
+    // 中間階(2F): 西=引っ込み(covered→自前, x=4000 縦壁) と 東=下屋(x=12000 縦壁) の両方に自前ライン。
+    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 4000)).toBe(true);
+    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 12000)).toBe(true);
+
+    const handrails = [
+      ...segmentsToHandrails(r3.edgeSegments),
+      ...segmentsToHandrails(r2.edgeSegments),
+      ...segmentsToHandrails(r1.edgeSegments),
+    ];
+    expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
+  });
+});
