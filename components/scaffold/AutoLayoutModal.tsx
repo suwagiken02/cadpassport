@@ -493,7 +493,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // Phase H-3d-2 Stage 5 残対応 Step 1 補足: bothmode で同一 edge に複数 segment が
   // ある場合に segment を識別する必要があるため、optional segmentIndex を追加。
   // 単一階モードでは undefined のまま (互換)。
-  const [activeEdge, setActiveEdge] = useState<{ floor: 1 | 2; index: number; segmentIndex?: number } | null>(null);
+  const [activeEdge, setActiveEdge] = useState<{ floor: number; index: number; segmentIndex?: number } | null>(null);
 
   // Phase H-3d-2 Stage 5 Part A: bothmode 専用 state (Part B 以降で使用、現時点では未使用)
   // key 形式は `${edge2FIndex}-${segmentIndex}` の string (Stage 3/4 で定義済み)
@@ -685,7 +685,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // Phase H-3d-1 / Stage 5 Part C: 順次決定の候補選択（2F / 1F 両対応）
   // bothmode 用に segmentIndex (省略時 0) を受け取れるよう拡張。単一階モードは無視。
   const handleSequentialSelect = (
-    floor: 1 | 2,
+    floor: number,
     edgeIndex: number,
     candIdx: number,
     segmentIndex: number = 0,
@@ -986,7 +986,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // - 「←/→」(handleOffsetChange): 該当 side の offsetIdx を ±1、variationIdx を 0 リセット
   // 更新後は再計算で後続辺にも伝播。bothmode は segmentIndex 対応 (key=`${edge}-${seg}`)。
   const applyAdjustmentsUpdate = (
-    floor: 1 | 2,
+    floor: number,
     edgeIndex: number,
     updater: (cur: EdgeAdjustment) => EdgeAdjustment | null,
     segmentIndex: number = 0,
@@ -1063,7 +1063,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   };
 
   const handleVariationChange = (
-    floor: 1 | 2,
+    floor: number,
     edgeIndex: number,
     side: 'larger' | 'smaller',
     direction: 'next' | 'prev' = 'next',
@@ -1081,7 +1081,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   };
 
   const handleOffsetChange = (
-    floor: 1 | 2,
+    floor: number,
     edgeIndex: number,
     side: 'larger' | 'smaller',
     direction: 'next' | 'prev',
@@ -1115,7 +1115,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       // 所属階:
       // - bothmode: adapter が originFloor を埋めているのでそれを使う (2F 由来 → 2F、1F 由来 → 1F)
       // - 単一階: 1Fのみ → 1F、2Fのみ → 2F (originFloor は undefined)
-      const placeFloor: 1 | 2 = el.originFloor ?? (targetFloor === 1 ? 1 : 2);
+      const placeFloor: number = el.originFloor ?? (targetFloor === 1 ? 1 : 2);
       for (const p of placements) {
         allHandrails.push({
           id: uuidv4(),
@@ -1472,7 +1472,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 // (handleCalc / handleSequentialSelect の規約)。
                 // targetFloor=1 (1F のみモード) でも seqRes2F が使われる。
                 // よって主要建物の handleVariationChange も常に floor=2 で呼ぶ。
-                const mainFloor: 1 | 2 = 2;
+                const mainFloor: number = 2;
                 const seqEdge = sequentialResult2F?.edgeResults.find(er => er.edge.index === el.edge.index);
                 const seqCand = seqEdge?.candidates[seqEdge.selectedIndex];
                 const sideForVariation: 'larger' | 'smaller' | null = seqCand
@@ -1724,7 +1724,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           type SegEntry = {
             seg: typeof bothmodeResult2F extends null ? never
               : NonNullable<typeof bothmodeResult2F>['edgeSegments'][number] | NonNullable<typeof bothmodeResult1F>['edgeSegments'][number];
-            floor: 1 | 2;
+            floor: number;
             edgeIndex: number;
           };
           const allSegments: SegEntry[] = [];
