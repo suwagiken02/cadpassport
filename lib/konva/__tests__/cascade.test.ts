@@ -8,6 +8,7 @@ import {
 } from '../autoLayoutUtils';
 import {
   computeFloorLayout,
+  computeCascadeLayout,
   walkFloorUpperRole,
   walkFloorLowerRole,
   type FloorEdgeSegment,
@@ -798,5 +799,100 @@ describe('computeFloorLayout せり出し N=3（Q2 covered→自前・増分2b-i
       ...segmentsToHandrails(r1.edgeSegments),
     ];
     expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
+  });
+});
+
+// ============================================================
+// P3-3: N階ドライバ computeCascadeLayout の端から端まで検証
+// ============================================================
+
+/** 全階の FloorLayoutResult を結合して手摺化（ドライバ出力の検査用）。*/
+function allHandrails(results: ReturnType<typeof computeCascadeLayout>): ScaffoldHandrail[] {
+  return Object.values(results).flatMap(r => segmentsToHandrails(r.edgeSegments));
+}
+
+describe('computeCascadeLayout N=3 端到端（ドライバ・P3-3）', () => {
+  const rectFloor = (id: string, floor: number, x0: number, x1: number): BuildingShape => ({
+    id, type: 'polygon',
+    points: [{ x: x0, y: 0 }, { x: x1, y: 0 }, { x: x1, y: 7000 }, { x: x0, y: 7000 }],
+    fill: '#000', floor,
+  });
+
+  it('(a) 総3階・全辺面一: 最上階のみフル周(4)、中下階は空、違反0', () => {
+    const buildings = {
+      3: rectFloor('3f', 3, 0, 9000),
+      2: rectFloor('2f', 2, 0, 9000),
+      1: rectFloor('1f', 1, 0, 9000),
+    };
+    const D = { 1: dist(4), 2: dist(4), 3: dist(4) };
+    const res = computeCascadeLayout(buildings, D, ss);
+    expect(res[3].edgeSegments.length).toBe(4);
+    expect(res[2].edgeSegments.length).toBe(0);
+    expect(res[1].edgeSegments.length).toBe(0);
+    expect(findScaffoldViolations(allHandrails(res), Object.values(buildings))).toEqual([]);
+  });
+
+  it('(b) 下屋積層（1F>2F>3F 東に階段状）: 中間階に柱マーカー・各段差で自前ライン・違反0', () => {
+    const buildings = {
+      3: rectFloor('3f', 3, 0, 6000),
+      2: rectFloor('2f', 2, 0, 9000),
+      1: rectFloor('1f', 1, 0, 12000),
+    };
+    const D = { 1: dist(10), 2: dist(10), 3: dist(10) };
+    const res = computeCascadeLayout(buildings, D, ss);
+    expect(res[2].edgeSegments.length).toBeGreaterThan(0);
+    expect(res[2].edgeSegments.some(s => s.desiredEndSource?.kind === 'lower-face-pillar')).toBe(true);
+    expect(res[1].edgeSegments.length).toBeGreaterThan(0);
+    expect(findScaffoldViolations(allHandrails(res), Object.values(buildings))).toEqual([]);
+  });
+
+  it('(c) せり出し積層（1F<2F<3F 上が東に張り出す）: 引っ込んだ下階壁に自前ライン・違反0', () => {
+    const buildings = {
+      3: rectFloor('3f', 3, 0, 12000),
+      2: rectFloor('2f', 2, 0, 9000),
+      1: rectFloor('1f', 1, 0, 6000),
+    };
+    const D = { 1: dist(10), 2: dist(10), 3: dist(10) };
+    const res = computeCascadeLayout(buildings, D, ss);
+    expect(res[1].edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 6000)).toBe(true);
+    expect(res[2].edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 9000)).toBe(true);
+    expect(findScaffoldViolations(allHandrails(res), Object.values(buildings))).toEqual([]);
+  });
+
+  it('(d) 混在（中間階が上階に対し 西=引っ込み・東=下屋）: 両側に自前ライン・違反0', () => {
+    const buildings = {
+      3: rectFloor('3f', 3, 0, 8000),
+      2: rectFloor('2f', 2, 4000, 12000),
+      1: rectFloor('1f', 1, 4000, 16000),
+    };
+    const D = { 1: dist(12), 2: dist(12), 3: dist(12) };
+    const res = computeCascadeLayout(buildings, D, ss);
+    expect(res[2].edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 4000)).toBe(true);
+    expect(res[2].edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 12000)).toBe(true);
+    expect(findScaffoldViolations(allHandrails(res), Object.values(buildings))).toEqual([]);
+  });
+
+  it('N=2 下屋もドライバで回せて違反0', () => {
+    const building2F = rectFloor('2f', 2, 0, 9000);
+    const building1F: BuildingShape = {
+      id: '1f', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const res = computeCascadeLayout({ 2: building2F, 1: building1F }, { 1: dist(8), 2: dist(8) }, ss);
+    expect(res[2].edgeSegments.length).toBeGreaterThan(0);
+    expect(findScaffoldViolations(allHandrails(res), [building1F, building2F])).toEqual([]);
+  });
+
+  it('連続積層でない（飛び階）はエラー', () => {
+    const buildings = {
+      3: rectFloor('3f', 3, 0, 9000),
+      1: rectFloor('1f', 1, 0, 9000),
+    };
+    expect(() => computeCascadeLayout(buildings, { 1: dist(4), 3: dist(4) }, ss)).toThrow();
   });
 });

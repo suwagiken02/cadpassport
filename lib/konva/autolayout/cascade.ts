@@ -29,13 +29,13 @@ import {
 } from '@/types';
 import {
   computeBothmode2FLayout,
-  computeBothmode1FLayout,
   getBuildingEdgesClockwise,
   findCollinearEdgePairs,
   isConvexCorner,
   isWallContinuation,
   isPointInPolygon,
   generateSequentialCandidates,
+  splitLowerAtUpper,
   DEFAULT_EDGE_ADJUSTMENT,
   HANDRAIL_SIZES,
 } from '../autoLayoutUtils';
@@ -43,8 +43,6 @@ import type {
   FaceDir,
   EdgeAdjustment,
   Bothmode2FEdgeSegment,
-  Bothmode2FResult,
-  Bothmode1FEdgeSegment,
 } from '../autoLayoutUtils';
 import { mmToGrid } from '../gridUtils';
 import type { SequentialCandidate } from './candidates';
@@ -278,106 +276,71 @@ export function computeFloorLayout(
 }
 
 // ============================================================
-// 委譲 parity 用の往復マッピング（最下階ブランチ）
+// N階カスケード割付ドライバ（純関数）
 // ============================================================
 
 /**
- * FloorLayoutResult → Bothmode2FResult への復元（最上階ブランチの forward マッピングの逆）。
- * computeBothmode1FLayout は上階結果から柱点(desiredEndSource='1F-face-pillar')・各 seg の
- * startDistanceMm/scaffoldCoord/cursorStart/End/desiredEndDistanceMm/endPoint 等を読むため、
- * 無損失で戻す必要がある。forward(bothmode2FSegToFloorSeg) と完全対称。
+ * N階カスケード割付ドライバ。各階を最上階→最下階の順に computeFloorLayout で割付し、
+ * resultAbove を上から順に継承する。scaffoldStart は最上階のみ渡し、下階は継承（null）。
+ * 連続積層前提（階番号は連続・飛びなし）。モーダルには配線しない純関数層。
+ *
+ * 前処理: 各階ポリゴンを「他の全階の頂点」で分割して整合させる（純幾何の頂点挿入）。
+ * 隣接階だけの分割では、上位階の頂点で割れた共有壁の collinear 判定を取りこぼすため全階で割る。
+ *
+ * @returns 階番号 → その階の FloorLayoutResult
  */
-function floorResultToBothmode2FResult(fr: FloorLayoutResult): Bothmode2FResult {
-  return {
-    hasUnresolved: fr.hasUnresolved,
-    edgeSegments: fr.edgeSegments.map((fs): Bothmode2FEdgeSegment => {
-      // desiredEndSource を旧 2F 名へ逆写像。
-      //   next-face         → next-2F-face
-      //   lower-face-pillar → 1F-face-pillar
-      const des = fs.desiredEndSource;
-      let desiredEndSource: Bothmode2FEdgeSegment['desiredEndSource'];
-      if (des?.kind === 'lower-face-pillar') {
-        desiredEndSource = { kind: '1F-face-pillar', edge1FIndex: des.lowerEdgeIndex };
-      } else if (des?.kind === 'next-face') {
-        desiredEndSource = { kind: 'next-2F-face', edge2FIndex: des.edgeIndex };
-      } else {
-        // 最上階セグメントは forward マッピング不変で必ず next-face / lower-face-pillar のいずれか。
-        throw new Error('floorResultToBothmode2FResult: 想定外の desiredEndSource（最上階結果ではない）');
-      }
-      return {
-        edge2FIndex: fs.edgeIndex,
-        segmentIndex: fs.segmentIndex,
-        segmentCount: fs.segmentCount,
-        startPoint: fs.startPoint,
-        endPoint: fs.endPoint,
-        segmentLengthMm: fs.segmentLengthMm,
-        face: fs.face,
-        handrailDir: fs.handrailDir,
-        nx: fs.nx,
-        ny: fs.ny,
-        startDistanceMm: fs.startDistanceMm,
-        desiredEndDistanceMm: fs.desiredEndDistanceMm,
-        desiredEndSource,
-        candidates: fs.candidates,
-        selectedIndex: fs.selectedIndex,
-        isLocked: fs.isLocked,
-        isAutoProgress: fs.isAutoProgress,
-        prevCornerIsConvex: fs.prevCornerIsConvex,
-        nextCornerIsConvex: fs.nextCornerIsConvex,
-        scaffoldCoord: fs.scaffoldCoord,
-        cursorStart: fs.cursorStart,
-        cursorEnd: fs.cursorEnd,
-        effectiveMm: fs.effectiveMm,
-      };
-    }),
-  };
-}
+export function computeCascadeLayout(
+  buildingsByFloor: Record<number, BuildingShape>,
+  distancesByFloor: Record<number, Record<number, number>>,
+  scaffoldStartTop: ScaffoldStartConfig,
+  enabledSizes?: HandrailLengthMm[],
+  priorityConfig?: PriorityConfig,
+  userSelectionsByFloor?: Record<number, Record<string, number>>,
+  userAdjustmentsByFloor?: Record<number, Record<string, EdgeAdjustment>>,
+): Record<number, FloorLayoutResult> {
+  // 降順（最上階→最下階）
+  const floors = Object.keys(buildingsByFloor).map(Number).sort((a, b) => b - a);
+  if (floors.length === 0) return {};
+  // 連続積層チェック（飛びなし）
+  if (floors[0] - floors[floors.length - 1] + 1 !== floors.length) {
+    throw new Error('computeCascadeLayout: 階は連続積層（飛びなし）である必要があります');
+  }
 
-/** Bothmode1FEdgeSegment → FloorEdgeSegment へのマッピング（最下階用、委譲 parity の橋渡し）。*/
-function bothmode1FSegToFloorSeg(seg: Bothmode1FEdgeSegment, floor: number): FloorEdgeSegment {
-  // 旧 1F の start/endConstraint を上下中立名へ写像。
-  const sc = seg.startConstraint;
-  const startConstraint: FloorSegmentStartConstraint =
-    sc.kind === 'pillar-from-2F'
-      ? { kind: 'pillar-from-upper', pillarPoint: sc.pillarPoint }
-      : sc.kind === 'collinear-with-2F'
-      ? { kind: 'collinear-with-upper', upperEdgeIndex: sc.edge2FIndex }
-      : { kind: 'cascade-from-prev-segment' };
-  const ec = seg.endConstraint;
-  const endConstraint: FloorSegmentEndConstraint =
-    ec.kind === 'pillar-to-2F'
-      ? { kind: 'pillar-to-upper', pillarPoint: ec.pillarPoint }
-      : ec.kind === 'collinear-with-2F'
-      ? { kind: 'collinear-with-upper', upperEdgeIndex: ec.edge2FIndex }
-      : { kind: 'next-face', edgeIndex: ec.edge1FIndex };
-  return {
-    floor,
-    edgeIndex: seg.edge1FIndex,
-    segmentIndex: seg.segmentIndex,
-    segmentCount: seg.segmentCount,
-    startPoint: seg.startPoint,
-    endPoint: seg.endPoint,
-    segmentLengthMm: seg.segmentLengthMm,
-    face: seg.face,
-    handrailDir: seg.handrailDir,
-    nx: seg.nx,
-    ny: seg.ny,
-    startDistanceMm: seg.startDistanceMm,
-    desiredEndDistanceMm: seg.desiredEndDistanceMm,
-    // 最下階は隣接「上」階制約を持つ（desiredEndSource は持たない）
-    startConstraint,
-    endConstraint,
-    candidates: seg.candidates,
-    selectedIndex: seg.selectedIndex,
-    isLocked: seg.isLocked,
-    isAutoProgress: seg.isAutoProgress,
-    prevCornerIsConvex: seg.prevCornerIsConvex,
-    nextCornerIsConvex: seg.nextCornerIsConvex,
-    scaffoldCoord: seg.scaffoldCoord,
-    cursorStart: seg.cursorStart,
-    cursorEnd: seg.cursorEnd,
-    effectiveMm: seg.effectiveMm,
-  };
+  // 前処理: 各階を他の全階の頂点で分割（純幾何の頂点挿入）。
+  const normalized: Record<number, BuildingShape> = {};
+  for (const f of floors) {
+    let poly = buildingsByFloor[f];
+    for (const g of floors) {
+      if (g === f) continue;
+      poly = splitLowerAtUpper(poly, buildingsByFloor[g]); // poly に g の頂点を挿入
+    }
+    normalized[f] = poly;
+  }
+
+  const results: Record<number, FloorLayoutResult> = {};
+  let resultAbove: FloorLayoutResult | null = null;
+  for (let idx = 0; idx < floors.length; idx++) {
+    const f = floors[idx];
+    const buildingAbove = idx > 0 ? normalized[floors[idx - 1]] : null;
+    const buildingBelow = idx < floors.length - 1 ? normalized[floors[idx + 1]] : null;
+    const scaffoldStart = idx === 0 ? scaffoldStartTop : null;
+    const r = computeFloorLayout(
+      f,
+      normalized[f],
+      buildingAbove,
+      buildingBelow,
+      resultAbove,
+      distancesByFloor,
+      scaffoldStart,
+      enabledSizes,
+      priorityConfig,
+      userSelectionsByFloor?.[f],
+      userAdjustmentsByFloor?.[f],
+    );
+    results[f] = r;
+    resultAbove = r;
+  }
+  return results;
 }
 
 // ============================================================
