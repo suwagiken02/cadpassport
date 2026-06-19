@@ -485,8 +485,10 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // - bothmode では 2F 全周 + 1F 下屋辺の両方を保持
   const [sequentialResult2F, setSequentialResult2F] = useState<SequentialLayoutResult | null>(null);
   const [sequentialResult1F, setSequentialResult1F] = useState<SequentialLayoutResult | null>(null);
-  const [userSelections2F, setUserSelections2F] = useState<Record<number, number>>({});
-  const [userSelections1F, setUserSelections1F] = useState<Record<number, number>>({});
+  // P3-4 S2a: selections を実floorキーの byFloor へ。primary=主建物（targetFloor相当）、sub=下屋（常に1F）。
+  const primaryFloor = targetFloor === 1 ? 1 : 2;
+  const subFloor = 1;
+  const [userSelectionsByFloor, setUserSelectionsByFloor] = useState<Record<number, Record<number, number>>>({});
   // Phase I-2: 各辺ごとの「割り変更」「←/→」操作状態
   const [userAdjustments2F, setUserAdjustments2F] = useState<Record<number, EdgeAdjustment>>({});
   const [userAdjustments1F, setUserAdjustments1F] = useState<Record<number, EdgeAdjustment>>({});
@@ -499,8 +501,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // key 形式は `${edge2FIndex}-${segmentIndex}` の string (Stage 3/4 で定義済み)
   const [bothmodeResult2F, setBothmodeResult2F] = useState<Bothmode2FResult | null>(null);
   const [bothmodeResult1F, setBothmodeResult1F] = useState<Bothmode1FResult | null>(null);
-  const [bothmodeSelections2F, setBothmodeSelections2F] = useState<Record<string, number>>({});
-  const [bothmodeSelections1F, setBothmodeSelections1F] = useState<Record<string, number>>({});
+  const [bothmodeSelectionsByFloor, setBothmodeSelectionsByFloor] = useState<Record<number, Record<string, number>>>({});
   const [bothmodeAdjustments2F, setBothmodeAdjustments2F] = useState<Record<string, EdgeAdjustment>>({});
   const [bothmodeAdjustments1F, setBothmodeAdjustments1F] = useState<Record<string, EdgeAdjustment>>({});
 
@@ -537,16 +538,14 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // 順次決定 state もリセット（1F/2F 両方）
     setSequentialResult2F(null);
     setSequentialResult1F(null);
-    setUserSelections2F({});
-    setUserSelections1F({});
+    setUserSelectionsByFloor({});
     // Phase I-2: 離れ変更時は adjustments もリセット
     setUserAdjustments2F({});
     setUserAdjustments1F({});
     // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット
     setBothmodeResult2F(null);
     setBothmodeResult1F(null);
-    setBothmodeSelections2F({});
-    setBothmodeSelections1F({});
+    setBothmodeSelectionsByFloor({});
     setBothmodeAdjustments2F({});
     setBothmodeAdjustments1F({});
     setActiveEdge(null);
@@ -566,7 +565,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         normalizedScaffoldStart!,
         enabledSizes,
         priorityConfig,
-        bothmodeSelections2F,
+        (bothmodeSelectionsByFloor[primaryFloor] ?? {}),
         bothmodeAdjustments2F,
       );
       setBothmodeResult2F(result2F);
@@ -578,7 +577,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         distances1F,
         enabledSizes,
         priorityConfig,
-        bothmodeSelections1F,
+        (bothmodeSelectionsByFloor[subFloor] ?? {}),
         bothmodeAdjustments1F,
       );
       setBothmodeResult1F(result1F);
@@ -622,7 +621,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // 単一階モード (1Fのみ / 2Fのみ): 既存ロジックそのまま
     // 主建物（1Fのみ→1F、2Fのみ→2F）の順次決定
     const seqRes2F = computeAutoLayoutSequential(
-      building, distances, scaffoldStart, enabledSizes, priorityConfig, userSelections2F, userAdjustments2F,
+      building, distances, scaffoldStart, enabledSizes, priorityConfig, (userSelectionsByFloor[primaryFloor] ?? {}), userAdjustments2F,
     );
     setSequentialResult2F(seqRes2F);
     const res = sequentialResultToAutoLayoutResult(seqRes2F);
@@ -634,7 +633,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       getBuildingEdgesClockwise(building1F).forEach(e => {
         d1[e.index] = distances1F[e.index] ?? 900;
       });
-      const fullSeq1F = computeAutoLayoutSequential(building1F, d1, undefined, enabledSizes, priorityConfig, userSelections1F, userAdjustments1F);
+      const fullSeq1F = computeAutoLayoutSequential(building1F, d1, undefined, enabledSizes, priorityConfig, (userSelectionsByFloor[subFloor] ?? {}), userAdjustments1F);
       // 下屋辺だけに edgeResults を絞り込む（filter 後の SequentialLayoutResult を組み立て）
       const uncoveredIdxSet = new Set(uncoveredEdges1F.map(e => e.index));
       const filteredEdgeResults = fullSeq1F.edgeResults.filter(er => uncoveredIdxSet.has(er.edge.index));
@@ -697,8 +696,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       const key = `${edgeIndex}-${segmentIndex}`;
 
       if (floor === 2) {
-        const newSelections2F = { ...bothmodeSelections2F, [key]: candIdx };
-        setBothmodeSelections2F(newSelections2F);
+        const newSelections2F = { ...(bothmodeSelectionsByFloor[primaryFloor] ?? {}), [key]: candIdx };
+        setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
 
         const result2F = computeBothmode2FLayout(
           normalizedBuilding2F, normalizedBuilding1F, normalizedDistances, distances1F,
@@ -711,7 +710,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         const result1F = computeBothmode1FLayout(
           normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
           enabledSizes, priorityConfig,
-          bothmodeSelections1F, bothmodeAdjustments1F,
+          (bothmodeSelectionsByFloor[subFloor] ?? {}), bothmodeAdjustments1F,
         );
         setBothmodeResult1F(result1F);
 
@@ -744,8 +743,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       } else {
         // floor === 1: 1F のみ再計算 (result2F は据え置き)
         if (!bothmodeResult2F) return;
-        const newSelections1F = { ...bothmodeSelections1F, [key]: candIdx };
-        setBothmodeSelections1F(newSelections1F);
+        const newSelections1F = { ...(bothmodeSelectionsByFloor[subFloor] ?? {}), [key]: candIdx };
+        setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
 
         const result1F = computeBothmode1FLayout(
           normalizedBuilding1F, normalizedBuilding2F, bothmodeResult2F, distances1F,
@@ -780,8 +779,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // 単一階モード (1Fのみ / 2Fのみ): 既存ロジック
     // 単一階モードでは activeEdge.floor は常に 2、floor === 1 ケースは到達しない。
     if (floor === 2) {
-      const newSelections2F = { ...userSelections2F, [edgeIndex]: candIdx };
-      setUserSelections2F(newSelections2F);
+      const newSelections2F = { ...(userSelectionsByFloor[primaryFloor] ?? {}), [edgeIndex]: candIdx };
+      setUserSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
 
       const seqRes2F = computeAutoLayoutSequential(
         building, distances, scaffoldStart, enabledSizes, priorityConfig, newSelections2F, userAdjustments2F,
@@ -836,9 +835,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           : undefined;
 
         if (prev) {
-          const newSelections1F = stripEdge(bothmodeSelections1F, prev.edge1FIndex);
+          const newSelections1F = stripEdge((bothmodeSelectionsByFloor[subFloor] ?? {}), prev.edge1FIndex);
           const newAdjustments1F = stripEdge(bothmodeAdjustments1F, prev.edge1FIndex);
-          setBothmodeSelections1F(newSelections1F);
+          setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
           setBothmodeAdjustments1F(newAdjustments1F);
 
           const result1F = computeBothmode1FLayout(
@@ -862,9 +861,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         // 1F 内に戻る先なし → 2F の最後の未解決セグメントへ
         const last2F = [...bothmodeResult2F.edgeSegments].reverse().find(s => !s.isAutoProgress);
         if (last2F) {
-          const newSelections2F = stripEdge(bothmodeSelections2F, last2F.edge2FIndex);
+          const newSelections2F = stripEdge((bothmodeSelectionsByFloor[primaryFloor] ?? {}), last2F.edge2FIndex);
           const newAdjustments2F = stripEdge(bothmodeAdjustments2F, last2F.edge2FIndex);
-          setBothmodeSelections2F(newSelections2F);
+          setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
           setBothmodeAdjustments2F(newAdjustments2F);
 
           const result2F = computeBothmode2FLayout(
@@ -877,7 +876,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           const result1F = computeBothmode1FLayout(
             normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
             enabledSizes, priorityConfig,
-            bothmodeSelections1F, bothmodeAdjustments1F,
+            (bothmodeSelectionsByFloor[subFloor] ?? {}), bothmodeAdjustments1F,
           );
           setBothmodeResult1F(result1F);
 
@@ -902,9 +901,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         : undefined;
       if (!prev) return;
 
-      const newSelections2F = stripEdge(bothmodeSelections2F, prev.edge2FIndex);
+      const newSelections2F = stripEdge((bothmodeSelectionsByFloor[primaryFloor] ?? {}), prev.edge2FIndex);
       const newAdjustments2F = stripEdge(bothmodeAdjustments2F, prev.edge2FIndex);
-      setBothmodeSelections2F(newSelections2F);
+      setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
       setBothmodeAdjustments2F(newAdjustments2F);
 
       const result2F = computeBothmode2FLayout(
@@ -917,7 +916,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       const result1F = computeBothmode1FLayout(
         normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
         enabledSizes, priorityConfig,
-        bothmodeSelections1F, bothmodeAdjustments1F,
+        (bothmodeSelectionsByFloor[subFloor] ?? {}), bothmodeAdjustments1F,
       );
       setBothmodeResult1F(result1F);
 
@@ -945,9 +944,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         .reverse()
         .find(er => !er.isAutoProgress);
       if (!prev2F) return;
-      const newSelections2F = { ...userSelections2F };
+      const newSelections2F = { ...(userSelectionsByFloor[primaryFloor] ?? {}) };
       delete newSelections2F[prev2F.edge.index];
-      setUserSelections2F(newSelections2F);
+      setUserSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
       // Phase I-2: 戻り辺の adjustments もクリア
       const newAdjustments2F = { ...userAdjustments2F };
       delete newAdjustments2F[prev2F.edge.index];
@@ -965,16 +964,14 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     setActiveEdge(null);
     setSequentialResult2F(null);
     setSequentialResult1F(null);
-    setUserSelections2F({});
-    setUserSelections1F({});
+    setUserSelectionsByFloor({});
     // Phase I-2: adjustments もクリア
     setUserAdjustments2F({});
     setUserAdjustments1F({});
     // Phase H-3d-2 Stage 5 Part A: bothmode state もクリア
     setBothmodeResult2F(null);
     setBothmodeResult1F(null);
-    setBothmodeSelections2F({});
-    setBothmodeSelections1F({});
+    setBothmodeSelectionsByFloor({});
     setBothmodeAdjustments2F({});
     setBothmodeAdjustments1F({});
     setResult(null);
@@ -1008,13 +1005,13 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         const result2F = computeBothmode2FLayout(
           normalizedBuilding2F, normalizedBuilding1F, normalizedDistances, distances1F,
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
-          bothmodeSelections2F, newAdjustments2F,
+          (bothmodeSelectionsByFloor[primaryFloor] ?? {}), newAdjustments2F,
         );
         setBothmodeResult2F(result2F);
         const result1F = computeBothmode1FLayout(
           normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
           enabledSizes, priorityConfig,
-          bothmodeSelections1F, bothmodeAdjustments1F,
+          (bothmodeSelectionsByFloor[subFloor] ?? {}), bothmodeAdjustments1F,
         );
         setBothmodeResult1F(result1F);
 
@@ -1031,7 +1028,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         const result1F = computeBothmode1FLayout(
           normalizedBuilding1F, normalizedBuilding2F, bothmodeResult2F, distances1F,
           enabledSizes, priorityConfig,
-          bothmodeSelections1F, newAdjustments1F,
+          (bothmodeSelectionsByFloor[subFloor] ?? {}), newAdjustments1F,
         );
         setBothmodeResult1F(result1F);
 
@@ -1052,7 +1049,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     const newAdjustments2F = { ...userAdjustments2F, [edgeIndex]: next };
     setUserAdjustments2F(newAdjustments2F);
     const seqRes2F = computeAutoLayoutSequential(
-      building, distances, scaffoldStart, enabledSizes, priorityConfig, userSelections2F, newAdjustments2F,
+      building, distances, scaffoldStart, enabledSizes, priorityConfig, (userSelectionsByFloor[primaryFloor] ?? {}), newAdjustments2F,
     );
     setSequentialResult2F(seqRes2F);
     const adapted = sequentialResultToAutoLayoutResult(seqRes2F);
@@ -1416,13 +1413,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                               // 順次決定 state をリセット（1F の距離変更は 1F のみ影響だが、安全のため両方）
                               setSequentialResult2F(null);
                               setSequentialResult1F(null);
-                              setUserSelections2F({});
-                              setUserSelections1F({});
+                              setUserSelectionsByFloor({});
                               // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット
                               setBothmodeResult2F(null);
                               setBothmodeResult1F(null);
-                              setBothmodeSelections2F({});
-                              setBothmodeSelections1F({});
+                              setBothmodeSelectionsByFloor({});
                               setBothmodeAdjustments2F({});
                               setBothmodeAdjustments1F({});
                               setActiveEdge(null);
