@@ -229,14 +229,14 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   });
 
   // 1F建物 / 2F建物（最初に一致したもの）
-  const building1F = useMemo(
-    () => canvasData.buildings.find(b => (b.floor ?? 1) === 1) ?? null,
-    [canvasData.buildings],
-  );
-  const building2F = useMemo(
-    () => canvasData.buildings.find(b => b.floor === 2) ?? null,
-    [canvasData.buildings],
-  );
+  // P3-4 S3: 実floorキーの byFloor record をソース化（P3-5 computeCascadeLayout 用）。
+  // 旧 building1F/2F は record からの派生 alias として互換維持（参照無改変・挙動不変）。
+  const buildingByFloor = useMemo<Record<number, (typeof canvasData.buildings)[number] | null>>(() => ({
+    1: canvasData.buildings.find(b => (b.floor ?? 1) === 1) ?? null,
+    2: canvasData.buildings.find(b => b.floor === 2) ?? null,
+  }), [canvasData.buildings]);
+  const building1F = buildingByFloor[1];
+  const building2F = buildingByFloor[2];
 
   // UI表示の「対象階建物」
   // 1Fのみ: 1F建物 / 2Fのみ: 2F建物 / both: 2F建物（常に全周配置されるため主表示）
@@ -246,21 +246,23 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return building1F;
   }, [targetFloor, building1F, building2F]);
 
-  // Phase H-3d-2 修正A: 1Fポリゴンに2F頂点を投影して自動分割
+  // Phase H-3d-2 修正A: 1Fポリゴンに2F頂点を投影して自動分割 (normalizedBuilding1F)
   // 1F辺が「2F直下部分」と「下屋部分」の複合辺の場合、2F頂点で分割する。
-  // bothmode 以外、または片方の建物がない場合は元の building1F をそのまま返す。
-  const normalizedBuilding1F = useMemo(() => {
-    if (targetFloor !== 'both' || !building1F || !building2F) return building1F;
-    return splitBuilding1FAtBuilding2FVertices(building1F, building2F);
-  }, [targetFloor, building1F, building2F]);
-
-  // Phase H-3d-2 重大変更 (B1/B2 概念導入): 2Fポリゴンに 1F 頂点を投影して自動分割
+  // Phase H-3d-2 重大変更 (B1/B2 概念導入): 2Fポリゴンに 1F 頂点を投影して自動分割 (normalizedBuilding2F)
   // 2F辺が下屋の境で分割されるため、bothmode 計算で各 2F 辺が常に 1 segment として扱える。
-  // bothmode 以外、または片方の建物がない場合は元の building2F をそのまま返す。
-  const normalizedBuilding2F = useMemo(() => {
-    if (targetFloor !== 'both' || !building1F || !building2F) return building2F;
-    return splitBuilding2FAt1FVertices(building1F, building2F);
+  // bothmode 以外、または片方の建物がない場合は元の building1F/2F をそのまま返す（両辺で同一ガード）。
+  // P3-4 S3: 実floorキーの byFloor record 化。旧 normalizedBuilding1F/2F は派生 alias（挙動不変）。
+  const normalizedBuildingByFloor = useMemo<Record<number, (typeof canvasData.buildings)[number] | null>>(() => {
+    if (targetFloor !== 'both' || !building1F || !building2F) {
+      return { 1: building1F, 2: building2F };
+    }
+    return {
+      1: splitBuilding1FAtBuilding2FVertices(building1F, building2F),
+      2: splitBuilding2FAt1FVertices(building1F, building2F),
+    };
   }, [targetFloor, building1F, building2F]);
+  const normalizedBuilding1F = normalizedBuildingByFloor[1];
+  const normalizedBuilding2F = normalizedBuildingByFloor[2];
 
   // bothモード時、1F のうち 2F で覆われていない辺（= 下屋辺）
   // 修正A + B1/B2: 両方分割済を基準にする。
