@@ -402,7 +402,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 各辺の離れ（mm）: edgeIndex → number
   const defaultDist = scaffoldStart?.face1DistanceMm ?? 900;
   const [bulkMm, setBulkMm] = useState(900);  // 一括入力欄の現在値 (= 「全部に適用」 で各辺の離れに一斉コピー)
-  const [distances, setDistances] = useState<Record<number, number>>(() => {
+  // P3-5 S5-a: distances を実floorキーの byFloor record へ統合（cascade未接続＝挙動不変）。
+  // primary=主建物の離れ(raw building edge index)、sub=下屋(常に1F・normalized済)。S2a 解決子を上方移動。
+  const primaryFloor = targetFloor === 1 ? 1 : 2;
+  const subFloor = 1;
+  const [distancesByFloor, setDistancesByFloor] = useState<Record<number, Record<number, number>>>(() => {
     const d: Record<number, number> = {};
     edges.forEach(e => {
       if (scaffoldStart) {
@@ -418,8 +422,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       }
       d[e.index] = defaultDist;
     });
-    return d;
+    return { [primaryFloor]: d };
   });
+  // 旧 distances/distances1F は record からの派生 alias（reader 無改変・挙動不変）。
+  const distances = distancesByFloor[primaryFloor] ?? {};
+  const distances1F = distancesByFloor[subFloor] ?? {};
 
   // Phase H-3e (共通根 2、 案 2C'): distances state は raw building の edge.index でキー
   // 保存されているが、 computeBothmode2FLayout は normalized building 上の edge.index で
@@ -434,17 +441,20 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return getNormalizedDistances(building2F, normalizedBuilding2F, distances);
   }, [distances, targetFloor, building2F, normalizedBuilding2F]);
 
-  // 下屋辺の変化時に distances1F を初期化（デフォルト 900mm）。
-  // 既に入力があれば保持。
+  // 下屋辺の変化時に下屋距離 distancesByFloor[subFloor] を初期化（デフォルト 900mm）。既に入力があれば保持。
+  // P3-5 S5-a: 下屋距離は bothmode 専用。単一階では subFloor(=1) が primaryFloor と衝突するため書き込まない
+  // （挙動不変＝下屋距離は単一階で未使用。これが 1F-only クロバーの解消）。
   useEffect(() => {
-    setDistances1F(prev => {
+    if (targetFloor !== 'both') return;
+    setDistancesByFloor(prev => {
+      const prevSub = prev[subFloor] ?? {};
       const next: Record<number, number> = {};
       uncoveredEdges1F.forEach(e => {
-        next[e.index] = prev[e.index] ?? 900;
+        next[e.index] = prevSub[e.index] ?? 900;
       });
-      return next;
+      return { ...prev, [subFloor]: next };
     });
-  }, [uncoveredEdges1F]);
+  }, [uncoveredEdges1F, targetFloor]);
 
   // 対象階切替時は distances をその階用に再構築
   useEffect(() => {
@@ -463,7 +473,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       }
       d[e.index] = defaultDist;
     });
-    setDistances(d);
+    setDistancesByFloor(prev => ({ ...prev, [primaryFloor]: d }));
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFloor, building?.id]);
@@ -471,8 +481,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const [result, setResult] = useState<AutoLayoutResult | null>(null);
   // 「1F+2F同時」モード専用: サブ階層（= 1F 下屋辺）の割付結果
   const [resultSub, setResultSub] = useState<AutoLayoutResult | null>(null);
-  // 「1F+2F同時」モード専用: 1F下屋辺用の離れ（edgeIndex → mm）
-  const [distances1F, setDistances1F] = useState<Record<number, number>>({});
+  // 「1F+2F同時」モード専用: 1F下屋辺用の離れ（edgeIndex → mm）。P3-5 S5-a: distancesByFloor[subFloor] へ統合（上の派生 alias を参照）。
   // 「1F+2F同時」モード専用: 1F下屋辺の候補選択 index
   const [selectionsSub, setSelectionsSub] = useState<Record<number, number>>({});
   const [focusedSubEdgeIndex, setFocusedSubEdgeIndex] = useState<number | null>(null);
@@ -487,9 +496,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // - bothmode では 2F 全周 + 1F 下屋辺の両方を保持
   const [sequentialResult2F, setSequentialResult2F] = useState<SequentialLayoutResult | null>(null);
   const [sequentialResult1F, setSequentialResult1F] = useState<SequentialLayoutResult | null>(null);
-  // P3-4 S2a: selections を実floorキーの byFloor へ。primary=主建物（targetFloor相当）、sub=下屋（常に1F）。
-  const primaryFloor = targetFloor === 1 ? 1 : 2;
-  const subFloor = 1;
+  // P3-4 S2a / P3-5 S5-a: primaryFloor/subFloor は distances 統合のため上方（distancesByFloor 付近）へ移動済。
   const [userSelectionsByFloor, setUserSelectionsByFloor] = useState<Record<number, Record<number, number>>>({});
   // Phase I-2: 各辺ごとの「割り変更」「←/→」操作状態
   const [userAdjustmentsByFloor, setUserAdjustmentsByFloor] = useState<Record<number, Record<number, EdgeAdjustment>>>({});
@@ -533,7 +540,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const getDistance = (idx: number) => distances[idx] ?? defaultDist;
 
   const setDistance = (idx: number, value: number) => {
-    setDistances(prev => ({ ...prev, [idx]: value }));
+    setDistancesByFloor(prev => ({ ...prev, [primaryFloor]: { ...(prev[primaryFloor] ?? {}), [idx]: value } }));
     setResult(null);
     // 順次決定 state もリセット（1F/2F 両方）
     setSequentialResult2F(null);
@@ -1404,7 +1411,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                           <NumInput
                             value={distances1F[edge.index] ?? 900}
                             onChange={v => {
-                              setDistances1F(prev => ({ ...prev, [edge.index]: Math.max(0, v) }));
+                              setDistancesByFloor(prev => ({ ...prev, [subFloor]: { ...(prev[subFloor] ?? {}), [edge.index]: Math.max(0, v) } }));
                               setResultSub(null);
                               // 順次決定 state をリセット（1F の距離変更は 1F のみ影響だが、安全のため両方）
                               setSequentialResult2F(null);
