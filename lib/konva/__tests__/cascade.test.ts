@@ -11,9 +11,9 @@ import {
   computeCascadeLayout,
   walkFloorUpperRole,
   walkFloorLowerRole,
-  type FloorEdgeSegment,
 } from '../autolayout/cascade';
 import { findScaffoldViolations, type ScaffoldHandrail } from '../scaffoldViolations';
+import { segmentsToHandrails } from '../autolayout/adapter';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
 
 // ============================================================
@@ -637,27 +637,6 @@ describe('walkFloorLowerRole（A 下階ロール移植）= computeBothmode1FLayo
 // ============================================================
 // P3-2(3/3) 増分2b-i: 中間階（下屋/面一）の N=3 検証
 // ============================================================
-
-/** FloorEdgeSegment[] を ScaffoldHandrail[] へ変換（rails を cursor span に沿って敷き詰め）。*/
-function segmentsToHandrails(segs: FloorEdgeSegment[]): ScaffoldHandrail[] {
-  const out: ScaffoldHandrail[] = [];
-  for (const s of segs) {
-    const rails = s.candidates[s.selectedIndex]?.rails ?? [];
-    const sign = s.cursorEnd >= s.cursorStart ? 1 : -1;
-    let cursor = s.cursorStart;
-    for (const lenMm of rails) {
-      const lenGrid = lenMm / 10;
-      const startVar = sign > 0 ? cursor : cursor - lenGrid; // toSeg は +lengthMm 方向のため下端を始点に
-      out.push(
-        s.handrailDir === 'horizontal'
-          ? { x: startVar, y: s.scaffoldCoord, lengthMm: lenMm, direction: 'horizontal' }
-          : { x: s.scaffoldCoord, y: startVar, lengthMm: lenMm, direction: 'vertical' },
-      );
-      cursor += sign * lenGrid;
-    }
-  }
-  return out;
-}
 
 /** target を others 全ての頂点で分割（= cascade ドライバの前処理相当。純幾何 splitLowerAtUpper を流用）。*/
 function splitAtAll(target: BuildingShape, others: BuildingShape[]): BuildingShape {
