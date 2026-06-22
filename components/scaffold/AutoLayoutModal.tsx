@@ -24,11 +24,19 @@ import {
   Bothmode1FResult,
   computeBothmode2FLayout,
   computeBothmode1FLayout,
-  bothmodeResultsToAutoLayoutResult,
   findCollinearEdgePairs,
   splitBuilding1FAtBuilding2FVertices,
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
+import type { FloorLayoutResult } from '@/lib/konva/autolayout/cascade';
+import {
+  bothmodeResultToFloorLayoutResult,
+  bothmode2FResultToFloorResult,
+  bothmode1FResultToFloorResult,
+  floorResultToAutoLayoutResult,
+  floorResultToBothmode2FResult,
+  floorResultToBothmode1FResult,
+} from '@/lib/konva/autolayout/adapter';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
@@ -507,8 +515,27 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   // Phase H-3d-2 Stage 5 Part A: bothmode 専用 state (Part B 以降で使用、現時点では未使用)
   // key 形式は `${edge2FIndex}-${segmentIndex}` の string (Stage 3/4 で定義済み)
-  const [bothmodeResult2F, setBothmodeResult2F] = useState<Bothmode2FResult | null>(null);
-  const [bothmodeResult1F, setBothmodeResult1F] = useState<Bothmode1FResult | null>(null);
+  // N階 P3-5 S5-c-i: bothmode の真実源を layoutByFloor（実floorキーの統合結果）に統合。
+  // bothmodeResult2F/1F は layoutByFloor からの派生 view（逆 adapter）として供給し、既存 reader を不変に保つ。
+  // cascade 未接続のため compute は従来 computeBothmode* のまま（layoutByFloor は一時 adapter 経由で格納）。
+  const [layoutByFloor, setLayoutByFloor] = useState<Record<number, FloorLayoutResult> | null>(null);
+  // 派生 view: layoutByFloor[2]/[1] を旧 Bothmode 型へ逆写像（round-trip 恒等を adapter.test で固定）。
+  // layoutByFloor は常に null か {2,1} 揃いだが、防御的に該当 floor の有無で guard する。
+  const bothmodeResult2F = useMemo<Bothmode2FResult | null>(
+    () => (layoutByFloor && layoutByFloor[2] ? floorResultToBothmode2FResult(layoutByFloor[2]) : null),
+    [layoutByFloor],
+  );
+  const bothmodeResult1F = useMemo<Bothmode1FResult | null>(
+    () => (layoutByFloor && layoutByFloor[1] ? floorResultToBothmode1FResult(layoutByFloor[1]) : null),
+    [layoutByFloor],
+  );
+  // 既存の setBothmodeResult2F/1F 呼び出し（compute サイト）を不変に保つための write-through ヘルパ。
+  // 旧 useState setter と同じシグネチャで、layoutByFloor の該当 floor のみ更新（他 floor は据え置き）。
+  // null 指定（リセット）は layoutByFloor 全体を null に。
+  const setBothmodeResult2F = (r2: Bothmode2FResult | null) =>
+    setLayoutByFloor((prev) => (r2 === null ? null : { ...(prev ?? {}), 2: bothmode2FResultToFloorResult(r2) }));
+  const setBothmodeResult1F = (r1: Bothmode1FResult | null) =>
+    setLayoutByFloor((prev) => (r1 === null ? null : { ...(prev ?? {}), 1: bothmode1FResultToFloorResult(r1) }));
   const [bothmodeSelectionsByFloor, setBothmodeSelectionsByFloor] = useState<Record<number, Record<string, number>>>({});
   const [bothmodeAdjustmentsByFloor, setBothmodeAdjustmentsByFloor] = useState<Record<number, Record<string, EdgeAdjustment>>>({});
 
@@ -548,9 +575,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     setUserSelectionsByFloor({});
     // Phase I-2: 離れ変更時は adjustments もリセット
     setUserAdjustmentsByFloor({});
-    // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット
-    setBothmodeResult2F(null);
-    setBothmodeResult1F(null);
+    // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット（S5-c-i: layoutByFloor 統合）
+    setLayoutByFloor(null);
     setBothmodeSelectionsByFloor({});
     setBothmodeAdjustmentsByFloor({});
     setActiveEdge(null);
@@ -594,7 +620,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       setSelectionsSub({});
 
       // Phase H-3d-2 Stage 5 Part D-1: bothmode 結果を AutoLayoutResult に変換して描画系に渡す
-      const adapted = bothmodeResultsToAutoLayoutResult(result2F, result1F);
+      const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
       setResult(adapted);
       const sel: Record<number, number> = {};
       adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -720,7 +746,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeResult1F(result1F);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = bothmodeResultsToAutoLayoutResult(result2F, result1F);
+        const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -759,7 +785,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeResult1F(result1F);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = bothmodeResultsToAutoLayoutResult(bothmodeResult2F, result1F);
+        const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(bothmodeResult2F, result1F));
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -853,7 +879,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           setBothmodeResult1F(result1F);
 
           // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-          const adapted = bothmodeResultsToAutoLayoutResult(bothmodeResult2F, result1F);
+          const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(bothmodeResult2F, result1F));
           setResult(adapted);
           const sel: Record<number, number> = {};
           adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -886,7 +912,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           setBothmodeResult1F(result1F);
 
           // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-          const adapted = bothmodeResultsToAutoLayoutResult(result2F, result1F);
+          const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
           setResult(adapted);
           const sel: Record<number, number> = {};
           adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -926,7 +952,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       setBothmodeResult1F(result1F);
 
       // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-      const adapted = bothmodeResultsToAutoLayoutResult(result2F, result1F);
+      const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
       setResult(adapted);
       const sel: Record<number, number> = {};
       adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -972,9 +998,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     setUserSelectionsByFloor({});
     // Phase I-2: adjustments もクリア
     setUserAdjustmentsByFloor({});
-    // Phase H-3d-2 Stage 5 Part A: bothmode state もクリア
-    setBothmodeResult2F(null);
-    setBothmodeResult1F(null);
+    // Phase H-3d-2 Stage 5 Part A: bothmode state もクリア（S5-c-i: layoutByFloor 統合）
+    setLayoutByFloor(null);
     setBothmodeSelectionsByFloor({});
     setBothmodeAdjustmentsByFloor({});
     setResult(null);
@@ -1019,7 +1044,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeResult1F(result1F);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = bothmodeResultsToAutoLayoutResult(result2F, result1F);
+        const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -1036,7 +1061,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeResult1F(result1F);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = bothmodeResultsToAutoLayoutResult(bothmodeResult2F, result1F);
+        const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(bothmodeResult2F, result1F));
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -1417,9 +1442,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                               setSequentialResult2F(null);
                               setSequentialResult1F(null);
                               setUserSelectionsByFloor({});
-                              // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット
-                              setBothmodeResult2F(null);
-                              setBothmodeResult1F(null);
+                              // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット（S5-c-i: layoutByFloor 統合）
+                              setLayoutByFloor(null);
                               setBothmodeSelectionsByFloor({});
                               setBothmodeAdjustmentsByFloor({});
                               setActiveEdge(null);

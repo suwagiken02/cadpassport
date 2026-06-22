@@ -24,6 +24,7 @@ import type {
   SequentialLayoutResult,
   Bothmode2FResult,
   Bothmode1FResult,
+  Bothmode2FEdgeSegment,
   Bothmode1FEdgeSegment,
 } from '../autoLayoutUtils';
 import type { ScaffoldHandrail } from '../scaffoldViolations';
@@ -228,6 +229,24 @@ function bothmode1FSegToFloorSeg(seg: Bothmode1FEdgeSegment, floor: number): Flo
   };
 }
 
+/** 旧 Bothmode2FResult → 単一階 FloorLayoutResult（floor=2）。 */
+export function bothmode2FResultToFloorResult(result2F: Bothmode2FResult): FloorLayoutResult {
+  return {
+    floor: 2,
+    edgeSegments: result2F.edgeSegments.map((seg) => bothmode2FSegToFloorSeg(seg, 2)),
+    hasUnresolved: result2F.hasUnresolved,
+  };
+}
+
+/** 旧 Bothmode1FResult → 単一階 FloorLayoutResult（floor=1）。 */
+export function bothmode1FResultToFloorResult(result1F: Bothmode1FResult): FloorLayoutResult {
+  return {
+    floor: 1,
+    edgeSegments: result1F.edgeSegments.map((seg) => bothmode1FSegToFloorSeg(seg, 1)),
+    hasUnresolved: result1F.hasUnresolved,
+  };
+}
+
 /**
  * 旧 bothmode 結果（2F・1F）を Record<floor, FloorLayoutResult> へ詰める一時 adapter。
  * キーは常に {2,1}（連続積層 1F/2F）。floorResultToAutoLayoutResult を通すと
@@ -238,15 +257,117 @@ export function bothmodeResultToFloorLayoutResult(
   result1F: Bothmode1FResult,
 ): Record<number, FloorLayoutResult> {
   return {
-    2: {
-      floor: 2,
-      edgeSegments: result2F.edgeSegments.map((seg) => bothmode2FSegToFloorSeg(seg, 2)),
-      hasUnresolved: result2F.hasUnresolved,
-    },
-    1: {
-      floor: 1,
-      edgeSegments: result1F.edgeSegments.map((seg) => bothmode1FSegToFloorSeg(seg, 1)),
-      hasUnresolved: result1F.hasUnresolved,
-    },
+    2: bothmode2FResultToFloorResult(result2F),
+    1: bothmode1FResultToFloorResult(result1F),
+  };
+}
+
+// ============================================================
+// 逆 adapter（S5-c-i / S5-d で破棄）: layoutByFloor（FloorLayoutResult）から
+// 旧 Bothmode2FResult / Bothmode1FResult を復元する橋。
+//   cascade 未接続のため computeBothmode1FLayout（Bothmode2FResult 型を要求）が現行 compute 経路。
+//   layoutByFloor を単一の真実源にしつつ、bothmodeResult2F/1F を派生 view として供給するために使う。
+//   bothmode*SegToFloorSeg の完全な逆写像（中立名 → 旧 bothmode 名）。round-trip は恒等
+//   （reverse(forward(seg)) === seg）であることを adapter.test.ts で固定する。
+//   S5-d で cascade 本接続後に本ブロックごと削除する。
+// ============================================================
+
+/** FloorEdgeSegment → Bothmode2FEdgeSegment（最上階セグメント・desiredEndSource を旧名へ逆写像）。 */
+function floorSegToBothmode2FSeg(seg: FloorEdgeSegment): Bothmode2FEdgeSegment {
+  const des = seg.desiredEndSource;
+  if (!des || des.kind === 'upper-face-pillar') {
+    throw new Error('floorSegToBothmode2FSeg: 2F セグメントの desiredEndSource が不正');
+  }
+  const desiredEndSource: Bothmode2FEdgeSegment['desiredEndSource'] =
+    des.kind === 'next-face'
+      ? { kind: 'next-2F-face', edge2FIndex: des.edgeIndex }
+      : { kind: '1F-face-pillar', edge1FIndex: des.lowerEdgeIndex };
+  return {
+    edge2FIndex: seg.edgeIndex,
+    segmentIndex: seg.segmentIndex,
+    segmentCount: seg.segmentCount,
+    startPoint: seg.startPoint,
+    endPoint: seg.endPoint,
+    segmentLengthMm: seg.segmentLengthMm,
+    face: seg.face,
+    handrailDir: seg.handrailDir,
+    nx: seg.nx,
+    ny: seg.ny,
+    startDistanceMm: seg.startDistanceMm,
+    desiredEndDistanceMm: seg.desiredEndDistanceMm,
+    desiredEndSource,
+    candidates: seg.candidates,
+    selectedIndex: seg.selectedIndex,
+    isLocked: seg.isLocked,
+    isAutoProgress: seg.isAutoProgress,
+    prevCornerIsConvex: seg.prevCornerIsConvex,
+    nextCornerIsConvex: seg.nextCornerIsConvex,
+    scaffoldCoord: seg.scaffoldCoord,
+    cursorStart: seg.cursorStart,
+    cursorEnd: seg.cursorEnd,
+    effectiveMm: seg.effectiveMm,
+  };
+}
+
+/** FloorEdgeSegment → Bothmode1FEdgeSegment（最下階セグメント・start/endConstraint を旧名へ逆写像）。 */
+function floorSegToBothmode1FSeg(seg: FloorEdgeSegment): Bothmode1FEdgeSegment {
+  const sc = seg.startConstraint;
+  const ec = seg.endConstraint;
+  if (!sc || !ec) {
+    throw new Error('floorSegToBothmode1FSeg: 1F セグメントの start/endConstraint が不正');
+  }
+  const startConstraint: Bothmode1FEdgeSegment['startConstraint'] =
+    sc.kind === 'pillar-from-upper'
+      ? { kind: 'pillar-from-2F', pillarPoint: sc.pillarPoint }
+      : sc.kind === 'collinear-with-upper'
+      ? { kind: 'collinear-with-2F', edge2FIndex: sc.upperEdgeIndex }
+      : { kind: 'cascade-from-prev-1F-segment' };
+  const endConstraint: Bothmode1FEdgeSegment['endConstraint'] =
+    ec.kind === 'pillar-to-upper'
+      ? { kind: 'pillar-to-2F', pillarPoint: ec.pillarPoint }
+      : ec.kind === 'collinear-with-upper'
+      ? { kind: 'collinear-with-2F', edge2FIndex: ec.upperEdgeIndex }
+      : { kind: 'next-1F-face', edge1FIndex: ec.edgeIndex };
+  return {
+    edge1FIndex: seg.edgeIndex,
+    segmentIndex: seg.segmentIndex,
+    segmentCount: seg.segmentCount,
+    startPoint: seg.startPoint,
+    endPoint: seg.endPoint,
+    segmentLengthMm: seg.segmentLengthMm,
+    face: seg.face,
+    handrailDir: seg.handrailDir,
+    nx: seg.nx,
+    ny: seg.ny,
+    startDistanceMm: seg.startDistanceMm,
+    desiredEndDistanceMm: seg.desiredEndDistanceMm,
+    startConstraint,
+    endConstraint,
+    candidates: seg.candidates,
+    selectedIndex: seg.selectedIndex,
+    isLocked: seg.isLocked,
+    isAutoProgress: seg.isAutoProgress,
+    prevCornerIsConvex: seg.prevCornerIsConvex,
+    nextCornerIsConvex: seg.nextCornerIsConvex,
+    scaffoldCoord: seg.scaffoldCoord,
+    cursorStart: seg.cursorStart,
+    cursorEnd: seg.cursorEnd,
+    effectiveMm: seg.effectiveMm,
+  };
+}
+
+/** layoutByFloor[2]（FloorLayoutResult）→ Bothmode2FResult を復元（派生 view 供給用）。 */
+export function floorResultToBothmode2FResult(fr: FloorLayoutResult): Bothmode2FResult {
+  return {
+    edgeSegments: fr.edgeSegments.map(floorSegToBothmode2FSeg),
+    hasUnresolved: fr.hasUnresolved,
+  };
+}
+
+/** layoutByFloor[1]（FloorLayoutResult）→ Bothmode1FResult を復元（派生 view 供給用）。 */
+export function floorResultToBothmode1FResult(fr: FloorLayoutResult): Bothmode1FResult {
+  return {
+    edgeSegments: fr.edgeSegments.map(floorSegToBothmode1FSeg),
+    hasUnresolved: fr.hasUnresolved,
   };
 }

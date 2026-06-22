@@ -16,6 +16,8 @@ import {
   floorResultToAutoLayoutResult,
   sequentialResultToFloorResult,
   bothmodeResultToFloorLayoutResult,
+  floorResultToBothmode2FResult,
+  floorResultToBothmode1FResult,
 } from '../adapter';
 import { findScaffoldViolations, type ScaffoldHandrail } from '../../scaffoldViolations';
 import type { BuildingShape, ScaffoldStartConfig, HandrailLengthMm } from '@/types';
@@ -506,5 +508,88 @@ describe('bothmodeResultToFloorLayoutResult（一時 adapter・旧 bothmode → 
     const distances2F = { 0: 600, 1: 1200, 2: 900, 3: 1200, 4: 600 };
     const { viaPack, direct } = compute(building1F, building2F, distances1F, distances2F, ssMixed);
     expect(viaPack).toEqual(direct);
+  }, HEAVY);
+});
+
+// ============================================================
+// 逆 adapter（S5-c-i・S5-d で破棄）round-trip: reverse(forward(r)) === r。
+//   bothmodeResult2F/1F を layoutByFloor から派生 view として復元しても byte 不変であることを固定。
+//   これが緑な限り、modal の bothmodeResult2F/1F を layoutByFloor 由来の useMemo に切替えても
+//   全 reader（handlePlace/nav/recompute 入力）が byte 不変。
+// ============================================================
+describe('floorResultToBothmode2F/1FResult（逆 adapter round-trip 恒等）', () => {
+  function roundtrip(
+    building1F: BuildingShape,
+    building2F: BuildingShape,
+    distances1F: Record<number, number>,
+    distances2F: Record<number, number>,
+    scaffold: ScaffoldStartConfig = ss,
+  ) {
+    const n1 = splitBuilding1FAtBuilding2FVertices(building1F, building2F);
+    const n2 = splitBuilding2FAt1FVertices(building1F, building2F);
+    const r2 = computeBothmode2FLayout(n2, n1, distances2F, distances1F, scaffold);
+    const r1 = computeBothmode1FLayout(n1, n2, r2, distances1F);
+    const lbf = bothmodeResultToFloorLayoutResult(r2, r1);
+    return {
+      r2, r1,
+      back2: floorResultToBothmode2FResult(lbf[2]),
+      back1: floorResultToBothmode1FResult(lbf[1]),
+    };
+  }
+
+  it('総二階: reverse(forward(r2))===r2 / reverse(forward(r1))===r1', () => {
+    const square = (floor: number): BuildingShape => ({
+      id: `f${floor}`, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    const { r2, r1, back2, back1 } = roundtrip(square(1), square(2), dist(4), dist(4));
+    expect(back2).toEqual(r2);
+    expect(back1).toEqual(r1);
+  }, HEAVY);
+
+  it('面一＋部分下屋（5辺・各種 desiredEndSource/constraint を含む）でも恒等', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const { r2, r1, back2, back1 } = roundtrip(building1F, building2F, dist(6), dist(5));
+    expect(back2).toEqual(r2);
+    expect(back1).toEqual(r1);
+    // 非自明: 1F セグメント（下屋）が存在し、constraint を含む
+    expect(r1.edgeSegments.length).toBeGreaterThan(0);
+  }, HEAVY);
+
+  it('下屋2個（8辺・pillar/collinear/next 各種）でも恒等', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 9000 }, { x: 0, y: 9000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 1000 }, { x: 12000, y: 1000 },
+        { x: 12000, y: 3000 }, { x: 9000, y: 3000 },
+        { x: 9000, y: 5000 }, { x: 12000, y: 5000 },
+        { x: 12000, y: 7000 }, { x: 9000, y: 7000 },
+        { x: 9000, y: 9000 }, { x: 0, y: 9000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const { r2, r1, back2, back1 } = roundtrip(building1F, building2F, dist(12), dist(4));
+    expect(back2).toEqual(r2);
+    expect(back1).toEqual(r1);
   }, HEAVY);
 });
