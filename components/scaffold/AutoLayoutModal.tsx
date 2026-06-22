@@ -20,22 +20,13 @@ import {
   SequentialCandidate,
   EdgeAdjustment,
   DEFAULT_EDGE_ADJUSTMENT,
-  Bothmode2FResult,
-  Bothmode1FResult,
-  computeBothmode2FLayout,
-  computeBothmode1FLayout,
   findCollinearEdgePairs,
   splitBuilding1FAtBuilding2FVertices,
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
+import { computeCascadeLayout } from '@/lib/konva/autolayout/cascade';
 import type { FloorLayoutResult, FloorEdgeSegment } from '@/lib/konva/autolayout/cascade';
-import {
-  bothmodeResultToFloorLayoutResult,
-  bothmode2FResultToFloorResult,
-  bothmode1FResultToFloorResult,
-  floorResultToAutoLayoutResult,
-  floorResultToBothmode2FResult,
-} from '@/lib/konva/autolayout/adapter';
+import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
@@ -514,19 +505,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   // Phase H-3d-2 Stage 5 Part A: bothmode 専用 state (Part B 以降で使用、現時点では未使用)
   // key 形式は `${edge2FIndex}-${segmentIndex}` の string (Stage 3/4 で定義済み)
-  // N階 P3-5 S5-c-i / S5-c-i-2: bothmode の真実源を layoutByFloor（実floorキーの統合結果）に統合。
+  // N階 P3-5 S5-c-i / S5-c-i-2 / S5-d: bothmode の真実源は layoutByFloor（実floorキーの統合結果）。
+  // S5-d で compute は computeCascadeLayout 本接続へ移行（両階を一括割付し setLayoutByFloor(res) 直書き）。
   // reader は layoutByFloor[2]/[1].edgeSegments を中立フィールド（edgeIndex / desiredEndSource /
-  // start・endConstraint の上下中立名）で直読みする。recompute 入力（computeBothmode1FLayout は
-  // Bothmode2FResult 型を要求）でのみ floorResultToBothmode2FResult(layoutByFloor[2]) を使う。
-  // cascade 未接続＝compute は従来 computeBothmode* のまま（layoutByFloor は一時 adapter 経由で格納）。
+  // start・endConstraint の上下中立名）で直読みする。
   const [layoutByFloor, setLayoutByFloor] = useState<Record<number, FloorLayoutResult> | null>(null);
-  // 既存の setBothmodeResult2F/1F 呼び出し（compute サイト）を不変に保つための write-through ヘルパ。
-  // 旧 useState setter と同じシグネチャで、layoutByFloor の該当 floor のみ更新（他 floor は据え置き）。
-  // null 指定（リセット）は layoutByFloor 全体を null に。
-  const setBothmodeResult2F = (r2: Bothmode2FResult | null) =>
-    setLayoutByFloor((prev) => (r2 === null ? null : { ...(prev ?? {}), 2: bothmode2FResultToFloorResult(r2) }));
-  const setBothmodeResult1F = (r1: Bothmode1FResult | null) =>
-    setLayoutByFloor((prev) => (r1 === null ? null : { ...(prev ?? {}), 1: bothmode1FResultToFloorResult(r1) }));
   const [bothmodeSelectionsByFloor, setBothmodeSelectionsByFloor] = useState<Record<number, Record<string, number>>>({});
   const [bothmodeAdjustmentsByFloor, setBothmodeAdjustmentsByFloor] = useState<Record<number, Record<string, EdgeAdjustment>>>({});
 
@@ -579,30 +562,17 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // Phase H-3d-2 Stage 5 Part B + 修正A + B1/B2: bothmode は normalizedBuilding1F/2F を使用
     // 単一階モードは下の既存ロジックで処理 (無変更)。
     if (targetFloor === 'both' && normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) {
-      const result2F = computeBothmode2FLayout(
-        normalizedBuilding2F,
-        normalizedBuilding1F,
-        normalizedDistances,
-        distances1F,
+      // N階 P3-5 S5-d: cascade 本接続。両階を computeCascadeLayout で一括割付（せり出し対称化を含む）。
+      const res = computeCascadeLayout(
+        { 1: building1F!, 2: building2F! },
+        { 1: distances1F, 2: normalizedDistances },
         normalizedScaffoldStart!,
         enabledSizes,
         priorityConfig,
-        (bothmodeSelectionsByFloor[primaryFloor] ?? {}),
-        (bothmodeAdjustmentsByFloor[primaryFloor] ?? {}),
+        bothmodeSelectionsByFloor,
+        bothmodeAdjustmentsByFloor,
       );
-      setBothmodeResult2F(result2F);
-
-      const result1F = computeBothmode1FLayout(
-        normalizedBuilding1F,
-        normalizedBuilding2F,
-        result2F,
-        distances1F,
-        enabledSizes,
-        priorityConfig,
-        (bothmodeSelectionsByFloor[subFloor] ?? {}),
-        (bothmodeAdjustmentsByFloor[subFloor] ?? {}),
-      );
-      setBothmodeResult1F(result1F);
+      setLayoutByFloor(res);
 
       // 旧 state は混乱を避けるためクリア (Part C/D で旧 state を完全廃止予定)
       setSequentialResult2F(null);
@@ -611,26 +581,26 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       setSelectionsSub({});
 
       // Phase H-3d-2 Stage 5 Part D-1: bothmode 結果を AutoLayoutResult に変換して描画系に渡す
-      const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
+      const adapted = floorResultToAutoLayoutResult(res);
       setResult(adapted);
       const sel: Record<number, number> = {};
       adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
       setSelections(sel);
 
       // activeEdge: 最初の未解決セグメントへ (2F 優先 → 1F の順)
-      const firstUnresolved2F = result2F.edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
+      const firstUnresolved2F = res[2].edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
       if (firstUnresolved2F) {
         setActiveEdge({
           floor: 2,
-          index: firstUnresolved2F.edge2FIndex,
+          index: firstUnresolved2F.edgeIndex,
           segmentIndex: firstUnresolved2F.segmentIndex,
         });
       } else {
-        const firstUnresolved1F = result1F.edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
+        const firstUnresolved1F = res[1].edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
         if (firstUnresolved1F) {
           setActiveEdge({
             floor: 1,
-            index: firstUnresolved1F.edge1FIndex,
+            index: firstUnresolved1F.edgeIndex,
             segmentIndex: firstUnresolved1F.segmentIndex,
           });
         } else {
@@ -721,76 +691,73 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         const newSelections2F = { ...(bothmodeSelectionsByFloor[primaryFloor] ?? {}), [key]: candIdx };
         setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
 
-        const result2F = computeBothmode2FLayout(
-          normalizedBuilding2F, normalizedBuilding1F, normalizedDistances, distances1F,
+        // S5-d: 2F 変更後は cascade で両階一括再計算（1F は 2F 結果に追従）
+        const res = computeCascadeLayout(
+          { 1: building1F!, 2: building2F! },
+          { 1: distances1F, 2: normalizedDistances },
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
-          newSelections2F, (bothmodeAdjustmentsByFloor[primaryFloor] ?? {}),
+          { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
+          bothmodeAdjustmentsByFloor,
         );
-        setBothmodeResult2F(result2F);
-
-        // 2F 変更後は 1F も再計算 (cascade)
-        const result1F = computeBothmode1FLayout(
-          normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
-          enabledSizes, priorityConfig,
-          (bothmodeSelectionsByFloor[subFloor] ?? {}), (bothmodeAdjustmentsByFloor[subFloor] ?? {}),
-        );
-        setBothmodeResult1F(result1F);
+        setLayoutByFloor(res);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
+        const adapted = floorResultToAutoLayoutResult(res);
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
         setSelections(sel);
 
         // 次の未解決セグメントへ (cascade 順)
-        const segs2F = result2F.edgeSegments;
+        const segs2F = res[2].edgeSegments;
         const curIdx = segs2F.findIndex(
-          s => s.edge2FIndex === edgeIndex && s.segmentIndex === segmentIndex,
+          s => s.edgeIndex === edgeIndex && s.segmentIndex === segmentIndex,
         );
         const next2F = curIdx >= 0
           ? segs2F.slice(curIdx + 1).find(s => !s.isLocked && !s.isAutoProgress)
           : undefined;
         if (next2F) {
-          setActiveEdge({ floor: 2, index: next2F.edge2FIndex, segmentIndex: next2F.segmentIndex });
+          setActiveEdge({ floor: 2, index: next2F.edgeIndex, segmentIndex: next2F.segmentIndex });
           return;
         }
         // 2F 全解決 → 1F 最初の未解決
-        const first1F = result1F.edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
+        const first1F = res[1].edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
         if (first1F) {
-          setActiveEdge({ floor: 1, index: first1F.edge1FIndex, segmentIndex: first1F.segmentIndex });
+          setActiveEdge({ floor: 1, index: first1F.edgeIndex, segmentIndex: first1F.segmentIndex });
         } else {
           setActiveEdge(null);
         }
       } else {
-        // floor === 1: 1F のみ再計算 (result2F は据え置き)
+        // floor === 1: S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
         if (!layoutByFloor) return;
         const newSelections1F = { ...(bothmodeSelectionsByFloor[subFloor] ?? {}), [key]: candIdx };
         setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
 
-        const result1F = computeBothmode1FLayout(
-          normalizedBuilding1F, normalizedBuilding2F, floorResultToBothmode2FResult(layoutByFloor[2]), distances1F,
-          enabledSizes, priorityConfig,
-          newSelections1F, (bothmodeAdjustmentsByFloor[subFloor] ?? {}),
+        const res = computeCascadeLayout(
+          { 1: building1F!, 2: building2F! },
+          { 1: distances1F, 2: normalizedDistances },
+          normalizedScaffoldStart!, enabledSizes, priorityConfig,
+          { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
+          bothmodeAdjustmentsByFloor,
         );
-        setBothmodeResult1F(result1F);
+        setLayoutByFloor(res);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult({ 2: layoutByFloor[2], 1: bothmode1FResultToFloorResult(result1F) });
+        const adapted = floorResultToAutoLayoutResult(res);
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
         setSelections(sel);
 
-        const segs1F = result1F.edgeSegments;
+        const segs1F = res[1].edgeSegments;
         const curIdx = segs1F.findIndex(
-          s => s.edge1FIndex === edgeIndex && s.segmentIndex === segmentIndex,
+          s => s.edgeIndex === edgeIndex && s.segmentIndex === segmentIndex,
         );
         const next1F = curIdx >= 0
           ? segs1F.slice(curIdx + 1).find(s => !s.isLocked && !s.isAutoProgress)
           : undefined;
         if (next1F) {
-          setActiveEdge({ floor: 1, index: next1F.edge1FIndex, segmentIndex: next1F.segmentIndex });
+          setActiveEdge({ floor: 1, index: next1F.edgeIndex, segmentIndex: next1F.segmentIndex });
         } else {
           setActiveEdge(null);
         }
@@ -862,15 +829,18 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
           setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [subFloor]: newAdjustments1F }));
 
-          const result1F = computeBothmode1FLayout(
-            normalizedBuilding1F, normalizedBuilding2F, floorResultToBothmode2FResult(layoutByFloor[2]), distances1F,
-            enabledSizes, priorityConfig,
-            newSelections1F, newAdjustments1F,
+          // S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
+          const res = computeCascadeLayout(
+            { 1: building1F!, 2: building2F! },
+            { 1: distances1F, 2: normalizedDistances },
+            normalizedScaffoldStart!, enabledSizes, priorityConfig,
+            { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
+            { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
           );
-          setBothmodeResult1F(result1F);
+          setLayoutByFloor(res);
 
           // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-          const adapted = floorResultToAutoLayoutResult({ 2: layoutByFloor[2], 1: bothmode1FResultToFloorResult(result1F) });
+          const adapted = floorResultToAutoLayoutResult(res);
           setResult(adapted);
           const sel: Record<number, number> = {};
           adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -888,22 +858,18 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
           setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
 
-          const result2F = computeBothmode2FLayout(
-            normalizedBuilding2F, normalizedBuilding1F, normalizedDistances, distances1F,
+          // S5-d cascade で両階再計算（2F の戻し後、1F も追従）
+          const res = computeCascadeLayout(
+            { 1: building1F!, 2: building2F! },
+            { 1: distances1F, 2: normalizedDistances },
             normalizedScaffoldStart!, enabledSizes, priorityConfig,
-            newSelections2F, newAdjustments2F,
+            { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
+            { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
           );
-          setBothmodeResult2F(result2F);
-
-          const result1F = computeBothmode1FLayout(
-            normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
-            enabledSizes, priorityConfig,
-            (bothmodeSelectionsByFloor[subFloor] ?? {}), (bothmodeAdjustmentsByFloor[subFloor] ?? {}),
-          );
-          setBothmodeResult1F(result1F);
+          setLayoutByFloor(res);
 
           // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-          const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
+          const adapted = floorResultToAutoLayoutResult(res);
           setResult(adapted);
           const sel: Record<number, number> = {};
           adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -928,22 +894,18 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
       setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
 
-      const result2F = computeBothmode2FLayout(
-        normalizedBuilding2F, normalizedBuilding1F, normalizedDistances, distances1F,
+      // S5-d cascade で両階再計算（2F の戻し後、1F も追従）
+      const res = computeCascadeLayout(
+        { 1: building1F!, 2: building2F! },
+        { 1: distances1F, 2: normalizedDistances },
         normalizedScaffoldStart!, enabledSizes, priorityConfig,
-        newSelections2F, newAdjustments2F,
+        { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
+        { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
       );
-      setBothmodeResult2F(result2F);
-
-      const result1F = computeBothmode1FLayout(
-        normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
-        enabledSizes, priorityConfig,
-        (bothmodeSelectionsByFloor[subFloor] ?? {}), (bothmodeAdjustmentsByFloor[subFloor] ?? {}),
-      );
-      setBothmodeResult1F(result1F);
+      setLayoutByFloor(res);
 
       // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-      const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
+      const adapted = floorResultToAutoLayoutResult(res);
       setResult(adapted);
       const sel: Record<number, number> = {};
       adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -1021,21 +983,18 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       if (isF2) {
         const newAdjustments2F = { ...(bothmodeAdjustmentsByFloor[primaryFloor] ?? {}), [key]: next };
         setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
-        const result2F = computeBothmode2FLayout(
-          normalizedBuilding2F, normalizedBuilding1F, normalizedDistances, distances1F,
+        // S5-d cascade で両階再計算（2F 調整後、1F も追従）
+        const res = computeCascadeLayout(
+          { 1: building1F!, 2: building2F! },
+          { 1: distances1F, 2: normalizedDistances },
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
-          (bothmodeSelectionsByFloor[primaryFloor] ?? {}), newAdjustments2F,
+          bothmodeSelectionsByFloor,
+          { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
         );
-        setBothmodeResult2F(result2F);
-        const result1F = computeBothmode1FLayout(
-          normalizedBuilding1F, normalizedBuilding2F, result2F, distances1F,
-          enabledSizes, priorityConfig,
-          (bothmodeSelectionsByFloor[subFloor] ?? {}), (bothmodeAdjustmentsByFloor[subFloor] ?? {}),
-        );
-        setBothmodeResult1F(result1F);
+        setLayoutByFloor(res);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult(bothmodeResultToFloorLayoutResult(result2F, result1F));
+        const adapted = floorResultToAutoLayoutResult(res);
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
@@ -1044,15 +1003,18 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         if (!layoutByFloor) return;
         const newAdjustments1F = { ...(bothmodeAdjustmentsByFloor[subFloor] ?? {}), [key]: next };
         setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [subFloor]: newAdjustments1F }));
-        const result1F = computeBothmode1FLayout(
-          normalizedBuilding1F, normalizedBuilding2F, floorResultToBothmode2FResult(layoutByFloor[2]), distances1F,
-          enabledSizes, priorityConfig,
-          (bothmodeSelectionsByFloor[subFloor] ?? {}), newAdjustments1F,
+        // S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
+        const res = computeCascadeLayout(
+          { 1: building1F!, 2: building2F! },
+          { 1: distances1F, 2: normalizedDistances },
+          normalizedScaffoldStart!, enabledSizes, priorityConfig,
+          bothmodeSelectionsByFloor,
+          { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
         );
-        setBothmodeResult1F(result1F);
+        setLayoutByFloor(res);
 
         // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult({ 2: layoutByFloor[2], 1: bothmode1FResultToFloorResult(result1F) });
+        const adapted = floorResultToAutoLayoutResult(res);
         setResult(adapted);
         const sel: Record<number, number> = {};
         adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
