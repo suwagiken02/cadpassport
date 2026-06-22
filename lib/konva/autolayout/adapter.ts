@@ -22,9 +22,13 @@ import type {
   EdgeInfo,
   LayoutCombination,
   SequentialLayoutResult,
+  Bothmode2FResult,
+  Bothmode1FResult,
+  Bothmode1FEdgeSegment,
 } from '../autoLayoutUtils';
 import type { ScaffoldHandrail } from '../scaffoldViolations';
 import type { FloorEdgeSegment, FloorLayoutResult } from './cascade';
+import { bothmode2FSegToFloorSeg } from './cascade';
 
 // ============================================================
 // 1. segmentsToHandrails: FloorEdgeSegment[] → ScaffoldHandrail[]
@@ -166,4 +170,83 @@ export function sequentialResultToFloorResult(
     effectiveMm: er.effectiveMm,
   }));
   return { floor, edgeSegments, hasUnresolved: seqResult.hasUnresolved };
+}
+
+// ============================================================
+// 一時 adapter（S5-c / S5-d で破棄）: 旧 bothmode 結果（2F/1F）を layoutByFloor 形式
+// （Record<floor, FloorLayoutResult>）へ詰め替える橋。
+//   cascade を使わず旧 compute 結果をそのまま FloorEdgeSegment 化するため、
+//   floorResultToAutoLayoutResult を通すと bothmodeResultsToAutoLayoutResult と一致する
+//   （= 表示 AutoLayoutResult を layoutByFloor 由来に切替えても挙動不変にできる土台）。
+//   S5-d で cascade 本接続に置き換わったら本関数ごと削除する。
+// ============================================================
+
+/** Bothmode1FEdgeSegment → FloorEdgeSegment（最下階用、start/endConstraint を上下中立名へ写像）。
+ *  cascade.test.ts の expectLowerParity と同じ中立写像。 */
+function bothmode1FSegToFloorSeg(seg: Bothmode1FEdgeSegment, floor: number): FloorEdgeSegment {
+  const sc = seg.startConstraint;
+  const startConstraint: FloorEdgeSegment['startConstraint'] =
+    sc.kind === 'pillar-from-2F'
+      ? { kind: 'pillar-from-upper', pillarPoint: sc.pillarPoint }
+      : sc.kind === 'collinear-with-2F'
+      ? { kind: 'collinear-with-upper', upperEdgeIndex: sc.edge2FIndex }
+      : { kind: 'cascade-from-prev-segment' };
+  const ec = seg.endConstraint;
+  const endConstraint: FloorEdgeSegment['endConstraint'] =
+    ec.kind === 'pillar-to-2F'
+      ? { kind: 'pillar-to-upper', pillarPoint: ec.pillarPoint }
+      : ec.kind === 'collinear-with-2F'
+      ? { kind: 'collinear-with-upper', upperEdgeIndex: ec.edge2FIndex }
+      : { kind: 'next-face', edgeIndex: ec.edge1FIndex };
+  return {
+    floor,
+    edgeIndex: seg.edge1FIndex,
+    segmentIndex: seg.segmentIndex,
+    segmentCount: seg.segmentCount,
+    startPoint: seg.startPoint,
+    endPoint: seg.endPoint,
+    segmentLengthMm: seg.segmentLengthMm,
+    face: seg.face,
+    handrailDir: seg.handrailDir,
+    nx: seg.nx,
+    ny: seg.ny,
+    startDistanceMm: seg.startDistanceMm,
+    desiredEndDistanceMm: seg.desiredEndDistanceMm,
+    // 最下階セグメントは上方向の終点参照（desiredEndSource）を持たない
+    startConstraint,
+    endConstraint,
+    candidates: seg.candidates,
+    selectedIndex: seg.selectedIndex,
+    isLocked: seg.isLocked,
+    isAutoProgress: seg.isAutoProgress,
+    prevCornerIsConvex: seg.prevCornerIsConvex,
+    nextCornerIsConvex: seg.nextCornerIsConvex,
+    scaffoldCoord: seg.scaffoldCoord,
+    cursorStart: seg.cursorStart,
+    cursorEnd: seg.cursorEnd,
+    effectiveMm: seg.effectiveMm,
+  };
+}
+
+/**
+ * 旧 bothmode 結果（2F・1F）を Record<floor, FloorLayoutResult> へ詰める一時 adapter。
+ * キーは常に {2,1}（連続積層 1F/2F）。floorResultToAutoLayoutResult を通すと
+ * bothmodeResultsToAutoLayoutResult(result2F, result1F) と一致する。
+ */
+export function bothmodeResultToFloorLayoutResult(
+  result2F: Bothmode2FResult,
+  result1F: Bothmode1FResult,
+): Record<number, FloorLayoutResult> {
+  return {
+    2: {
+      floor: 2,
+      edgeSegments: result2F.edgeSegments.map((seg) => bothmode2FSegToFloorSeg(seg, 2)),
+      hasUnresolved: result2F.hasUnresolved,
+    },
+    1: {
+      floor: 1,
+      edgeSegments: result1F.edgeSegments.map((seg) => bothmode1FSegToFloorSeg(seg, 1)),
+      hasUnresolved: result1F.hasUnresolved,
+    },
+  };
 }

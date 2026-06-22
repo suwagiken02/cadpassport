@@ -151,8 +151,9 @@ export type FloorLayoutResult = {
  * above non-null（中間階/最下階）と せり出し対称化は後続ステップで実装する。
  */
 
-/** Bothmode2FEdgeSegment → FloorEdgeSegment へのマッピング（最上階用、委譲 parity の橋渡し）。*/
-function bothmode2FSegToFloorSeg(seg: Bothmode2FEdgeSegment, floor: number): FloorEdgeSegment {
+/** Bothmode2FEdgeSegment → FloorEdgeSegment へのマッピング（最上階用、委譲 parity の橋渡し）。
+ *  S5-c: 旧 bothmode 結果を layoutByFloor へ詰める一時 adapter からも再利用するため export。*/
+export function bothmode2FSegToFloorSeg(seg: Bothmode2FEdgeSegment, floor: number): FloorEdgeSegment {
   return {
     floor,
     edgeIndex: seg.edge2FIndex,

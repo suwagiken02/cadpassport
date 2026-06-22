@@ -15,6 +15,7 @@ import {
   segmentsToHandrails,
   floorResultToAutoLayoutResult,
   sequentialResultToFloorResult,
+  bothmodeResultToFloorLayoutResult,
 } from '../adapter';
 import { findScaffoldViolations, type ScaffoldHandrail } from '../../scaffoldViolations';
 import type { BuildingShape, ScaffoldStartConfig, HandrailLengthMm } from '@/types';
@@ -410,5 +411,100 @@ describe('せり出し（2F>1F）: 旧 bothmode と不一致＋違反0＋引っ�
       ...segmentsToHandrails(res[1].edgeSegments),
     ];
     expect(findScaffoldViolations(handrails, [building1F, building2F])).toEqual([]);
+  }, HEAVY);
+});
+
+// ============================================================
+// 一時 adapter bothmodeResultToFloorLayoutResult（S5-c-0・S5-d で破棄）。
+//   旧 bothmode 結果（2F/1F）を layoutByFloor へ詰め、floorResultToAutoLayoutResult を通すと
+//   bothmodeResultsToAutoLayoutResult と完全一致する＝表示 AutoLayoutResult を layoutByFloor 由来に
+//   切替えても挙動不変にできる土台であることを固定する。
+// ============================================================
+describe('bothmodeResultToFloorLayoutResult（一時 adapter・旧 bothmode → layoutByFloor）', () => {
+  /** 旧 bothmode を計算し、(packed→AutoLayoutResult) と (直接 AutoLayoutResult) を返す。 */
+  function compute(
+    building1F: BuildingShape,
+    building2F: BuildingShape,
+    distances1F: Record<number, number>,
+    distances2F: Record<number, number>,
+    scaffold: ScaffoldStartConfig = ss,
+  ) {
+    const n1 = splitBuilding1FAtBuilding2FVertices(building1F, building2F);
+    const n2 = splitBuilding2FAt1FVertices(building1F, building2F);
+    const r2 = computeBothmode2FLayout(n2, n1, distances2F, distances1F, scaffold);
+    const r1 = computeBothmode1FLayout(n1, n2, r2, distances1F);
+    const packed = bothmodeResultToFloorLayoutResult(r2, r1);
+    return { packed, viaPack: floorResultToAutoLayoutResult(packed), direct: bothmodeResultsToAutoLayoutResult(r2, r1) };
+  }
+
+  it('キーは {2,1} のみ・各 floor 値が一致', () => {
+    const square = (floor: number): BuildingShape => ({
+      id: `f${floor}`, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    const { packed } = compute(square(1), square(2), dist(4), dist(4));
+    expect(Object.keys(packed).map(Number).sort()).toEqual([1, 2]);
+    expect(packed[1].floor).toBe(1);
+    expect(packed[2].floor).toBe(2);
+  }, HEAVY);
+
+  it('総二階（1F=2F）: floorResultToAutoLayoutResult(packed) == bothmodeResultsToAutoLayoutResult', () => {
+    const square = (floor: number): BuildingShape => ({
+      id: `f${floor}`, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    const { viaPack, direct } = compute(square(1), square(2), dist(4), dist(4));
+    expect(viaPack).toEqual(direct);
+  }, HEAVY);
+
+  it('面一＋部分下屋（B面下屋・5辺）: AutoLayoutResult 完全一致＋1F 由来あり', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const { packed, viaPack, direct } = compute(building1F, building2F, dist(6), dist(5));
+    expect(viaPack).toEqual(direct);
+    // 下屋 1F セグメントが packed に存在（非自明な一致）
+    expect(packed[1].edgeSegments.length).toBeGreaterThan(0);
+    expect(viaPack.edgeLayouts.some((el) => el.originFloor === 1)).toBe(true);
+    // 手摺レベルでも一致
+    const toRails = (alr: AutoLayoutResult): ScaffoldHandrail[] =>
+      alr.edgeLayouts.flatMap((el) =>
+        placeHandrailsForEdge(el, (el.candidates[el.selectedIndex]?.rails ?? []) as HandrailLengthMm[]));
+    expect(toRails(viaPack)).toEqual(toRails(direct));
+  }, HEAVY);
+
+  it('非デフォルト離れでも一致', () => {
+    const ssMixed: ScaffoldStartConfig = { ...ss, face1DistanceMm: 600, face2DistanceMm: 1200 };
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const distances1F = { 0: 900, 1: 600, 2: 1200, 3: 900, 4: 600, 5: 1200 };
+    const distances2F = { 0: 600, 1: 1200, 2: 900, 3: 1200, 4: 600 };
+    const { viaPack, direct } = compute(building1F, building2F, distances1F, distances2F, ssMixed);
+    expect(viaPack).toEqual(direct);
   }, HEAVY);
 });
