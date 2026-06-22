@@ -17,7 +17,6 @@ import {
   sequentialResultToFloorResult,
   bothmodeResultToFloorLayoutResult,
   floorResultToBothmode2FResult,
-  floorResultToBothmode1FResult,
 } from '../adapter';
 import { findScaffoldViolations, type ScaffoldHandrail } from '../../scaffoldViolations';
 import type { BuildingShape, ScaffoldStartConfig, HandrailLengthMm } from '@/types';
@@ -517,7 +516,7 @@ describe('bothmodeResultToFloorLayoutResult（一時 adapter・旧 bothmode → 
 //   これが緑な限り、modal の bothmodeResult2F/1F を layoutByFloor 由来の useMemo に切替えても
 //   全 reader（handlePlace/nav/recompute 入力）が byte 不変。
 // ============================================================
-describe('floorResultToBothmode2F/1FResult（逆 adapter round-trip 恒等）', () => {
+describe('floorResultToBothmode2FResult（逆 adapter round-trip 恒等）', () => {
   function roundtrip(
     building1F: BuildingShape,
     building2F: BuildingShape,
@@ -530,10 +529,10 @@ describe('floorResultToBothmode2F/1FResult（逆 adapter round-trip 恒等）', 
     const r2 = computeBothmode2FLayout(n2, n1, distances2F, distances1F, scaffold);
     const r1 = computeBothmode1FLayout(n1, n2, r2, distances1F);
     const lbf = bothmodeResultToFloorLayoutResult(r2, r1);
+    // S5-c-i-2: 1F reader は layoutByFloor[1] 直読みに移行したため逆adapterは 2F のみ残存。
     return {
       r2, r1,
       back2: floorResultToBothmode2FResult(lbf[2]),
-      back1: floorResultToBothmode1FResult(lbf[1]),
     };
   }
 
@@ -543,9 +542,8 @@ describe('floorResultToBothmode2F/1FResult（逆 adapter round-trip 恒等）', 
       points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
       fill: '#000', floor,
     });
-    const { r2, r1, back2, back1 } = roundtrip(square(1), square(2), dist(4), dist(4));
+    const { r2, back2 } = roundtrip(square(1), square(2), dist(4), dist(4));
     expect(back2).toEqual(r2);
-    expect(back1).toEqual(r1);
   }, HEAVY);
 
   it('面一＋部分下屋（5辺・各種 desiredEndSource/constraint を含む）でも恒等', () => {
@@ -563,9 +561,8 @@ describe('floorResultToBothmode2F/1FResult（逆 adapter round-trip 恒等）', 
       ],
       fill: '#000', floor: 1,
     };
-    const { r2, r1, back2, back1 } = roundtrip(building1F, building2F, dist(6), dist(5));
+    const { r2, r1, back2 } = roundtrip(building1F, building2F, dist(6), dist(5));
     expect(back2).toEqual(r2);
-    expect(back1).toEqual(r1);
     // 非自明: 1F セグメント（下屋）が存在し、constraint を含む
     expect(r1.edgeSegments.length).toBeGreaterThan(0);
   }, HEAVY);
@@ -588,8 +585,7 @@ describe('floorResultToBothmode2F/1FResult（逆 adapter round-trip 恒等）', 
       ],
       fill: '#000', floor: 1,
     };
-    const { r2, r1, back2, back1 } = roundtrip(building1F, building2F, dist(12), dist(4));
+    const { r2, back2 } = roundtrip(building1F, building2F, dist(12), dist(4));
     expect(back2).toEqual(r2);
-    expect(back1).toEqual(r1);
   }, HEAVY);
 });

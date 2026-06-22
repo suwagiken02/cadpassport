@@ -263,11 +263,12 @@ export function bothmodeResultToFloorLayoutResult(
 }
 
 // ============================================================
-// 逆 adapter（S5-c-i / S5-d で破棄）: layoutByFloor（FloorLayoutResult）から
-// 旧 Bothmode2FResult / Bothmode1FResult を復元する橋。
+// 逆 adapter（S5-c-i / S5-d で破棄）: layoutByFloor[2]（FloorLayoutResult）から
+// 旧 Bothmode2FResult を復元する橋。
 //   cascade 未接続のため computeBothmode1FLayout（Bothmode2FResult 型を要求）が現行 compute 経路。
-//   layoutByFloor を単一の真実源にしつつ、bothmodeResult2F/1F を派生 view として供給するために使う。
-//   bothmode*SegToFloorSeg の完全な逆写像（中立名 → 旧 bothmode 名）。round-trip は恒等
+//   S5-c-i-2 で 1F reader は layoutByFloor[1] 直読みに移行したため、逆写像は 2F のみ残す
+//   （1F は recompute 入力に使われないため不要）。
+//   bothmode2FSegToFloorSeg の完全な逆写像（中立名 → 旧 bothmode 名）。round-trip は恒等
 //   （reverse(forward(seg)) === seg）であることを adapter.test.ts で固定する。
 //   S5-d で cascade 本接続後に本ブロックごと削除する。
 // ============================================================
@@ -309,65 +310,10 @@ function floorSegToBothmode2FSeg(seg: FloorEdgeSegment): Bothmode2FEdgeSegment {
   };
 }
 
-/** FloorEdgeSegment → Bothmode1FEdgeSegment（最下階セグメント・start/endConstraint を旧名へ逆写像）。 */
-function floorSegToBothmode1FSeg(seg: FloorEdgeSegment): Bothmode1FEdgeSegment {
-  const sc = seg.startConstraint;
-  const ec = seg.endConstraint;
-  if (!sc || !ec) {
-    throw new Error('floorSegToBothmode1FSeg: 1F セグメントの start/endConstraint が不正');
-  }
-  const startConstraint: Bothmode1FEdgeSegment['startConstraint'] =
-    sc.kind === 'pillar-from-upper'
-      ? { kind: 'pillar-from-2F', pillarPoint: sc.pillarPoint }
-      : sc.kind === 'collinear-with-upper'
-      ? { kind: 'collinear-with-2F', edge2FIndex: sc.upperEdgeIndex }
-      : { kind: 'cascade-from-prev-1F-segment' };
-  const endConstraint: Bothmode1FEdgeSegment['endConstraint'] =
-    ec.kind === 'pillar-to-upper'
-      ? { kind: 'pillar-to-2F', pillarPoint: ec.pillarPoint }
-      : ec.kind === 'collinear-with-upper'
-      ? { kind: 'collinear-with-2F', edge2FIndex: ec.upperEdgeIndex }
-      : { kind: 'next-1F-face', edge1FIndex: ec.edgeIndex };
-  return {
-    edge1FIndex: seg.edgeIndex,
-    segmentIndex: seg.segmentIndex,
-    segmentCount: seg.segmentCount,
-    startPoint: seg.startPoint,
-    endPoint: seg.endPoint,
-    segmentLengthMm: seg.segmentLengthMm,
-    face: seg.face,
-    handrailDir: seg.handrailDir,
-    nx: seg.nx,
-    ny: seg.ny,
-    startDistanceMm: seg.startDistanceMm,
-    desiredEndDistanceMm: seg.desiredEndDistanceMm,
-    startConstraint,
-    endConstraint,
-    candidates: seg.candidates,
-    selectedIndex: seg.selectedIndex,
-    isLocked: seg.isLocked,
-    isAutoProgress: seg.isAutoProgress,
-    prevCornerIsConvex: seg.prevCornerIsConvex,
-    nextCornerIsConvex: seg.nextCornerIsConvex,
-    scaffoldCoord: seg.scaffoldCoord,
-    cursorStart: seg.cursorStart,
-    cursorEnd: seg.cursorEnd,
-    effectiveMm: seg.effectiveMm,
-  };
-}
-
-/** layoutByFloor[2]（FloorLayoutResult）→ Bothmode2FResult を復元（派生 view 供給用）。 */
+/** layoutByFloor[2]（FloorLayoutResult）→ Bothmode2FResult を復元（recompute 入力供給用）。 */
 export function floorResultToBothmode2FResult(fr: FloorLayoutResult): Bothmode2FResult {
   return {
     edgeSegments: fr.edgeSegments.map(floorSegToBothmode2FSeg),
-    hasUnresolved: fr.hasUnresolved,
-  };
-}
-
-/** layoutByFloor[1]（FloorLayoutResult）→ Bothmode1FResult を復元（派生 view 供給用）。 */
-export function floorResultToBothmode1FResult(fr: FloorLayoutResult): Bothmode1FResult {
-  return {
-    edgeSegments: fr.edgeSegments.map(floorSegToBothmode1FSeg),
     hasUnresolved: fr.hasUnresolved,
   };
 }
