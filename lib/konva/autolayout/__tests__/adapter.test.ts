@@ -9,6 +9,7 @@ import {
   computeAutoLayoutSequential,
   sequentialResultToAutoLayoutResult,
   type AutoLayoutResult,
+  type EdgeAdjustment,
 } from '../../autoLayoutUtils';
 import { computeCascadeLayout, type FloorEdgeSegment } from '../cascade';
 import {
@@ -355,6 +356,109 @@ describe('parity: cascade→adapter == 旧 bothmode 経路（下屋/面一/総�
     const newAlr = newPathResult(building1F, building2F, distances1F, distances2F, ssMixed);
     const oldAlr = oldPathResult(building1F, building2F, distances1F, distances2F, ssMixed);
     expect(newAlr).toEqual(oldAlr);
+    expect(autoLayoutToFloorHandrails(newAlr)).toEqual(autoLayoutToFloorHandrails(oldAlr));
+  }, HEAVY);
+});
+
+// ============================================================
+// 【S5-d 前提】parity: 非デフォルト selections / adjustments でも cascade→adapter == 旧 bothmode。
+//   S5-b の parity は全ケース userSelections/userAdjustments 既定（空）で呼んでおり、
+//   モーダルが S5-d で cascade へ渡す bothmodeSelectionsByFloor/AdjustmentsByFloor（非空）経路は
+//   未網羅。本ブロックでその引数組合せ（cascade は {2:sel2,1:sel1}/{2:adj2,1:adj1}、
+//   旧経路は 2F=sel2/adj2・1F=sel1/adj1）を両経路へ同一に渡し、AutoLayoutResult の toEqual で固定する。
+//   非自明性ガード: 既定選択の結果と異なる（= 選択/調整が実際に出力を変えた）ことも assert する。
+// ============================================================
+describe('parity: 非デフォルト selections/adjustments（cascade↔旧 bothmode・S5-d 前提）', () => {
+  type SelByFloor = Record<number, Record<string, number>>;
+  type AdjByFloor = Record<number, Record<string, EdgeAdjustment>>;
+
+  /** 旧 bothmode 経路（モーダルと同じ呼び方）+ floor 別 selections/adjustments。 */
+  function oldPathWith(
+    building1F: BuildingShape, building2F: BuildingShape,
+    distances1F: Record<number, number>, distances2F: Record<number, number>,
+    sel: SelByFloor, adj: AdjByFloor, scaffold: ScaffoldStartConfig = ss,
+  ): AutoLayoutResult {
+    const n1 = splitBuilding1FAtBuilding2FVertices(building1F, building2F);
+    const n2 = splitBuilding2FAt1FVertices(building1F, building2F);
+    const r2 = computeBothmode2FLayout(
+      n2, n1, distances2F, distances1F, scaffold, undefined, undefined,
+      sel[2] ?? {}, adj[2] ?? {},
+    );
+    const r1 = computeBothmode1FLayout(
+      n1, n2, r2, distances1F, undefined, undefined,
+      sel[1] ?? {}, adj[1] ?? {},
+    );
+    return bothmodeResultsToAutoLayoutResult(r2, r1);
+  }
+
+  /** 新 cascade 経路（モーダルと同じ呼び方）+ floor 別 selections/adjustments。 */
+  function newPathWith(
+    building1F: BuildingShape, building2F: BuildingShape,
+    distances1F: Record<number, number>, distances2F: Record<number, number>,
+    sel: SelByFloor, adj: AdjByFloor, scaffold: ScaffoldStartConfig = ss,
+  ): AutoLayoutResult {
+    const res = computeCascadeLayout(
+      { 1: building1F, 2: building2F },
+      { 1: distances1F, 2: distances2F },
+      scaffold, undefined, undefined, sel, adj,
+    );
+    return floorResultToAutoLayoutResult(res);
+  }
+
+  /** larger/smaller の variation/offset を振った調整（候補生成に効く非自明値）。 */
+  const adjVar = (over: Partial<EdgeAdjustment['larger']> = {}): EdgeAdjustment => ({
+    larger: { offsetIdx: 0, variationIdx: 1, ...over },
+    smaller: { offsetIdx: 0, variationIdx: 0 },
+  });
+
+  it('総二階（1F=2F・2F 全周）: 2F の非デフォルト選択/調整で一致＋非自明', () => {
+    const square = (floor: number): BuildingShape => ({
+      id: `f${floor}`, type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor,
+    });
+    // 2F 4 辺（key=`${edge2FIndex}-0`）に選択 index=1 と variation 調整を与える。
+    const sel: SelByFloor = { 2: { '0-0': 1, '1-0': 1, '2-0': 1, '3-0': 1 }, 1: {} };
+    const adj: AdjByFloor = { 2: { '0-0': adjVar(), '2-0': adjVar({ offsetIdx: 1, variationIdx: 0 }) }, 1: {} };
+    const newAlr = newPathWith(square(1), square(2), dist(4), dist(4), sel, adj);
+    const oldAlr = oldPathWith(square(1), square(2), dist(4), dist(4), sel, adj);
+    // 総二階の矩形辺は各辺 1 候補（auto-progress）で選択/調整は no-op になるため、
+    // ここは「非空 record を cascade の userSelectionsByFloor 経由で渡しても旧経路と一致」
+    // （= floor 別 key ルーティングの plumbing parity）を固定する。非自明な選択差は下の
+    // 面一＋部分下屋ケース（多候補辺あり）で担保する。
+    expect(newAlr).toEqual(oldAlr);
+  }, HEAVY);
+
+  it('面一＋部分下屋（B面下屋・5辺）: 2F+1F 双方の非デフォルト選択/調整で一致＋非自明', () => {
+    const building2F: BuildingShape = {
+      id: 'b2', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 9000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const building1F: BuildingShape = {
+      id: 'b1', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 9000, y: 0 },
+        { x: 9000, y: 2000 }, { x: 12000, y: 2000 },
+        { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    // 2F 全辺＋1F 各辺（下屋含む）に選択 index=1 と調整を散らす（範囲外は両経路とも 0 リセットで一致）。
+    const sel: SelByFloor = {
+      2: { '0-0': 1, '1-0': 1, '2-0': 1, '3-0': 1, '4-0': 1 },
+      1: { '0-0': 1, '1-0': 1, '2-0': 1, '3-0': 1, '4-0': 1, '5-0': 1 },
+    };
+    const adj: AdjByFloor = {
+      2: { '0-0': adjVar(), '1-0': adjVar({ offsetIdx: 1 }) },
+      1: { '2-0': adjVar(), '3-0': adjVar({ offsetIdx: 1 }) },
+    };
+    const newAlr = newPathWith(building1F, building2F, dist(6), dist(5), sel, adj);
+    const oldAlr = oldPathWith(building1F, building2F, dist(6), dist(5), sel, adj);
+    expect(newAlr).toEqual(oldAlr);
+    // 下屋 1F に実手摺が乗る（非自明な parity の証拠）＋既定選択と異なる。
+    expect(autoLayoutToFloorHandrails(newAlr).some((h) => h.floor === 1)).toBe(true);
+    expect(newAlr).not.toEqual(newPathResult(building1F, building2F, dist(6), dist(5)));
     expect(autoLayoutToFloorHandrails(newAlr)).toEqual(autoLayoutToFloorHandrails(oldAlr));
   }, HEAVY);
 });
