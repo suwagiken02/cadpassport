@@ -48,11 +48,34 @@ import type {
 import { mmToGrid } from '../gridUtils';
 import type { SequentialCandidate } from './candidates';
 
-// せり出し対称化フォールバックの閾値（足場屋の現場判断）。
-// 引っ込んだ独立辺（せり出しで上階の下に隠れた壁）が凹コーナーに挟まれ、幾何的に候補ゼロ
-// （requiredRailsTotal の最大 = -prevDist + 壁長 が minSize 未満）になっても、壁幅がこの値以上なら
-// 足場ラインを 1 本出す（隣接辺と角で L 字に繋ぐ）。900mm 未満は隣の角の足場で兼ねられるため飛ばす（空=正常）。
-const RECESSED_WALL_MIN_SCAFFOLD_MM = 900;
+// せり出し入隅（凹コーナーに挟まれた引っ込み壁）を全長充填するか飛ばすかの閾値（足場屋の現場判断）。
+// この種の壁は通常経路だと凹コーナーの寄与が負になり割付スパンが壁長より縮む（壁長−prevDist−endDist）
+// ため角側の手摺が欠ける。現場確定ルール: 引っ込み壁の幅がこの値を超えるなら離れで縮めず辺全長
+// （角〜角）を足場で埋め、両端の角は隣接辺とL字に突き合わせる（外周の出隅と同じおさまり）。
+// この値以下なら隣の角の足場で兼ねられるため足場を出さない（飛ばす＝候補空）。
+const RECESSED_INCORNER_MIN_SCAFFOLD_MM = 900;
+
+// せり出し入隅の引っ込み壁を「角〜角の全長」で埋める候補を 1 つ作る。凹コーナーの寄与減算をせず
+// 壁長そのものを findBestEndCombinations で割り付けるため、角側の手摺（例 1800）も出る。
+function buildInCornerRecessCandidates(
+  edgeLengthMm: number,
+  desiredEndDistanceMm: number,
+  enabledSizes: HandrailLengthMm[],
+  priorityConfig?: PriorityConfig,
+): SequentialCandidate[] {
+  const rails = findBestEndCombinations(edgeLengthMm, enabledSizes, priorityConfig)[0]?.rails ?? [];
+  if (rails.length === 0) return [];
+  return [{
+    rails,
+    totalMm: rails.reduce((a, b) => a + b, 0),
+    actualEndDistanceMm: desiredEndDistanceMm,
+    diffFromDesired: 0,
+    side: 'exact',
+    variationIdx: 0,
+    variationCount: 1,
+    remainder: 0,
+  }];
+}
 
 /**
  * 階セグメントの始点制約（= 旧 Bothmode1FSegmentStartConstraint の上下中立版）。
@@ -669,6 +692,8 @@ export function walkFloorLowerRole(
     Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
 
   const intermediate: FloorEdgeSegment[] = [];
+  // せり出し入隅で全長充填した辺の index。2nd pass の cursor 整合を同じ判定で揃えるため記録する。
+  const inCornerRecessEdges = new Set<number>();
   let prevEndDistanceMm: number | undefined = undefined;
   let prevSegmentStartDist: number | undefined = undefined;
 
@@ -752,14 +777,30 @@ export function walkFloorLowerRole(
 
     if (endConstraint.kind === 'collinear-with-upper') nextCornerIsConvex = false;
 
-    const candidates = generateSequentialCandidates(
-      edge.lengthMm, startDist, desiredEndDist,
-      prevCornerIsConvex, nextCornerIsConvex,
-      prevEdgeStartDist,
-      enabledSizes, priorityConfig,
-      adj.larger.offsetIdx, adj.smaller.offsetIdx,
-      adj.larger.variationIdx, adj.smaller.variationIdx,
-    );
+    // せり出しで上階の下に引っ込んだ（covered=midpoint+外向き法線が上階内）独立辺は、確定ルールにより
+    // 離れで縮めず辺全長（角〜角）を足場で埋め、両端の角は隣接辺とL字に突き合わせる（外周の出隅と同じ）。
+    // 通常経路だとこの種の壁は割付スパンが縮む（入隅=凹コーナーの寄与が負）か、壁が長いと候補ゼロ
+    // （findAllCombinationsForEnd の DFS 本数上限）になり足場ラインが欠ける。幅が閾値超なら全長充填、
+    // 閾値以下は隣の角の足場で兼ねるため出さない。下屋（外側張り出し）・面一・総二階・単一階は covered
+    // 判定（外向き法線が上階内）に掛からず通常経路で不変。
+    const recMidX = (edge.p1.x + edge.p2.x) / 2;
+    const recMidY = (edge.p1.y + edge.p2.y) / 2;
+    const isCoveredRecess =
+      isPointInPolygon(recMidX + edge.nx * 1, recMidY + edge.ny * 1, buildingAbove.points);
+    if (isCoveredRecess) inCornerRecessEdges.add(i);
+
+    const candidates = isCoveredRecess
+      ? (edge.lengthMm > RECESSED_INCORNER_MIN_SCAFFOLD_MM
+          ? buildInCornerRecessCandidates(edge.lengthMm, desiredEndDist, enabledSizes, priorityConfig)
+          : [])
+      : generateSequentialCandidates(
+          edge.lengthMm, startDist, desiredEndDist,
+          prevCornerIsConvex, nextCornerIsConvex,
+          prevEdgeStartDist,
+          enabledSizes, priorityConfig,
+          adj.larger.offsetIdx, adj.smaller.offsetIdx,
+          adj.larger.variationIdx, adj.smaller.variationIdx,
+        );
 
     let selectedIndex = userSelections?.[segKey] ?? 0;
     if (selectedIndex >= candidates.length) selectedIndex = 0;
@@ -820,6 +861,20 @@ export function walkFloorLowerRole(
   // scaffoldCoord/cursor へ揃える）。computeBothmode1FLayout の cursor 修正と同一。
   for (let k = 0; k < intermediate.length; k++) {
     const s = intermediate[k];
+
+    // せり出し入隅の全長充填辺（候補生成側で記録済）は cursor を壁端（角〜角）まで張る。
+    // 隣の縮んだ scaffoldCoord に揃えると合成 rail が収まらないため、startPoint/endPoint へ固定して
+    // 隣接辺と角でL字に突き合わせる（candidates 空＝飛ばす辺も同様に壁端基準でよい）。
+    if (inCornerRecessEdges.has(s.edgeIndex)) {
+      const cs = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+      const ce = s.handrailDir === 'horizontal' ? s.endPoint.x : s.endPoint.y;
+      intermediate[k] = {
+        ...s, cursorStart: cs, cursorEnd: ce,
+        effectiveMm: Math.max(0, Math.round(Math.abs(ce - cs) * 10)),
+      };
+      continue;
+    }
+
     const dx = s.endPoint.x - s.startPoint.x;
     const dy = s.endPoint.y - s.startPoint.y;
     const sign = s.handrailDir === 'horizontal' ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? 1 : -1);
@@ -879,36 +934,6 @@ export function walkFloorLowerRole(
       cursorEnd,
       effectiveMm: Math.max(0, Math.round(Math.abs(cursorEnd - cursorStart) * 10)),
     };
-  }
-
-  // せり出し対称化フォールバック: 引っ込んだ独立辺が凹コーナーで幾何的に候補ゼロでも、
-  // 壁幅 >= RECESSED_WALL_MIN_SCAFFOLD_MM なら足場ラインを 1 本出す（隣接辺と角で L 字に繋ぐ）。
-  // 2nd pass 後の実配置スパン |cursorEnd-cursorStart| を埋めるため、合成 rail が隣の縦ラインを
-  // 越えて突き出さず findScaffoldViolations を増やさない。900mm 未満は空のまま（飛ばす＝正常）。
-  // 対象は「引っ込み（covered=上階の下に隠れる）」辺のみ。下屋（外側に張り出す）辺は旧挙動どおり
-  // 空のまま残し、下屋/面一/総二階の parity を不変に保つ（midpoint を外向き法線へ微小移動した点が
-  // 上階ポリゴン内なら引っ込み、外なら下屋）。
-  for (let k = 0; k < intermediate.length; k++) {
-    const s = intermediate[k];
-    if (s.candidates.length > 0) continue;
-    if (s.segmentLengthMm < RECESSED_WALL_MIN_SCAFFOLD_MM) continue;
-    const midX = (s.startPoint.x + s.endPoint.x) / 2;
-    const midY = (s.startPoint.y + s.endPoint.y) / 2;
-    if (!isPointInPolygon(midX + s.nx * 1, midY + s.ny * 1, buildingAbove.points)) continue;
-    const spanMm = Math.round(Math.abs(s.cursorEnd - s.cursorStart) * 10);
-    const rails = findBestEndCombinations(spanMm, enabledSizes, priorityConfig)[0]?.rails ?? [];
-    if (rails.length === 0) continue;
-    const fallback: SequentialCandidate = {
-      rails,
-      totalMm: rails.reduce((a, b) => a + b, 0),
-      actualEndDistanceMm: s.desiredEndDistanceMm,
-      diffFromDesired: 0,
-      side: 'exact',
-      variationIdx: 0,
-      variationCount: 1,
-      remainder: 0,
-    };
-    intermediate[k] = { ...s, candidates: [fallback], selectedIndex: 0 };
   }
 
   const hasUnresolved = intermediate.some(s => !s.isLocked && !s.isAutoProgress);

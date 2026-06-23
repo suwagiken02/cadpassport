@@ -785,14 +785,16 @@ describe('computeFloorLayout せり出し N=3（Q2 covered→自前・増分2b-i
 });
 
 // ============================================================
-// S5-d 後バグ修正: せり出し入隅の「引っ込んだ壁」の足場ライン（閾値 900mm ルール）。
-//   凹コーナーに挟まれた引っ込み壁は requiredRailsTotal の最大 = -prevDist + 壁長 が
-//   minSize 未満だと全 targetEnd で空 → 候補 [] → 手摺0本（縦壁は壁長3000で出る＝非対称）。
-//   足場屋ルール: 引っ込んだ壁の幅 >=900mm は足場を出す（隣接辺と角でL字連結）/ <900mm は飛ばす（空=正常）。
+// S5-d 後バグ修正: せり出し入隅の「引っ込んだ壁」を全長充填（角〜角）する確定ルール。
+//   凹コーナーに挟まれた引っ込み壁は通常経路だと寄与が負になり割付スパンが
+//   壁長−prevDist−endDist に縮む（3000→1200）ため角側1800の手摺が欠ける。
+//   足場屋ルール: 引っ込み壁の幅 >900mm は離れで縮めず辺全長(角〜角)を埋める（隣接辺と角でL字接合）/
+//   <=900mm は隣の角の足場で兼ねるため飛ばす（候補空=正常）。
 // ============================================================
-describe('せり出し入隅: 引っ込んだ壁の足場ライン（閾値900mm・以上=出す/未満=飛ばす）', () => {
+describe('せり出し入隅: 引っ込んだ壁の全長充填（角〜角・900超=埋める/900以下=飛ばす）', () => {
   // 2F = 全体を覆う矩形。1F は上辺 x[4000..4000+wGrid] が y=300 まで引っ込む下向きノッチ（せり出し入隅）。
-  // ノッチ底辺が「引っ込んだ横壁(入隅上辺)」、両側が「引っ込んだ縦壁(3000mm)」。座標はグリッド単位で lengthMm = 幅×10。
+  // ノッチ底辺が「引っ込んだ横壁(入隅底)」、両側が「引っ込んだ縦壁(3000mm)」。いずれも凹コーナーに
+  // 挟まれる。座標はグリッド単位で lengthMm = 幅×10。
   const mkNotch = (wGrid: number) => {
     const f2: BuildingShape = {
       id: '2f', type: 'polygon',
@@ -824,26 +826,36 @@ describe('せり出し入隅: 引っ込んだ壁の足場ライン（閾値900mm
     return { f1, f2, res, hseg, vsegs, handrails };
   };
 
-  it('(e1) 引っ込んだ横壁 幅1000mm(>=900): 足場ラインを出す（手摺>0・candidates非空）＋縦壁も出る＋違反0', () => {
-    const { f1, f2, hseg, vsegs, handrails } = mkNotch(100); // 幅100グリッド = 1000mm >= 900
+  it('(f1) 引っ込んだ入隅 幅3000mm(>900): covered辺を全長充填（rails合計3000・角側1800・縦壁も3000）＋角L字接合＋違反0', () => {
+    const { f1, f2, hseg, vsegs, handrails } = mkNotch(300); // 幅300グリッド = 3000mm > 900
     expect(hseg).toBeDefined();
-    // 修正後: 幅>=900 の引っ込み横壁は最小rail を合成して手摺を出す（旧実装は空でここが赤）。
-    expect(hseg!.candidates.length).toBeGreaterThan(0);
-    expect(segmentsToHandrails([hseg!]).length).toBeGreaterThan(0);
-    // 引っ込んだ縦壁(3000mm>=900)も手摺が出る。
-    expect(vsegs.length).toBeGreaterThan(0);
-    vsegs.forEach(v => expect(segmentsToHandrails([v]).length).toBeGreaterThan(0));
+    // 全長充填: 引っ込み横壁(3000mm)の割付 rails 合計 === 3000（縮み 1200 ではない＝旧実装はここが赤）。
+    const hcand = hseg!.candidates[hseg!.selectedIndex];
+    expect(hcand).toBeDefined();
+    expect(hcand!.rails.reduce((a, b) => a + b, 0)).toBe(3000);
+    // 角側に 1800 手摺が出る（全長充填の帰結）。
+    expect(hcand!.rails).toContain(1800);
+    // 引っ込んだ縦壁(3000mm)も全長充填（rails 合計 3000）。
+    expect(vsegs.length).toBe(2);
+    vsegs.forEach(v => {
+      const vc = v.candidates[v.selectedIndex];
+      expect(vc).toBeDefined();
+      expect(vc!.rails.reduce((a, b) => a + b, 0)).toBe(3000);
+    });
+    // 角L字接合: 横壁の cursor 区間が壁端（角〜角 = x:4000..4300）まで張る（隣の縮んだ scaffoldCoord に揃えない）。
+    expect(Math.min(hseg!.cursorStart, hseg!.cursorEnd)).toBeCloseTo(4000, 1);
+    expect(Math.max(hseg!.cursorStart, hseg!.cursorEnd)).toBeCloseTo(4300, 1);
     expect(findScaffoldViolations(handrails, [f1, f2])).toEqual([]);
   });
 
-  it('(e2) 引っ込んだ横壁 幅600mm(<900): 足場を入れない（candidates空=正常）＋縦壁は出る＋違反0', () => {
-    const { f1, f2, hseg, vsegs, handrails } = mkNotch(60); // 幅60グリッド = 600mm < 900
+  it('(f2) 引っ込んだ入隅 幅600mm(<=900): 横壁は足場を出さない（候補空=無視）＋縦壁は全長充填＋違反0', () => {
+    const { f1, f2, hseg, vsegs, handrails } = mkNotch(60); // 幅60グリッド = 600mm <= 900
     expect(hseg).toBeDefined();
-    // ルール: <900mm は飛ばす（足場なし）。旧実装も修正後も空のまま＝正常。
+    // ルール: <=900mm は飛ばす（隣の角の足場で兼ねる＝候補空）。
     expect(hseg!.candidates.length).toBe(0);
     expect(segmentsToHandrails([hseg!]).length).toBe(0);
-    // 縦壁(3000mm>=900)は出る。
-    expect(vsegs.length).toBeGreaterThan(0);
+    // 縦壁(3000mm>900)は全長充填で出る。
+    expect(vsegs.length).toBe(2);
     vsegs.forEach(v => expect(segmentsToHandrails([v]).length).toBeGreaterThan(0));
     expect(findScaffoldViolations(handrails, [f1, f2])).toEqual([]);
   });
