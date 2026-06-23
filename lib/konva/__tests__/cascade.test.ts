@@ -731,8 +731,9 @@ describe('computeFloorLayout せり出し N=3（Q2 covered→自前・増分2b-i
 
     // Q2: 上階の下に引っ込んだ east 壁にも自前ラインが出る（旧仕様ならスキップ＝空だった）。
     // 1F east は x=6000 の縦壁、2F east は x=9000 の縦壁。
-    expect(r1.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 6000)).toBe(true);
-    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 9000)).toBe(true);
+    // candidates 非空（手摺が実際に出る）も固定し、空candidates 退行を捕捉する。
+    expect(r1.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 6000 && s.candidates.length > 0)).toBe(true);
+    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 9000 && s.candidates.length > 0)).toBe(true);
 
     const handrails = [
       ...segmentsToHandrails(r3.edgeSegments),
@@ -768,8 +769,10 @@ describe('computeFloorLayout せり出し N=3（Q2 covered→自前・増分2b-i
     const r2 = computeFloorLayout(2, n2, n3, n1, r3, D, null);
     const r1 = computeFloorLayout(1, n1, n2, null, r2, D, null);
 
-    // 中間階(2F): 西=引っ込み(covered→自前, x=4000 縦壁) と 東=下屋(x=12000 縦壁) の両方に自前ライン。
-    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 4000)).toBe(true);
+    // 中間階(2F): 西=引っ込み(covered→自前, x=4000 縦壁) と 東=下屋(x=12000 縦壁) の両方に自前セグメント。
+    // 引っ込み側(x=4000)は candidates 非空（手摺が実際に出る）も固定し、空candidates 退行を捕捉する。
+    // 下屋側(x=12000)はセグメント存在のみ（下屋の手摺充填は本修正の対象外＝旧挙動不変）。
+    expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 4000 && s.candidates.length > 0)).toBe(true);
     expect(r2.edgeSegments.some(s => s.handrailDir === 'vertical' && s.startPoint.x === 12000)).toBe(true);
 
     const handrails = [
@@ -778,6 +781,71 @@ describe('computeFloorLayout せり出し N=3（Q2 covered→自前・増分2b-i
       ...segmentsToHandrails(r1.edgeSegments),
     ];
     expect(findScaffoldViolations(handrails, [f1, f2, f3])).toEqual([]);
+  });
+});
+
+// ============================================================
+// S5-d 後バグ修正: せり出し入隅の「引っ込んだ壁」の足場ライン（閾値 900mm ルール）。
+//   凹コーナーに挟まれた引っ込み壁は requiredRailsTotal の最大 = -prevDist + 壁長 が
+//   minSize 未満だと全 targetEnd で空 → 候補 [] → 手摺0本（縦壁は壁長3000で出る＝非対称）。
+//   足場屋ルール: 引っ込んだ壁の幅 >=900mm は足場を出す（隣接辺と角でL字連結）/ <900mm は飛ばす（空=正常）。
+// ============================================================
+describe('せり出し入隅: 引っ込んだ壁の足場ライン（閾値900mm・以上=出す/未満=飛ばす）', () => {
+  // 2F = 全体を覆う矩形。1F は上辺 x[4000..4000+wGrid] が y=300 まで引っ込む下向きノッチ（せり出し入隅）。
+  // ノッチ底辺が「引っ込んだ横壁(入隅上辺)」、両側が「引っ込んだ縦壁(3000mm)」。座標はグリッド単位で lengthMm = 幅×10。
+  const mkNotch = (wGrid: number) => {
+    const f2: BuildingShape = {
+      id: '2f', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 12000, y: 0 }, { x: 12000, y: 7000 }, { x: 0, y: 7000 }],
+      fill: '#000', floor: 2,
+    };
+    const f1: BuildingShape = {
+      id: '1f', type: 'polygon',
+      points: [
+        { x: 0, y: 0 }, { x: 4000, y: 0 },
+        { x: 4000, y: 300 }, { x: 4000 + wGrid, y: 300 }, { x: 4000 + wGrid, y: 0 },
+        { x: 12000, y: 0 }, { x: 12000, y: 7000 }, { x: 0, y: 7000 },
+      ],
+      fill: '#000', floor: 1,
+    };
+    const res = computeCascadeLayout({ 1: f1, 2: f2 }, { 1: dist(12), 2: dist(12) }, ss);
+    const hseg = res[1].edgeSegments.find(
+      s => s.handrailDir === 'horizontal' && Math.abs(s.startPoint.y - 300) < 1
+        && Math.min(s.startPoint.x, s.endPoint.x) >= 3999
+        && Math.max(s.startPoint.x, s.endPoint.x) <= 4000 + wGrid + 1,
+    );
+    const vsegs = res[1].edgeSegments.filter(
+      s => s.handrailDir === 'vertical' && (s.startPoint.x === 4000 || s.startPoint.x === 4000 + wGrid),
+    );
+    const handrails = [
+      ...segmentsToHandrails(res[2].edgeSegments),
+      ...segmentsToHandrails(res[1].edgeSegments),
+    ];
+    return { f1, f2, res, hseg, vsegs, handrails };
+  };
+
+  it('(e1) 引っ込んだ横壁 幅1000mm(>=900): 足場ラインを出す（手摺>0・candidates非空）＋縦壁も出る＋違反0', () => {
+    const { f1, f2, hseg, vsegs, handrails } = mkNotch(100); // 幅100グリッド = 1000mm >= 900
+    expect(hseg).toBeDefined();
+    // 修正後: 幅>=900 の引っ込み横壁は最小rail を合成して手摺を出す（旧実装は空でここが赤）。
+    expect(hseg!.candidates.length).toBeGreaterThan(0);
+    expect(segmentsToHandrails([hseg!]).length).toBeGreaterThan(0);
+    // 引っ込んだ縦壁(3000mm>=900)も手摺が出る。
+    expect(vsegs.length).toBeGreaterThan(0);
+    vsegs.forEach(v => expect(segmentsToHandrails([v]).length).toBeGreaterThan(0));
+    expect(findScaffoldViolations(handrails, [f1, f2])).toEqual([]);
+  });
+
+  it('(e2) 引っ込んだ横壁 幅600mm(<900): 足場を入れない（candidates空=正常）＋縦壁は出る＋違反0', () => {
+    const { f1, f2, hseg, vsegs, handrails } = mkNotch(60); // 幅60グリッド = 600mm < 900
+    expect(hseg).toBeDefined();
+    // ルール: <900mm は飛ばす（足場なし）。旧実装も修正後も空のまま＝正常。
+    expect(hseg!.candidates.length).toBe(0);
+    expect(segmentsToHandrails([hseg!]).length).toBe(0);
+    // 縦壁(3000mm>=900)は出る。
+    expect(vsegs.length).toBeGreaterThan(0);
+    vsegs.forEach(v => expect(segmentsToHandrails([v]).length).toBeGreaterThan(0));
+    expect(findScaffoldViolations(handrails, [f1, f2])).toEqual([]);
   });
 });
 

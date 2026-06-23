@@ -35,6 +35,7 @@ import {
   isWallContinuation,
   isPointInPolygon,
   generateSequentialCandidates,
+  findBestEndCombinations,
   splitLowerAtUpper,
   DEFAULT_EDGE_ADJUSTMENT,
   HANDRAIL_SIZES,
@@ -46,6 +47,12 @@ import type {
 } from '../autoLayoutUtils';
 import { mmToGrid } from '../gridUtils';
 import type { SequentialCandidate } from './candidates';
+
+// せり出し対称化フォールバックの閾値（足場屋の現場判断）。
+// 引っ込んだ独立辺（せり出しで上階の下に隠れた壁）が凹コーナーに挟まれ、幾何的に候補ゼロ
+// （requiredRailsTotal の最大 = -prevDist + 壁長 が minSize 未満）になっても、壁幅がこの値以上なら
+// 足場ラインを 1 本出す（隣接辺と角で L 字に繋ぐ）。900mm 未満は隣の角の足場で兼ねられるため飛ばす（空=正常）。
+const RECESSED_WALL_MIN_SCAFFOLD_MM = 900;
 
 /**
  * 階セグメントの始点制約（= 旧 Bothmode1FSegmentStartConstraint の上下中立版）。
@@ -872,6 +879,36 @@ export function walkFloorLowerRole(
       cursorEnd,
       effectiveMm: Math.max(0, Math.round(Math.abs(cursorEnd - cursorStart) * 10)),
     };
+  }
+
+  // せり出し対称化フォールバック: 引っ込んだ独立辺が凹コーナーで幾何的に候補ゼロでも、
+  // 壁幅 >= RECESSED_WALL_MIN_SCAFFOLD_MM なら足場ラインを 1 本出す（隣接辺と角で L 字に繋ぐ）。
+  // 2nd pass 後の実配置スパン |cursorEnd-cursorStart| を埋めるため、合成 rail が隣の縦ラインを
+  // 越えて突き出さず findScaffoldViolations を増やさない。900mm 未満は空のまま（飛ばす＝正常）。
+  // 対象は「引っ込み（covered=上階の下に隠れる）」辺のみ。下屋（外側に張り出す）辺は旧挙動どおり
+  // 空のまま残し、下屋/面一/総二階の parity を不変に保つ（midpoint を外向き法線へ微小移動した点が
+  // 上階ポリゴン内なら引っ込み、外なら下屋）。
+  for (let k = 0; k < intermediate.length; k++) {
+    const s = intermediate[k];
+    if (s.candidates.length > 0) continue;
+    if (s.segmentLengthMm < RECESSED_WALL_MIN_SCAFFOLD_MM) continue;
+    const midX = (s.startPoint.x + s.endPoint.x) / 2;
+    const midY = (s.startPoint.y + s.endPoint.y) / 2;
+    if (!isPointInPolygon(midX + s.nx * 1, midY + s.ny * 1, buildingAbove.points)) continue;
+    const spanMm = Math.round(Math.abs(s.cursorEnd - s.cursorStart) * 10);
+    const rails = findBestEndCombinations(spanMm, enabledSizes, priorityConfig)[0]?.rails ?? [];
+    if (rails.length === 0) continue;
+    const fallback: SequentialCandidate = {
+      rails,
+      totalMm: rails.reduce((a, b) => a + b, 0),
+      actualEndDistanceMm: s.desiredEndDistanceMm,
+      diffFromDesired: 0,
+      side: 'exact',
+      variationIdx: 0,
+      variationCount: 1,
+      remainder: 0,
+    };
+    intermediate[k] = { ...s, candidates: [fallback], selectedIndex: 0 };
   }
 
   const hasUnresolved = intermediate.some(s => !s.isLocked && !s.isAutoProgress);
