@@ -831,8 +831,23 @@ export function walkFloorLowerRole(
       else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
     } else if (scStart?.kind === 'cascade-from-prev-segment') {
       const prev = k > 0 ? intermediate[k - 1] : undefined;
-      if (prev && prev.handrailDir !== s.handrailDir) cursorStart = prev.scaffoldCoord;
-      else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+      if (prev && prev.handrailDir !== s.handrailDir) {
+        cursorStart = prev.scaffoldCoord;
+      } else {
+        // 順序非依存フォールバック: prev(k-1)が無い/平行なときは、入隅角(s.startPoint)を共有する
+        // 直交セグメントを intermediate から探し、その scaffoldCoord(=内側の角座標)を起点にする。
+        // これで入隅始点の covered辺が k=0 で処理されても生角に突き出さず、隣辺と角でL字接合する。
+        const perp = intermediate.find(o =>
+          o !== s && o.handrailDir !== s.handrailDir &&
+          (pointsMatch(o.startPoint, s.startPoint) || pointsMatch(o.endPoint, s.startPoint)));
+        if (perp) {
+          cursorStart = perp.scaffoldCoord;
+        } else {
+          // 直交辺が無いとき: 始点が凹(入隅)なら離れ分引っ込める(prev.scaffoldCoord 相当)。凸/直線は生角。
+          const base = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
+          cursorStart = s.prevCornerIsConvex ? base : base + sign * mmToGrid(s.startDistanceMm);
+        }
+      }
     } else if (scStart?.kind === 'collinear-with-upper') {
       const segA = resultAbove.edgeSegments.find(seg2 => seg2.edgeIndex === scStart.upperEdgeIndex);
       if (segA && segA.handrailDir !== s.handrailDir) cursorStart = segA.scaffoldCoord;

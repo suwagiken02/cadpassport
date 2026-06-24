@@ -924,8 +924,41 @@ describe('せり出し入隅: 面一終端辺の有効長（北=西=辺長で対
     expect(railsSum(west!)).toBe(3000);
     expect(railsLen(west!)).toBe(railsLen(north!));
 
-    // 注: findScaffoldViolations の assert は本テストでは行わない。入隅内角(2100,2100)で
-    // 北辺端点が西辺の途中に乗る T 字違反は、有効長修正の前から存在する既存バグ（西辺の入隅端
-    // cursor が離れ分引っ込まず生の角に置かれる cursor 配置の問題）で、今回スコープ外（別タスク）。
+    // 入隅内角(2100,2100)で北辺端点と西辺端点が一致しL字接合（T字違反なし）。
+    expect(findScaffoldViolations(allHandrails(res), [f1, f2])).toEqual([]);
+    // 西辺の実描画手摺が入隅端で離れ分(900)引っ込む: y=-900..2100mm（生角3000mmまで突き出さない）。
+    const westRails = segmentsToHandrails(res[1].edgeSegments)
+      .filter(h => h.direction === 'vertical' && Math.abs(h.x - 210) < 1);
+    expect(westRails.length).toBeGreaterThan(0);
+    expect(Math.min(...westRails.map(h => h.y))).toBeCloseTo(-90, 1);
+    expect(Math.max(...westRails.map(h => h.y + h.lengthMm / 10))).toBeCloseTo(210, 1);
+  });
+});
+
+// ============================================================
+// せり出し入隅: 角・処理順に依存せず、入隅で隣接する covered 2辺が L字接合する。
+//   2F=全体被覆 / 1F=各角を300grid(3000mm)カットしたL字。入隅は常に[300,300]。
+//   入隅始点の covered辺が k=0 で処理されると 2nd-pass cursor が生角へフォールバックし
+//   足場線が突き出して隣辺と T字違反になる（NW角で発現）。SW/NE/SE では prev 経由で
+//   正しく引っ込む。角に依らず一律 findScaffoldViolations===[] を固定する。
+// ============================================================
+describe('せり出し入隅: 角非依存で covered 2辺がL字接合（T字違反なし）', () => {
+  const f2: BuildingShape = {
+    id: '2f', type: 'polygon',
+    points: [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 600 }, { x: 0, y: 600 }],
+    fill: '#000', floor: 2,
+  };
+  const variants: Array<{ name: string; pts: { x: number; y: number }[] }> = [
+    { name: 'NW', pts: [{ x: 300, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 600 }, { x: 0, y: 600 }, { x: 0, y: 300 }, { x: 300, y: 300 }] },
+    { name: 'SW', pts: [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 600 }, { x: 300, y: 600 }, { x: 300, y: 300 }, { x: 0, y: 300 }] },
+    { name: 'NE', pts: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 600, y: 300 }, { x: 600, y: 600 }, { x: 0, y: 600 }] },
+    { name: 'SE', pts: [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 300 }, { x: 300, y: 300 }, { x: 300, y: 600 }, { x: 0, y: 600 }] },
+  ];
+  variants.forEach(v => {
+    it(`${v.name}角カット入隅: findScaffoldViolations===[]（L字接合）`, () => {
+      const f1: BuildingShape = { id: '1f', type: 'polygon', points: v.pts, fill: '#000', floor: 1 };
+      const res = computeCascadeLayout({ 1: f1, 2: f2 }, { 1: dist(8), 2: dist(8) }, ss);
+      expect(findScaffoldViolations(allHandrails(res), [f1, f2])).toEqual([]);
+    });
   });
 });
