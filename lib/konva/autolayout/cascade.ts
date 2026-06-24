@@ -743,7 +743,10 @@ export function walkFloorLowerRole(
       desiredEndDist = chained ?? distancesThis[nextEdgeIdx] ?? 900;
     }
 
-    if (endConstraint.kind === 'collinear-with-upper') nextCornerIsConvex = false;
+    // 面一終端の凹ラップ（末端の凸+900突出を潰し effective=壁長へ揃える）は、始点が凸(出隅,+900)で
+    // 突出している辺だけに限定する。始点が入隅(凹,-900)の辺（せり出し入隅の面一終端側壁＝西）で潰すと
+    // -900-900 で壁長より1800縮むため、始点凹のときは終点コーナーの幾何上の凸を残す（-900+L+900=壁長）。
+    if (endConstraint.kind === 'collinear-with-upper' && prevCornerIsConvex) nextCornerIsConvex = false;
 
     const candidates = generateSequentialCandidates(
       edge.lengthMm, startDist, desiredEndDist,

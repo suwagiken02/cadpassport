@@ -875,3 +875,57 @@ describe('computeCascadeLayout N=3 端到端（ドライバ・P3-3）', () => {
     expect(() => computeCascadeLayout(buildings, { 1: dist(4), 3: dist(4) }, ss)).toThrow();
   });
 });
+
+// ============================================================
+// せり出し入隅: 面一終端辺の「有効長」非対称バグ（cascade.ts:746 凹ラップ）
+//   2F=全体を覆う矩形 / 1F=NW角を辺長3000(=300grid)でカットしたL字。
+//   入隅[300,300]で隣り合う covered 2辺（北=横/西=縦, 各3000mm, 外周側は面一）の
+//   有効長(=選択candidate rails合計, 表示の「有効」)が、北=3000(正) / 西=1200(誤) と非対称になる。
+//   西は collinear-with-upper 終端で出隅(+900)が凹ラップに潰され -900-900 で1800縮む。
+//   正: 北・西とも有効=辺長3000・同本数（外周の出隅と同じおさまり）。
+// ============================================================
+describe('せり出し入隅: 面一終端辺の有効長（北=西=辺長で対称）', () => {
+  // grid 単位（lengthMm = grid×10）。辺長3000mm = 300grid。
+  const f2: BuildingShape = {
+    id: '2f', type: 'polygon',
+    points: [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 600 }, { x: 0, y: 600 }],
+    fill: '#000', floor: 2,
+  };
+  // 1F = NW角を 300x300 でカットした L字（時計回り）。入隅は [300,300]。
+  const f1: BuildingShape = {
+    id: '1f', type: 'polygon',
+    points: [
+      { x: 300, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 600 },
+      { x: 0, y: 600 }, { x: 0, y: 300 }, { x: 300, y: 300 },
+    ],
+    fill: '#000', floor: 1,
+  };
+  const railsSum = (s: { candidates: { rails: number[] }[]; selectedIndex: number }) =>
+    s.candidates[s.selectedIndex]?.rails.reduce((a, b) => a + b, 0) ?? 0;
+  const railsLen = (s: { candidates: { rails: number[] }[]; selectedIndex: number }) =>
+    s.candidates[s.selectedIndex]?.rails.length ?? 0;
+
+  it('入隅で隣接する北辺(横)と西辺(縦)が両方とも有効=辺長3000・同本数', () => {
+    const res = computeCascadeLayout({ 1: f1, 2: f2 }, { 1: dist(8), 2: dist(8) }, ss);
+    // 北 = y=300 の covered 横辺 [0,300]→[300,300]
+    const north = res[1].edgeSegments.find(
+      s => s.handrailDir === 'horizontal' && Math.abs(s.startPoint.y - 300) < 1,
+    );
+    // 西 = x=300 の covered 縦辺 [300,300]→[300,0]
+    const west = res[1].edgeSegments.find(
+      s => s.handrailDir === 'vertical' && Math.abs(s.startPoint.x - 300) < 1,
+    );
+    expect(north).toBeDefined();
+    expect(west).toBeDefined();
+
+    // 北は元々正しい: 有効=辺長3000（例 1800+1200 = 2本）
+    expect(railsSum(north!)).toBe(3000);
+    // 西は現状 1200/1本で赤 → 修正後 北と同じ 3000・同本数
+    expect(railsSum(west!)).toBe(3000);
+    expect(railsLen(west!)).toBe(railsLen(north!));
+
+    // 注: findScaffoldViolations の assert は本テストでは行わない。入隅内角(2100,2100)で
+    // 北辺端点が西辺の途中に乗る T 字違反は、有効長修正の前から存在する既存バグ（西辺の入隅端
+    // cursor が離れ分引っ込まず生の角に置かれる cursor 配置の問題）で、今回スコープ外（別タスク）。
+  });
+});
