@@ -17,7 +17,7 @@ import {
 // 順次決定モーダルの空候補回帰 修正:
 //   - 非デフォルト引数(←/→・割り変更)でも候補を返す(旧: [] 空返却)
 //   - 自動進行は「候補1件 かつ 離れ差0 かつ 端数0」のみ
-//   - rule5(±50mm内に制約内解なし)は空でなく最近解1件(端数付き)
+//   - ±50mm内に制約内解なしのとき、外側を自由探索し近い割れ位置(smaller/larger)を動かせる候補で返す
 //   - 非メイン≤3・±50mm・大物案デフォルトの先週ルールは維持
 // ============================================================
 
@@ -70,17 +70,22 @@ describe('constrained 候補生成: 操作対応 (←/→・割り変更)', () =
     expect(nonMain(sOff!.rails)).toBeLessThanOrEqual(3);
   });
 
-  it('(e) rule5: ±50mm 内に制約内解が無くても空でなく最近解1件(端数付き)を返す', () => {
-    // pc=false, nc=false, start=600, desired=1300, edge=2000 → window 空・rule5 解あり
+  it('(e) rule5差し替え: ±50mm 内に解が無いとき、外側の近い割れ位置を動かせる候補(smaller/larger)で返す', () => {
+    // pc=false, nc=false, start=600, desired=1300, edge=2000 → 窓[1250,1350]空。
+    // 外側自由探索: smaller側 E=1200(required=200=[200])が最初の clean。larger側は required<=0 で解なし。
     const r = generateSequentialCandidates(
       2000, 600, 1300, false, false, 600,
       INCH_DEFAULT_ENABLED_SIZES, INCH_DEFAULT_PRIORITY_CONFIG,
     );
-    expect(r.length).toBe(1);
-    expect(r[0].diffFromDesired).toBe(0);        // 離れは動かさない
-    expect(r[0].remainder).toBeDefined();
-    expect(r[0].remainder).not.toBe(0);          // 端数で表示
-    expect(nonMain(r[0].rails)).toBeLessThanOrEqual(3);
+    expect(r.length).toBeGreaterThanOrEqual(1);
+    // 旧 rule5 の「希望離れ＋端数の単一候補」ではなく、離れを動かした clean split を提示する。
+    r.forEach(c => {
+      expect(c.diffFromDesired).not.toBe(0);                 // 離れを動かす
+      expect(c.side === 'smaller' || c.side === 'larger').toBe(true);
+      expect(c.remainder ?? 0).toBe(0);                      // 端数残りではなく clean
+      expect(nonMain(c.rails)).toBeLessThanOrEqual(3);       // 非メイン≤3 維持
+    });
+    expect(r.some(c => c.side === 'smaller')).toBe(true);    // 近い smaller 側を提示
   });
 });
 

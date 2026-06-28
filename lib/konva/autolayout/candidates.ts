@@ -125,28 +125,26 @@ function generateConstrainedCandidates(
       return result;
     }
 
-    // rule5: ±許容内に制約内解なし → 非メイン≤3 のまま最も近い解。離れは動かさず端数表示。
-    const T0 = startContribution + edgeLengthMm + (isNextConvex ? desiredEndDistanceMm : -desiredEndDistanceMm);
-    let nearest: C | null = null;
-    for (let d = TOL + 1; d <= MAX_DELTA && !nearest; d++) {
-      const here = [...combosAt(desiredEndDistanceMm - d), ...combosAt(desiredEndDistanceMm + d)];
-      if (here.length > 0) {
-        here.sort(cmp);
-        nearest = here[0];
-      }
+    // ±許容窓に制約内解が無いとき: 旧 rule5(希望離れ＋端数の単一候補)を撤廃し、外側へ自由探索して
+    // 最近の smaller側/larger側 clean split を「動かせる候補」として提示する(←/→・候補カードで選択可)。
+    // 非メイン≤3 は findAllCombinationsForEnd の枝刈りで担保、大物案優先は cmp(スコア降順) で担保。
+    const nearestSides: Array<{ c: C; varCount: number }> = [];
+    // smaller側: 希望離れから外側へ、最初に解ける離れの cmp 最良組合せ
+    for (let d = TOL + 1; d <= MAX_DELTA; d++) {
+      const t = desiredEndDistanceMm - d;
+      if (t < 0) break;
+      const cs = combosAt(t);
+      if (cs.length > 0) { cs.sort(cmp); nearestSides.push({ c: cs[0], varCount: cs.length }); break; }
     }
-    if (!nearest) return []; // 幾何的に配置不能(最小部材未満)のみ空を許容
-    const comboTotal = nearest.rails.reduce((a, b) => a + b, 0);
-    return [{
-      rails: nearest.rails,
-      totalMm: comboTotal,
-      actualEndDistanceMm: desiredEndDistanceMm, // 離れは動かさない
-      diffFromDesired: 0,
-      side: 'exact',
-      variationIdx: 0,
-      variationCount: 1,
-      remainder: T0 - comboTotal, // +: 不足, -: 突出
-    }];
+    // larger側: 同様に外側へ
+    for (let d = TOL + 1; d <= MAX_DELTA; d++) {
+      const cs = combosAt(desiredEndDistanceMm + d);
+      if (cs.length > 0) { cs.sort(cmp); nearestSides.push({ c: cs[0], varCount: cs.length }); break; }
+    }
+    if (nearestSides.length === 0) return []; // 幾何的に配置不能(最小部材未満)のみ空を許容
+    // 大物案を先頭(=既定 selectedIndex 0)に
+    nearestSides.sort((a, b) => cmp(a.c, b.c));
+    return nearestSides.map(({ c, varCount }) => build(c, sideOf(c.diff), 0, 0, varCount));
   }
 
   // === 非デフォルト引数: ←/→(離れ変更)・割り変更(部材変更)に応える ===
