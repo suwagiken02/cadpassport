@@ -47,7 +47,10 @@ function generateConstrainedCandidates(
   smallerOffsetIdx: number,
   largerVariationIdx: number,
   smallerVariationIdx: number,
+  // 範囲離れ S-3: 帯[lo,hi] の受け口。本体では未使用（S-4 で帯探索に使用）。未指定=現±50窓+rule5で現挙動。
+  band?: { lo: number; hi: number },
 ): SequentialCandidate[] {
+  void band; // S-3: 受けるだけ（S-4 で参照）
   const isDefaultArgs =
     largerOffsetIdx === 0 && smallerOffsetIdx === 0 &&
     largerVariationIdx === 0 && smallerVariationIdx === 0;
@@ -230,6 +233,8 @@ export function generateSequentialCandidates(
   smallerOffsetIdx: number = 0,
   largerVariationIdx: number = 0,
   smallerVariationIdx: number = 0,
+  // 範囲離れ S-3: 帯[lo,hi] 受け口。priorityConfig 経路へ透過。未指定=現挙動（非priorityConfig経路は不使用）。
+  band?: { lo: number; hi: number },
 ): SequentialCandidate[] {
   if (enabledSizes.length === 0) return [];
 
@@ -253,6 +258,7 @@ export function generateSequentialCandidates(
       smallerOffsetIdx,
       largerVariationIdx,
       smallerVariationIdx,
+      band,
     );
   }
 

@@ -201,6 +201,7 @@ export function computeFloorLayout(
   priorityConfig?: PriorityConfig,
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
+  band?: { lo: number; hi: number }, // 範囲離れ S-3: 帯受け口（中間/最下階の walk へ透過。最上階は computeBothmode2FLayout 委譲のため未配線＝S-4で対応）
 ): FloorLayoutResult {
   if (buildingAbove === null) {
     // ── 最上階ブランチ（全周スパイン）──
@@ -253,6 +254,7 @@ export function computeFloorLayout(
       priorityConfig,
       userSelections,
       userAdjustments,
+      band,
     );
   }
 
@@ -273,6 +275,7 @@ export function computeFloorLayout(
     priorityConfig,
     userSelections,
     userAdjustments,
+    band,
   );
 }
 
@@ -298,6 +301,7 @@ export function computeCascadeLayout(
   priorityConfig?: PriorityConfig,
   userSelectionsByFloor?: Record<number, Record<string, number>>,
   userAdjustmentsByFloor?: Record<number, Record<string, EdgeAdjustment>>,
+  band?: { lo: number; hi: number }, // 範囲離れ S-3: 帯受け口（computeFloorLayout へ透過。未指定=現挙動）
 ): Record<number, FloorLayoutResult> {
   // 降順（最上階→最下階）
   const floors = Object.keys(buildingsByFloor).map(Number).sort((a, b) => b - a);
@@ -337,6 +341,7 @@ export function computeCascadeLayout(
       priorityConfig,
       userSelectionsByFloor?.[f],
       userAdjustmentsByFloor?.[f],
+      band,
     );
     results[f] = r;
     resultAbove = r;
@@ -371,6 +376,7 @@ export function walkFloorUpperRole(
   priorityConfig?: PriorityConfig,
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
+  band?: { lo: number; hi: number }, // 範囲離れ S-3: 帯受け口（透過。未指定=現挙動）
 ): FloorLayoutResult {
   const edgesThis = getBuildingEdgesClockwise(buildingThis);
   const edgesBelow = getBuildingEdgesClockwise(buildingBelow);
@@ -481,6 +487,7 @@ export function walkFloorUpperRole(
       adj.smaller.offsetIdx,
       adj.larger.variationIdx,
       adj.smaller.variationIdx,
+      band,
     );
 
     let selectedIndex = userSelections?.[segKey] ?? 0;
@@ -599,6 +606,7 @@ export function walkFloorLowerRole(
   priorityConfig?: PriorityConfig,
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
+  band?: { lo: number; hi: number }, // 範囲離れ S-3: 帯受け口（透過。未指定=現挙動）
 ): FloorLayoutResult {
   const edgesThis = getBuildingEdgesClockwise(buildingThis);
   const edgesAbove = getBuildingEdgesClockwise(buildingAbove);
@@ -755,6 +763,7 @@ export function walkFloorLowerRole(
       enabledSizes, priorityConfig,
       adj.larger.offsetIdx, adj.smaller.offsetIdx,
       adj.larger.variationIdx, adj.smaller.variationIdx,
+      band,
     );
 
     let selectedIndex = userSelections?.[segKey] ?? 0;
@@ -918,11 +927,12 @@ export function walkFloorMiddle(
   priorityConfig?: PriorityConfig,
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
+  band?: { lo: number; hi: number }, // 範囲離れ S-3: 帯受け口（下階ロールへ透過。未指定=現挙動）
 ): FloorLayoutResult {
   // 1) 上階継承で this のセグメントを作る（下階ロールを無改変で利用）。
   const base = walkFloorLowerRole(
     floor, buildingThis, buildingAbove, resultAbove, distancesThis,
-    enabledSizes, priorityConfig, userSelections, userAdjustments,
+    enabledSizes, priorityConfig, userSelections, userAdjustments, band,
   );
 
   // 2) 直下階向けの柱マーカーを graft（upper-role の柱検出を流用）。

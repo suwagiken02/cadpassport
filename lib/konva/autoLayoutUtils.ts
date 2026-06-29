@@ -384,6 +384,8 @@ export function computeAutoLayoutSequential(
   // Phase I-2: 各辺の「割り変更」「←/→」操作状態。undefined or 該当 edge 無しなら
   // 全 0 (既存挙動と完全互換)。
   userAdjustments?: Record<number, EdgeAdjustment>,
+  // 範囲離れ S-3: 帯[lo,hi] 受け口（generateSequentialCandidates へ透過。未指定=現挙動）
+  band?: { lo: number; hi: number },
 ): SequentialLayoutResult {
   const edges = getBuildingEdgesClockwise(building);
   const n = edges.length;
@@ -481,6 +483,7 @@ export function computeAutoLayoutSequential(
       adj.smaller.offsetIdx,
       adj.larger.variationIdx,
       adj.smaller.variationIdx,
+      band,
     );
 
     let selectedIndex = userSelections?.[edge.index] ?? 0;
