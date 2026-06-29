@@ -426,6 +426,12 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // handleCalc/エンジン無改変＝既存挙動完全不変）。初期は lo===hi=defaultDist で現状の単一離れに縮退し、
   // S-4 で帯[lo,hi]探索（案B 帯内cascade）へ接続する。
   const [rangeDist, setRangeDist] = useState<{ lo: number; hi: number }>({ lo: defaultDist, hi: defaultDist });
+  // 範囲離れ S-2: 帯[lo,hi]の優先（中央/下限）。S-4 で帯探索の優先ルールへ昇格。
+  const [distMode, setDistMode] = useState<'center' | 'lower'>('center');
+  // S-2: 帯を代表値1個に畳んで全辺へ展開（エンジン無改変）。center=中央値/lower=下限。
+  const repDist = distMode === 'center'
+    ? Math.round((rangeDist.lo + rangeDist.hi) / 2)
+    : rangeDist.lo;
   // 旧 distances/distances1F は record からの派生 alias（reader 無改変・挙動不変）。
   const distances = distancesByFloor[primaryFloor] ?? {};
   const distances1F = distancesByFloor[subFloor] ?? {};
@@ -449,14 +455,13 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   useEffect(() => {
     if (targetFloor !== 'both') return;
     setDistancesByFloor(prev => {
-      const prevSub = prev[subFloor] ?? {};
       const next: Record<number, number> = {};
       uncoveredEdges1F.forEach(e => {
-        next[e.index] = prevSub[e.index] ?? 900;
+        next[e.index] = repDist; // S-2: 1F下屋辺も建物全体の範囲代表値を一律適用
       });
       return { ...prev, [subFloor]: next };
     });
-  }, [uncoveredEdges1F, targetFloor]);
+  }, [uncoveredEdges1F, targetFloor, repDist]);
 
   // 対象階切替時は distances をその階用に再構築
   useEffect(() => {
@@ -473,12 +478,12 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         if (e.index === face1Edge.index) { d[e.index] = scaffoldStart.face1DistanceMm; return; }
         if (e.index === face2Edge.index) { d[e.index] = scaffoldStart.face2DistanceMm; return; }
       }
-      d[e.index] = defaultDist;
+      d[e.index] = repDist; // S-2: 非起点辺は建物全体の範囲代表値を一律適用（起点角は上で温存）
     });
     setDistancesByFloor(prev => ({ ...prev, [primaryFloor]: d }));
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFloor, building?.id]);
+  }, [targetFloor, building?.id, repDist]);
 
   const [result, setResult] = useState<AutoLayoutResult | null>(null);
   // 「1F+2F同時」モード専用: サブ階層（= 1F 下屋辺）の割付結果
@@ -1278,76 +1283,58 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             showFloorPrefix={targetFloor === 'both'}
           />
 
-          {/* 各辺の離れ入力 */}
+          {/* 範囲離れ入力（S-2: 建物全体で1個の範囲[lo,hi]＋優先。代表値を全辺へ展開しエンジンは無改変。
+              S-4 で各辺を帯内の割れる位置へ自動配置する帯探索に接続する） */}
           <div>
-            <p className="text-sm text-dimension mb-2">各辺の離れ (mm)</p>
-            {/* 一括入力 (= 全辺に同値を一斉コピー、 locked edge はスキップ) */}
-            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-dark-border/50">
-              <span className="text-[10px] text-dimension w-12 shrink-0">一括</span>
+            <p className="text-sm text-dimension mb-2">範囲離れ (mm)</p>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] text-dimension w-10 shrink-0">下限</span>
               <NumInput
-                value={bulkMm}
-                onChange={setBulkMm}
+                value={rangeDist.lo}
+                onChange={v => {
+                  const lo = Math.max(0, v);
+                  setRangeDist(r => ({ lo, hi: Math.max(r.hi, lo) })); // lo>hi なら hi を引き上げ
+                  setResult(null); setActiveEdge(null);
+                }}
                 min={0} step={1}
                 className="flex-1 bg-dark-bg border border-dark-border rounded-lg px-2 py-1.5 text-sm font-mono"
               />
-              <button
-                type="button"
-                onClick={() => {
-                  edges.forEach(edge => {
-                    if (!lockedEdgeIndices.has(edge.index)) {
-                      setDistance(edge.index, bulkMm);
-                    }
-                  });
+              <span className="text-[10px] text-dimension shrink-0">〜</span>
+              <span className="text-[10px] text-dimension w-10 shrink-0">上限</span>
+              <NumInput
+                value={rangeDist.hi}
+                onChange={v => {
+                  const hi = Math.max(0, v);
+                  setRangeDist(r => ({ hi, lo: Math.min(r.lo, hi) })); // hi<lo なら lo を引き下げ
+                  setResult(null); setActiveEdge(null);
                 }}
-                className="px-3 py-1.5 bg-accent text-white text-xs font-bold rounded-lg shrink-0"
-              >
-                全部に適用
-              </button>
+                min={0} step={1}
+                className="flex-1 bg-dark-bg border border-dark-border rounded-lg px-2 py-1.5 text-sm font-mono"
+              />
             </div>
-            <div className="space-y-1.5">
-              {edges.map(edge => (
-                <div key={edge.index} className="flex items-center gap-2">
-                  <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${
-                    focusedEdgeIndex === edge.index ? 'bg-accent text-white' : 'bg-dark-bg text-dimension'
-                  }`}>
-                    {/* Phase H-3d-3: bothmode は 1F 側 (1{label}) と対称に "2" prefix */}
-                    {targetFloor === 'both' ? `2${edge.label}` : edge.label}
-                  </span>
-                  <span className="text-[10px] text-dimension w-6 shrink-0">{FACE_LABEL[edge.face]}</span>
-                  {lockedEdgeIndices.has(edge.index) ? (
-                    <div className="relative flex-1">
-                      <input
-                        type="number"
-                        value={getDistance(edge.index)}
-                        disabled
-                        className="w-full bg-dark-bg border border-dark-border rounded-lg px-2 py-1.5 text-sm font-mono opacity-50 cursor-not-allowed"
-                      />
-                      <div
-                        className="absolute inset-0 cursor-not-allowed"
-                        onClick={() => setShowLockedAlert(true)}
-                      />
-                    </div>
-                  ) : (
-                    // NumInput: 内部テキストstate + blur/Enterでコミット。
-                    // これにより入力途中の "9" や空欄を許容し、Backspace で自由に編集可能。
-                    <NumInput
-                      value={getDistance(edge.index)}
-                      onChange={v => setDistance(edge.index, Math.max(0, v))}
-                      onFocus={() => setFocusedEdgeIndex(edge.index)}
-                      onBlur={() => setFocusedEdgeIndex(null)}
-                      min={0} step={1}
-                      className={`flex-1 bg-dark-bg border rounded-lg px-2 py-1.5 text-sm font-mono ${
-                        focusedEdgeIndex === edge.index ? 'border-accent' : 'border-dark-border'
-                      }`}
-                    />
-                  )}
-                  {lockedEdgeIndices.has(edge.index) && (
-                    <span className="text-[10px] text-dimension bg-dark-bg px-1.5 py-0.5 rounded border border-dark-border shrink-0">固定</span>
-                  )}
-                  <span className="text-[10px] text-dimension w-16 text-right shrink-0">{edge.lengthMm}mm</span>
-                </div>
+            {/* 優先: 中央優先(デフォルト) / 下限優先 */}
+            <div className="flex gap-1.5">
+              {([
+                { v: 'center', label: '中央優先（範囲の真ん中を狙う）' },
+                { v: 'lower', label: '下限優先（建物に近い側）' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => { setDistMode(opt.v); setResult(null); setActiveEdge(null); }}
+                  className={`flex-1 py-2 rounded-lg text-[11px] font-bold border transition-colors ${
+                    distMode === opt.v
+                      ? 'border-accent bg-accent/15 text-accent'
+                      : 'border-dark-border text-dimension hover:border-accent/50'
+                  }`}
+                >
+                  {opt.label}
+                </button>
               ))}
             </div>
+            <p className="mt-1.5 text-[10px] text-dimension">
+              全建物・全階・全辺に一律。S-2 は範囲を代表値 <span className="font-mono">{repDist}mm</span> に畳んで計算（各辺を帯内の割れる位置へ配るのは S-4）。
+            </p>
           </div>
 
           {scaffoldStart && (
@@ -1358,66 +1345,25 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             </p>
           )}
 
-          {/* 1F下屋辺の離れ入力（1F+2F同時モード・下屋辺あり時のみ表示） */}
-          {/* Phase H-3d-2 Stage 5 Part D-2-a: 連動辺は「= 2F-X面」表示にして入力無効化 */}
+          {/* 1F下屋辺（1F+2F同時モード・下屋辺あり時のみ）。S-2: 専用の辺ごと離れ入力を廃止し、
+              上の「範囲離れ」を1F/2F共通で適用する（連動辺は従来どおり2Fに追従）。 */}
           {targetFloor === 'both' && subEdgesRelabeled.length > 0 && (() => {
             const collinearCount = subEdgesRelabeled.filter(e => collinear1FToEdge2F.has(e.index)).length;
+            const indepCount = subEdgesRelabeled.length - collinearCount;
             return (
               <div>
-                <p className="text-sm text-dimension mb-2 flex items-center gap-2">
+                <p className="text-sm text-dimension mb-1 flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block" />
-                  1F 下屋辺の離れ (mm)
+                  1F 下屋辺
                   <span className="text-[10px] text-dimension/70">
                     ({subEdgesRelabeled.length} 本{collinearCount > 0 ? ` / うち ${collinearCount} 本は2Fと連動` : ''})
                   </span>
                 </p>
-                <div className="space-y-1.5">
-                  {/* Phase H-3d-4 fix: 下屋単独 normalized ラベル (1A/1B/1C) を使うため
-                      subEdgesRelabeled をループ元にする。 uncoveredEdges1F.label は
-                      1F 全周連番のため "1C/1D/1E" 等になってしまう。 */}
-                  {subEdgesRelabeled.map(edge => {
-                    const linkedEdge2F = collinear1FToEdge2F.get(edge.index);
-                    return (
-                      <div key={`sub-${edge.index}`} className="flex items-center gap-2">
-                        <span className={`w-8 h-6 flex items-center justify-center rounded text-xs font-bold ${
-                          focusedSubEdgeIndex === edge.index ? 'bg-green-500 text-white' : 'bg-dark-bg text-green-400'
-                        }`}>
-                          1{edge.label}
-                        </span>
-                        <span className="text-[10px] text-dimension w-6 shrink-0">{FACE_LABEL[edge.face]}</span>
-                        {linkedEdge2F ? (
-                          <span className="flex-1 bg-dark-bg/50 border border-dark-border/50 rounded-lg px-2 py-1.5 text-sm font-mono text-dimension/70">
-                            = 2F {linkedEdge2F.label}面と連動
-                          </span>
-                        ) : (
-                          <NumInput
-                            value={distances1F[edge.index] ?? 900}
-                            onChange={v => {
-                              setDistancesByFloor(prev => ({ ...prev, [subFloor]: { ...(prev[subFloor] ?? {}), [edge.index]: Math.max(0, v) } }));
-                              setResultSub(null);
-                              // 順次決定 state をリセット（1F の距離変更は 1F のみ影響だが、安全のため両方）
-                              setSequentialResult2F(null);
-                              setSequentialResult1F(null);
-                              setUserSelectionsByFloor({});
-                              // Phase H-3d-2 Stage 5 Part A: bothmode state もリセット（S5-c-i: layoutByFloor 統合）
-                              setLayoutByFloor(null);
-                              setBothmodeSelectionsByFloor({});
-                              setBothmodeAdjustmentsByFloor({});
-                              setActiveEdge(null);
-                            }}
-                            onFocus={() => setFocusedSubEdgeIndex(edge.index)}
-                            onBlur={() => setFocusedSubEdgeIndex(null)}
-                            min={0} step={1}
-                            className={`flex-1 bg-dark-bg border rounded-lg px-2 py-1.5 text-sm font-mono ${
-                              focusedSubEdgeIndex === edge.index ? 'border-green-500' : 'border-dark-border'
-                            }`}
-                          />
-                        )}
-                        <span className="text-[10px] text-dimension w-16 text-right shrink-0">{edge.lengthMm}mm</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-[10px] text-dimension">
+                  {indepCount > 0
+                    ? <>下屋辺の離れも上の範囲離れ（代表値 <span className="font-mono">{repDist}mm</span>）を共用します。</>
+                    : '下屋辺はすべて2Fと連動します。'}
+                </p>
               </div>
             );
           })()}
