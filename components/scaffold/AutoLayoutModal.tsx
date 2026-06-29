@@ -422,6 +422,10 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     });
     return { [primaryFloor]: d };
   });
+  // 範囲離れ S-1: 建物全体で1個の離れ範囲[lo,hi]の型/state 土台。S-1 では未参照（UI非表示・
+  // handleCalc/エンジン無改変＝既存挙動完全不変）。初期は lo===hi=defaultDist で現状の単一離れに縮退し、
+  // S-4 で帯[lo,hi]探索（案B 帯内cascade）へ接続する。
+  const [rangeDist, setRangeDist] = useState<{ lo: number; hi: number }>({ lo: defaultDist, hi: defaultDist });
   // 旧 distances/distances1F は record からの派生 alias（reader 無改変・挙動不変）。
   const distances = distancesByFloor[primaryFloor] ?? {};
   const distances1F = distancesByFloor[subFloor] ?? {};
