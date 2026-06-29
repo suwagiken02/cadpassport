@@ -949,6 +949,53 @@ export function isCollinearWith(edge1F: EdgeInfo, edge2F: EdgeInfo): boolean {
   return true;
 }
 
+// ============================================================
+// 同一壁線判定 (S-6-1):
+//   isCollinearWith の「完全包含」(項4) を「重なり/接触」に緩めた版。
+//   2辺が「同じ位置の壁(同一線)」かを判定する。判定:
+//     a. 両辺とも軸並行 かつ handrailDir 一致
+//     b. 固定軸座標一致 (horizontal: Y、vertical: X)
+//     c. 外向き法線 (nx, ny) 一致
+//     d. 可変軸区間が重なる or 接触: max(minA,minB) <= min(maxA,maxB)
+//        (<= で端点接触も真。normalize で分割された延長部が端点共有のみのケースを捕捉するため
+//         <= が必須。完全に離れた同一線上の別壁は max(min) > min(max) で false)
+//   ※ S-6-2 で「1F 独立辺が同一壁線の 2F 辺から離れ(startDistanceMm)を継承」するのに使用予定。
+//      本関数はまだどこからも呼ばれない (未使用・挙動不変)。
+// ============================================================
+export function isSameWallLine(edgeA: EdgeInfo, edgeB: EdgeInfo): boolean {
+  // a. 両辺とも軸並行
+  const aIsH = edgeA.p1.y === edgeA.p2.y;
+  const aIsV = edgeA.p1.x === edgeA.p2.x;
+  const bIsH = edgeB.p1.y === edgeB.p2.y;
+  const bIsV = edgeB.p1.x === edgeB.p2.x;
+  if (!(aIsH || aIsV)) return false;
+  if (!(bIsH || bIsV)) return false;
+
+  // a(続). handrailDir 一致
+  if (edgeA.handrailDir !== edgeB.handrailDir) return false;
+
+  // b. 固定軸座標一致
+  if (edgeA.handrailDir === 'horizontal') {
+    if (edgeA.p1.y !== edgeB.p1.y) return false;
+  } else {
+    if (edgeA.p1.x !== edgeB.p1.x) return false;
+  }
+
+  // c. 外向き法線一致
+  if (edgeA.nx !== edgeB.nx || edgeA.ny !== edgeB.ny) return false;
+
+  // d. 可変軸区間が重なる or 接触 (<= で端点接触も真)
+  let minA: number, maxA: number, minB: number, maxB: number;
+  if (edgeA.handrailDir === 'horizontal') {
+    minA = Math.min(edgeA.p1.x, edgeA.p2.x); maxA = Math.max(edgeA.p1.x, edgeA.p2.x);
+    minB = Math.min(edgeB.p1.x, edgeB.p2.x); maxB = Math.max(edgeB.p1.x, edgeB.p2.x);
+  } else {
+    minA = Math.min(edgeA.p1.y, edgeA.p2.y); maxA = Math.max(edgeA.p1.y, edgeA.p2.y);
+    minB = Math.min(edgeB.p1.y, edgeB.p2.y); maxB = Math.max(edgeB.p1.y, edgeB.p2.y);
+  }
+  return Math.max(minA, minB) <= Math.min(maxA, maxB);
+}
+
 /**
  * edge1F が edge2F と「同一壁の隣接継続」か判定する (面一の含有 collinear とは別の第3区分)。
  * 同じ handrailDir・同じ固定軸座標・同じ外向き法線で、edge1F の始点が edge2F の終点に
