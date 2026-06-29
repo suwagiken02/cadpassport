@@ -117,3 +117,45 @@ describe('自動進行ポリシー: 候補1件 かつ 離れ差0 かつ 端数0 
     });
   });
 });
+
+// ============================================================
+// 範囲離れ S-4a: band[lo,hi,mode] 帯探索
+//   メートル(GCD=100): startContribution=+900・nextConvex=true →
+//   requiredRailsTotal = 900 + 3000 + targetEnd = 3900 + targetEnd。
+//   remainder=0(clean) は targetEnd が 100 の倍数のとき。band[820,1180] の clean は 900/1000/1100。
+//   (引数: edgeLen, startDist, desiredEnd, prevConvex, nextConvex, prevEdgeStart, sizes, pc, +offset/var 4つ, band)
+// ============================================================
+describe('範囲離れ S-4a: band[lo,hi,mode] 帯探索', () => {
+  const M = [3000, 900, 900, true, true, 900, DEFAULT_ENABLED_SIZES, DEFAULT_PRIORITY_CONFIG] as const;
+
+  it('(f) band+center: 帯内で中央に最も近い割れ位置を1件で自動採用(diff0/remainder0/帯内)', () => {
+    const r = generateSequentialCandidates(...M, 0, 0, 0, 0, { lo: 820, hi: 1180, mode: 'center' });
+    expect(r.length).toBe(1);
+    const c = r[0];
+    expect(c.remainder ?? 0).toBe(0);                 // 帯内 clean
+    expect(c.diffFromDesired).toBe(0);                // 自動配置(isAutoProgress)になる形
+    expect(c.actualEndDistanceMm).toBeGreaterThanOrEqual(820);
+    expect(c.actualEndDistanceMm).toBeLessThanOrEqual(1180);
+    expect(c.actualEndDistanceMm).toBe(1000);         // 中央1000 の clean
+  });
+
+  it('(g) band+lower: 下限に最も近い割れ位置。center より小さい離れになる(mode が効く)', () => {
+    const lo = generateSequentialCandidates(...M, 0, 0, 0, 0, { lo: 820, hi: 1180, mode: 'lower' });
+    const ce = generateSequentialCandidates(...M, 0, 0, 0, 0, { lo: 820, hi: 1180, mode: 'center' });
+    expect(lo.length).toBe(1);
+    expect(lo[0].remainder ?? 0).toBe(0);
+    expect(lo[0].actualEndDistanceMm).toBe(900);                              // 下限820 に最も近い clean
+    expect(lo[0].actualEndDistanceMm).toBeLessThan(ce[0].actualEndDistanceMm); // mode 差
+  });
+
+  it('(h) band内に割れ位置なし → band無視で現挙動にフォールバック(band無しと同一)', () => {
+    const withBand = generateSequentialCandidates(...M, 0, 0, 0, 0, { lo: 810, hi: 890, mode: 'center' });
+    const noBand = generateSequentialCandidates(...M);
+    expect(withBand).toEqual(noBand);
+  });
+
+  it('(i) band未指定は現挙動完全不変(回帰)', () => {
+    const r = generateSequentialCandidates(...M);
+    expect(r.length).toBeGreaterThan(0);
+  });
+});

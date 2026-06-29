@@ -48,9 +48,8 @@ function generateConstrainedCandidates(
   largerVariationIdx: number,
   smallerVariationIdx: number,
   // 範囲離れ S-3: 帯[lo,hi] の受け口。本体では未使用（S-4 で帯探索に使用）。未指定=現±50窓+rule5で現挙動。
-  band?: { lo: number; hi: number },
+  band?: { lo: number; hi: number; mode?: 'center' | 'lower' },
 ): SequentialCandidate[] {
-  void band; // S-3: 受けるだけ（S-4 で参照）
   const isDefaultArgs =
     largerOffsetIdx === 0 && smallerOffsetIdx === 0 &&
     largerVariationIdx === 0 && smallerVariationIdx === 0;
@@ -103,6 +102,43 @@ function generateConstrainedCandidates(
 
   // === デフォルト引数: 大物案デフォルト + 離れ厳守の2択 (rule2/3/4/5) ===
   if (isDefaultArgs) {
+    // === 範囲離れ S-4a: band[lo,hi,mode] 指定時は帯内の割れ位置を mode で最寄り1件を自動採用 ===
+    // band 未指定なら下の現挙動(±50窓+rule5)へ。帯内に clean が無ければ band を無視して同じく現挙動へ。
+    if (band) {
+      const bandLo = Math.min(band.lo, band.hi);
+      const bandHi = Math.max(band.lo, band.hi);
+      // 帯内の割れ位置(clean split)を 1mm 刻みで全収集。割れない離れは findAllCombinationsForEnd の
+      // GCD 枝刈りで即空（combosAt が返す組合せは全て remainder=0）。guard で暴走防止。
+      const bandCands: C[] = [];
+      let guard = 0;
+      for (let t = bandLo; t <= bandHi && guard < 5000; t++, guard++) {
+        if (t < 0) continue;
+        bandCands.push(...combosAt(t));
+      }
+      if (bandCands.length > 0) {
+        // mode: center=帯の中央 / lower=下限 に最も近い離れ。同距離は cmp(大物案優先)で決める。
+        const target = band.mode === 'lower' ? bandLo : (bandLo + bandHi) / 2;
+        bandCands.sort((a, b) => {
+          const da = Math.abs(a.targetEnd - target), db = Math.abs(b.targetEnd - target);
+          if (da !== db) return da - db;
+          return cmp(a, b);
+        });
+        const best = bandCands[0];
+        const varCount = bandCands.filter(c => c.targetEnd === best.targetEnd).length;
+        // 帯目標を満たした扱い(diff=0,remainder=0)で1件返す → isAutoProgress=自動配置(モーダル無し)。
+        return [{
+          rails: best.rails,
+          totalMm: best.rails.reduce((a, b) => a + b, 0),
+          actualEndDistanceMm: best.targetEnd,
+          diffFromDesired: 0,
+          side: 'exact',
+          variationIdx: 0,
+          variationCount: varCount,
+          remainder: 0,
+        }];
+      }
+      // 帯内に割れ位置が無い → band を無視して以下の現挙動(±50窓+rule5)にフォールバック。
+    }
     // rule2/3: ±許容内の制約内解を全収集 → 大物案デフォルト
     const windowCands: C[] = [];
     for (let d = -TOL; d <= TOL; d++) {
@@ -234,7 +270,7 @@ export function generateSequentialCandidates(
   largerVariationIdx: number = 0,
   smallerVariationIdx: number = 0,
   // 範囲離れ S-3: 帯[lo,hi] 受け口。priorityConfig 経路へ透過。未指定=現挙動（非priorityConfig経路は不使用）。
-  band?: { lo: number; hi: number },
+  band?: { lo: number; hi: number; mode?: 'center' | 'lower' },
 ): SequentialCandidate[] {
   if (enabledSizes.length === 0) return [];
 

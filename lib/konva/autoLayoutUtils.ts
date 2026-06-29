@@ -385,7 +385,7 @@ export function computeAutoLayoutSequential(
   // 全 0 (既存挙動と完全互換)。
   userAdjustments?: Record<number, EdgeAdjustment>,
   // 範囲離れ S-3: 帯[lo,hi] 受け口（generateSequentialCandidates へ透過。未指定=現挙動）
-  band?: { lo: number; hi: number },
+  band?: { lo: number; hi: number; mode?: 'center' | 'lower' },
 ): SequentialLayoutResult {
   const edges = getBuildingEdgesClockwise(building);
   const n = edges.length;
