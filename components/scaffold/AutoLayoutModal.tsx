@@ -432,6 +432,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const repDist = distMode === 'center'
     ? Math.round((rangeDist.lo + rangeDist.hi) / 2)
     : rangeDist.lo;
+  // 範囲離れ S-5: rangeDist+distMode を band にしてエンジンへ渡す（帯探索を実機で有効化）。
+  // distances は従来どおり代表値(repDist)で埋め、band は追加で渡す（S-4a: band優先・帯外は現挙動）。
+  const band = { lo: Math.min(rangeDist.lo, rangeDist.hi), hi: Math.max(rangeDist.lo, rangeDist.hi), mode: distMode };
   // 旧 distances/distances1F は record からの派生 alias（reader 無改変・挙動不変）。
   const distances = distancesByFloor[primaryFloor] ?? {};
   const distances1F = distancesByFloor[subFloor] ?? {};
@@ -580,6 +583,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         priorityConfig,
         bothmodeSelectionsByFloor,
         bothmodeAdjustmentsByFloor,
+        band,
       );
       setLayoutByFloor(res);
 
@@ -623,6 +627,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // 主建物（1Fのみ→1F、2Fのみ→2F）の順次決定
     const seqRes2F = computeAutoLayoutSequential(
       building, distances, scaffoldStart, enabledSizes, priorityConfig, (userSelectionsByFloor[primaryFloor] ?? {}), (userAdjustmentsByFloor[primaryFloor] ?? {}),
+      band,
     );
     setSequentialResult2F(seqRes2F);
     const res = sequentialResultToAutoLayoutResult(seqRes2F);
@@ -634,7 +639,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       getBuildingEdgesClockwise(building1F).forEach(e => {
         d1[e.index] = distances1F[e.index] ?? 900;
       });
-      const fullSeq1F = computeAutoLayoutSequential(building1F, d1, undefined, enabledSizes, priorityConfig, (userSelectionsByFloor[subFloor] ?? {}), (userAdjustmentsByFloor[subFloor] ?? {}));
+      const fullSeq1F = computeAutoLayoutSequential(building1F, d1, undefined, enabledSizes, priorityConfig, (userSelectionsByFloor[subFloor] ?? {}), (userAdjustmentsByFloor[subFloor] ?? {}), band);
       // 下屋辺だけに edgeResults を絞り込む（filter 後の SequentialLayoutResult を組み立て）
       const uncoveredIdxSet = new Set(uncoveredEdges1F.map(e => e.index));
       const filteredEdgeResults = fullSeq1F.edgeResults.filter(er => uncoveredIdxSet.has(er.edge.index));
@@ -707,6 +712,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
           { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
           bothmodeAdjustmentsByFloor,
+          band,
         );
         setLayoutByFloor(res);
 
@@ -748,6 +754,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
           { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
           bothmodeAdjustmentsByFloor,
+          band,
         );
         setLayoutByFloor(res);
 
@@ -782,6 +789,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
       const seqRes2F = computeAutoLayoutSequential(
         building, distances, scaffoldStart, enabledSizes, priorityConfig, newSelections2F, (userAdjustmentsByFloor[primaryFloor] ?? {}),
+        band,
       );
       setSequentialResult2F(seqRes2F);
       const adapted = sequentialResultToAutoLayoutResult(seqRes2F);
@@ -845,6 +853,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             normalizedScaffoldStart!, enabledSizes, priorityConfig,
             { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
             { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
+            band,
           );
           setLayoutByFloor(res);
 
@@ -874,6 +883,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             normalizedScaffoldStart!, enabledSizes, priorityConfig,
             { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
             { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
+            band,
           );
           setLayoutByFloor(res);
 
@@ -910,6 +920,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         normalizedScaffoldStart!, enabledSizes, priorityConfig,
         { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
         { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
+        band,
       );
       setLayoutByFloor(res);
 
@@ -946,6 +957,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       setUserAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
       const seqRes2F = computeAutoLayoutSequential(
         building, distances, scaffoldStart, enabledSizes, priorityConfig, newSelections2F, newAdjustments2F,
+        band,
       );
       setSequentialResult2F(seqRes2F);
       setActiveEdge({ floor: 2, index: prev2F.edge.index });
@@ -999,6 +1011,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
           bothmodeSelectionsByFloor,
           { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
+          band,
         );
         setLayoutByFloor(res);
 
@@ -1019,6 +1032,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           normalizedScaffoldStart!, enabledSizes, priorityConfig,
           bothmodeSelectionsByFloor,
           { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
+          band,
         );
         setLayoutByFloor(res);
 
@@ -1040,6 +1054,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     setUserAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
     const seqRes2F = computeAutoLayoutSequential(
       building, distances, scaffoldStart, enabledSizes, priorityConfig, (userSelectionsByFloor[primaryFloor] ?? {}), newAdjustments2F,
+      band,
     );
     setSequentialResult2F(seqRes2F);
     const adapted = sequentialResultToAutoLayoutResult(seqRes2F);
