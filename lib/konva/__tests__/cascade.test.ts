@@ -15,6 +15,7 @@ import {
 import { findScaffoldViolations, type ScaffoldHandrail } from '../scaffoldViolations';
 import { segmentsToHandrails } from '../autolayout/adapter';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
+import { DEFAULT_ENABLED_SIZES, DEFAULT_PRIORITY_CONFIG } from '@/types';
 
 // ============================================================
 // N階一般化 P3-2(1/3) parity テスト。
@@ -960,5 +961,52 @@ describe('せり出し入隅: 角非依存で covered 2辺がL字接合（T字�
       const res = computeCascadeLayout({ 1: f1, 2: f2 }, { 1: dist(8), 2: dist(8) }, ss);
       expect(findScaffoldViolations(allHandrails(res), [f1, f2])).toEqual([]);
     });
+  });
+});
+
+// ============================================================
+// 範囲離れ S-4b-2: 最上階(2F全周)へ band を渡して帯探索を有効化。
+//   band探索は priorityConfig 経路でのみ動くため、テストは DEFAULT_PRIORITY_CONFIG を渡す。
+//   band 指定でのみ 2F全周の候補が帯[lo,hi]内の割れ位置になる。band未指定は従来一致(parity)。
+// ============================================================
+describe('範囲離れ S-4b-2: 最上階(2F全周)の帯探索', () => {
+  const rectN = (id: string, floor: number, x1: number, y1: number): BuildingShape => ({
+    id, type: 'polygon',
+    points: [{ x: 0, y: 0 }, { x: x1, y: 0 }, { x: x1, y: y1 }, { x: 0, y: y1 }],
+    fill: '#000', floor,
+  });
+  const M = DEFAULT_ENABLED_SIZES;
+  const PC = DEFAULT_PRIORITY_CONFIG;
+
+  it('(A) 総二階(2F=1F)で band を 2F全周へ届け、帯内へ離れが動く＋findScaffoldViolations=0', () => {
+    // 2F===1F → 1F全辺は面一で空、2F全周のみ。priorityConfig+band[400,800] で 2F全周が帯探索。
+    const f2 = rectN('2f', 2, 600, 400); // 6000×4000
+    const f1 = rectN('1f', 1, 600, 400);
+    const D = { 1: dist(4), 2: dist(4) };
+    const resBand = computeCascadeLayout({ 1: f1, 2: f2 }, D, ss, M, PC, undefined, undefined, { lo: 400, hi: 800, mode: 'center' });
+    const resNo = computeCascadeLayout({ 1: f1, 2: f2 }, D, ss, M, PC);
+    // band が 2F全周に届いた: 帯[400,800]内へ動いた 2F辺が存在(no-band の窓~900 中心より小)
+    const band2FEnds = resBand[2].edgeSegments.map(s => s.candidates[s.selectedIndex]?.actualEndDistanceMm ?? 0);
+    expect(band2FEnds.some(e => e > 0 && e <= 800)).toBe(true);
+    // band有無で 2F全周結果が変化(帯探索が効いている)
+    expect(JSON.stringify(resBand[2].edgeSegments)).not.toEqual(JSON.stringify(resNo[2].edgeSegments));
+    // 物理安全: 2F全周に帯探索が効いても違反0
+    expect(findScaffoldViolations(allHandrails(resBand), [f1, f2])).toEqual([]);
+  });
+
+  it('(B) せり出し(2F>1F)で band を渡しても 2F全周＋1F追従で findScaffoldViolations=0', () => {
+    const f2 = rectN('2f', 2, 900, 700); // 9000×7000（上が大きい=せり出し）
+    const f1 = rectN('1f', 1, 600, 700); // 6000×7000（east が 2F 下に引っ込む）
+    const D = { 1: dist(4), 2: dist(4) };
+    const resBand = computeCascadeLayout({ 1: f1, 2: f2 }, D, ss, M, PC, undefined, undefined, { lo: 800, hi: 1000, mode: 'center' });
+    expect(findScaffoldViolations(allHandrails(resBand), [f1, f2])).toEqual([]);
+  });
+
+  it('(C) band未指定(priorityConfig)は 2F全周が従来どおり(帯探索なし)・違反0', () => {
+    const f2 = rectN('2f', 2, 600, 400);
+    const f1 = rectN('1f', 1, 600, 400);
+    const D = { 1: dist(4), 2: dist(4) };
+    const res = computeCascadeLayout({ 1: f1, 2: f2 }, D, ss, M, PC);
+    expect(findScaffoldViolations(allHandrails(res), [f1, f2])).toEqual([]);
   });
 });

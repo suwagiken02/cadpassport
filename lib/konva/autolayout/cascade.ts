@@ -216,9 +216,9 @@ export function computeFloorLayout(
     // 連続積層前提: 直下階の物理階番号 = floor - 1
     const distancesThis = distancesByFloor[floor] ?? {};
     const distancesBelow = distancesByFloor[floor - 1] ?? {};
-    // S-4b-1: 最上階を walkFloorUpperRole 経由に一本化（computeBothmode2FLayout 委譲＋マッピングを撤去）。
+    // S-4b: 最上階を walkFloorUpperRole 経由に一本化（S-4b-1）＋ band を透過（S-4b-2）。
     // walkFloorUpperRole ≡ computeBothmode2FLayout は parity(expectUpperWalkParity)で byte 固定済。
-    // band は未渡し（S-4b-2 で渡して 2F全周に帯探索を効かせる）＝今回は挙動完全不変。
+    // band 未指定なら従来一致、band 指定でのみ 2F全周も帯[lo,hi]内の割れ位置を自動採用する。
     return walkFloorUpperRole(
       floor,
       buildingThis,
@@ -230,6 +230,7 @@ export function computeFloorLayout(
       priorityConfig,
       userSelections,
       userAdjustments,
+      band,
     );
   }
 
