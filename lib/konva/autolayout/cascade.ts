@@ -28,7 +28,6 @@ import {
   PriorityConfig,
 } from '@/types';
 import {
-  computeBothmode2FLayout,
   getBuildingEdgesClockwise,
   findCollinearEdgePairs,
   isConvexCorner,
@@ -217,7 +216,11 @@ export function computeFloorLayout(
     // 連続積層前提: 直下階の物理階番号 = floor - 1
     const distancesThis = distancesByFloor[floor] ?? {};
     const distancesBelow = distancesByFloor[floor - 1] ?? {};
-    const r2 = computeBothmode2FLayout(
+    // S-4b-1: 最上階を walkFloorUpperRole 経由に一本化（computeBothmode2FLayout 委譲＋マッピングを撤去）。
+    // walkFloorUpperRole ≡ computeBothmode2FLayout は parity(expectUpperWalkParity)で byte 固定済。
+    // band は未渡し（S-4b-2 で渡して 2F全周に帯探索を効かせる）＝今回は挙動完全不変。
+    return walkFloorUpperRole(
+      floor,
       buildingThis,
       buildingBelow,
       distancesThis,
@@ -228,11 +231,6 @@ export function computeFloorLayout(
       userSelections,
       userAdjustments,
     );
-    return {
-      floor,
-      edgeSegments: r2.edgeSegments.map((seg) => bothmode2FSegToFloorSeg(seg, floor)),
-      hasUnresolved: r2.hasUnresolved,
-    };
   }
 
   // ── above 有り・below 無し = 最下階ブランチ ──
