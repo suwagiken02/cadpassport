@@ -380,28 +380,24 @@ function getFloorScaffoldEdges(
   }
   if (!bbOk(bb)) return { byFace, bb };
 
+  // S-7: bbox 端への厳密一致ではなく、手摺の向き(水平→北/南・垂直→東/西)＋ floor bbox 中心の
+  //   どちら側か、で面分類する。範囲離れ継承(S-6-2)で手摺座標が動いても、隣接面の角張り出しが
+  //   bbox 端を占めても、各手摺は自分の向きと位置だけで正しい面に入る(脱落/誤分類しない)。
   const TOL = 0.01;
+  const cx = (bb.minX + bb.maxX) / 2;
+  const cy = (bb.minY + bb.maxY) / 2;
   for (const h of handrails) {
     const [p1, p2] = getHandrailEndpoints(h);
-    if (Math.abs(p1.y - bb.minY) < TOL && Math.abs(p2.y - bb.minY) < TOL) {
+    const isH = Math.abs(p1.y - p2.y) < TOL;
+    const isV = Math.abs(p1.x - p2.x) < TOL;
+    if (isH && !isV) {
       const from = Math.min(p1.x, p2.x);
       const to = Math.max(p1.x, p2.x);
-      if (to > from) byFace.north.push({ from, to });
-    }
-    if (Math.abs(p1.y - bb.maxY) < TOL && Math.abs(p2.y - bb.maxY) < TOL) {
-      const from = Math.min(p1.x, p2.x);
-      const to = Math.max(p1.x, p2.x);
-      if (to > from) byFace.south.push({ from, to });
-    }
-    if (Math.abs(p1.x - bb.minX) < TOL && Math.abs(p2.x - bb.minX) < TOL) {
+      if (to > from) (p1.y < cy ? byFace.north : byFace.south).push({ from, to });
+    } else if (isV && !isH) {
       const from = Math.min(p1.y, p2.y);
       const to = Math.max(p1.y, p2.y);
-      if (to > from) byFace.west.push({ from, to });
-    }
-    if (Math.abs(p1.x - bb.maxX) < TOL && Math.abs(p2.x - bb.maxX) < TOL) {
-      const from = Math.min(p1.y, p2.y);
-      const to = Math.max(p1.y, p2.y);
-      if (to > from) byFace.east.push({ from, to });
+      if (to > from) (p1.x < cx ? byFace.west : byFace.east).push({ from, to });
     }
   }
   for (const f of ['north', 'south', 'east', 'west'] as Face[]) {
