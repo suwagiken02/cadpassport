@@ -298,7 +298,13 @@ function expectLowerParity(
         : sc.kind === 'collinear-with-2F'
         ? { kind: 'collinear-with-upper', upperEdgeIndex: sc.edge2FIndex }
         : { kind: 'cascade-from-prev-segment' };
-    expect(fs.startConstraint).toEqual(expectedSC);
+    // S-6-3: 同一壁線継承(S-6-2)で、旧 cascade-from-prev-segment の一部が same-wall-line になる。
+    //   一律離れでは幾何不変（上の startDistanceMm/scaffoldCoord/cursor 厳密一致で担保）。ラベルのみ許容。
+    if (fs.startConstraint?.kind === 'same-wall-line') {
+      expect(expectedSC).toEqual({ kind: 'cascade-from-prev-segment' });
+    } else {
+      expect(fs.startConstraint).toEqual(expectedSC);
+    }
 
     const ec = bs.endConstraint;
     const expectedEC =
@@ -422,7 +428,18 @@ describe('computeFloorLayout 最下階ブランチ（above有り,below=null）= 
     };
     const distances1F = { 0: 900, 1: 600, 2: 1200, 3: 900, 4: 600, 5: 1200 };
     const distances2F = { 0: 600, 1: 1200, 2: 900, 3: 1200, 4: 600, 5: 900 };
-    expectLowerParity(building1F, building2F, distances1F, distances2F, ssMixed);
+    // S-6-3: 同一壁線継承の導入で「旧 bothmode1F と 1:1 一致」は本質的に成立しない（旧は継承しない）。
+    //   parity フロー（最上階→最下階の computeFloorLayout）で新しい正しい挙動を検証する。
+    const norm2F = splitBuilding2FAt1FVertices(building1F, building2F);
+    const dbf = { 1: distances1F, 2: distances2F };
+    const r2 = computeFloorLayout(2, norm2F, null, building1F, null, dbf, ssMixed);
+    const r1 = computeFloorLayout(1, building1F, norm2F, null, r2, dbf, null);
+    // 同一壁線(同 handrailDir・同固定軸・同法線)グループ内で scaffoldCoord が単一（縦整合）。
+    assertSameWallAligned([r2, r1]);
+    // 南壁(同一壁線)は自前 600 ではなく 2F 南の離れ(1200)を継承 → 東辺(下屋, x=12000)の終点角が
+    //   2F ラインへ追従し cursorEnd=7120（旧 bothmode 非継承の 7060 ＋60=mmToGrid(1200)-mmToGrid(600)）。
+    const east = r1.edgeSegments.find(s => s.handrailDir === 'vertical' && Math.abs(s.startPoint.x - 12000) < 1);
+    expect(east?.cursorEnd).toBe(7120);
   });
 });
 
@@ -1007,6 +1024,51 @@ describe('範囲離れ S-4b-2: 最上階(2F全周)の帯探索', () => {
     const f1 = rectN('1f', 1, 600, 400);
     const D = { 1: dist(4), 2: dist(4) };
     const res = computeCascadeLayout({ 1: f1, 2: f2 }, D, ss, M, PC);
+    expect(findScaffoldViolations(allHandrails(res), [f1, f2])).toEqual([]);
+  });
+});
+
+// ============================================================
+// 範囲離れ S-6-3: 同一壁線継承の縦整合（縦ズレ解消）＋ 面違いの角を誤検出しない
+// ============================================================
+/** 同一壁線(同 handrailDir・同固定軸座標・同法線)グループ内で scaffoldCoord が単一であること。 */
+function assertSameWallAligned(
+  results: Array<{ edgeSegments: Array<{ handrailDir: 'horizontal' | 'vertical'; startPoint: { x: number; y: number }; nx: number; ny: number; scaffoldCoord: number }> }>,
+) {
+  const groups: Record<string, Set<number>> = {};
+  for (const r of results) {
+    for (const s of r.edgeSegments) {
+      const fixed = s.handrailDir === 'horizontal' ? s.startPoint.y : s.startPoint.x;
+      const key = `${s.handrailDir}|${fixed}|${s.nx},${s.ny}`;
+      (groups[key] ??= new Set()).add(Math.round(s.scaffoldCoord * 100) / 100);
+    }
+  }
+  for (const [key, vals] of Object.entries(groups)) {
+    const arr = Array.from(vals);
+    expect(arr, `同一壁線 ${key} の scaffoldCoord が不一致(縦ズレ): ${arr.join(', ')}`).toHaveLength(1);
+  }
+}
+
+describe('範囲離れ S-6-3: 同一壁線の縦整合（縦ズレ解消）', () => {
+  it('縦ズレ形状 2F=357×283 / 1F=743×817 band[800,1000]center: 同一壁線が縦整合・面違いの角は違反0', () => {
+    const f2: BuildingShape = {
+      id: '2f', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 357, y: 0 }, { x: 357, y: 283 }, { x: 0, y: 283 }],
+      fill: '#000', floor: 2,
+    };
+    const f1: BuildingShape = {
+      id: '1f', type: 'polygon',
+      points: [{ x: 0, y: 0 }, { x: 743, y: 0 }, { x: 743, y: 817 }, { x: 0, y: 817 }],
+      fill: '#000', floor: 1,
+    };
+    const band = { lo: 800, hi: 1000, mode: 'center' as const };
+    const res = computeCascadeLayout(
+      { 1: f1, 2: f2 }, { 1: dist(4), 2: dist(4) }, ss,
+      DEFAULT_ENABLED_SIZES, DEFAULT_PRIORITY_CONFIG, undefined, undefined, band,
+    );
+    // 西壁: 修正前は 2F=-90 / 1F延長=-93 の 30mm 段差 → 修正後は同一壁線グループが単一値(縦ズレ解消)。
+    assertSameWallAligned([res[2], res[1]]);
+    // 面違いの角(同一壁線↔下屋で離れが違う段差)は正常 → 是正後 findScaffoldViolations=0。
     expect(findScaffoldViolations(allHandrails(res), [f1, f2])).toEqual([]);
   });
 });

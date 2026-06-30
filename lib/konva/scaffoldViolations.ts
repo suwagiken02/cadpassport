@@ -63,6 +63,9 @@ export function findScaffoldViolations(
       for (let j = 0; j < segs.length; j++) {
         if (i === j) continue;
         const t = segs[j];
+        // S-6-3: 異なる面(直交=向き違い)が角で出会い離れが違うのは正常な段差で違反ではない。
+        //   同一壁線(同方向→同一固定軸座標)上の端点食い込みだけを T字違反として検出する。
+        if (segs[i].dir !== t.dir) continue;
         if (Math.abs(fixedOf(ep, t.dir) - t.fixed) > EPS) continue; // 同一線上か
         const v = variableOf(ep, t.dir);
         if (v > t.lo + EPS && v < t.hi - EPS) {

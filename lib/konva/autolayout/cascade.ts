@@ -32,6 +32,7 @@ import {
   findCollinearEdgePairs,
   isConvexCorner,
   isWallContinuation,
+  isSameWallLine,
   isPointInPolygon,
   generateSequentialCandidates,
   splitLowerAtUpper,
@@ -55,7 +56,10 @@ import type { SequentialCandidate } from './candidates';
 export type FloorSegmentStartConstraint =
   | { kind: 'pillar-from-upper'; pillarPoint: Point }
   | { kind: 'cascade-from-prev-segment' }
-  | { kind: 'collinear-with-upper'; upperEdgeIndex: number };
+  | { kind: 'collinear-with-upper'; upperEdgeIndex: number }
+  // same-wall-line (S-6-2): 1F 独立辺が 2F の或る辺と同一壁線（同じ位置の壁）のとき、
+  //   独立 band 探索の値ではなく 2F 辺の離れ(startDistanceMm)を強制継承して縦を揃える。
+  | { kind: 'same-wall-line'; upperEdgeIndex: number };
 
 /**
  * 階セグメントの終点制約（= 旧 Bothmode1FSegmentEndConstraint の上下中立版）。
@@ -715,10 +719,25 @@ export function walkFloorLowerRole(
     let startConstraint: FloorSegmentStartConstraint;
     let startDist: number;
     const prevPillarMatch = pillarPoints.find(p => pointsMatch(p.point, edge.p1) && p.lowerEdgeIndex === i);
+    // same-wall-line 継承（S-6-2/S-6-3）: 独立辺が 2F の或る辺と同一壁線なら、独立 band 探索の
+    // 値ではなく 2F 辺の離れ(startDistanceMm)を強制継承して縦を揃える。せり出し/下屋の線ズレ面は
+    // isSameWallLine=false なので継承されず独立 band のまま（従来どおり）。
+    const sameWallSegAbove = resultAbove.edgeSegments.find(seg2 =>
+      isSameWallLine(edge, {
+        index: seg2.edgeIndex, originalIndex: seg2.edgeIndex, label: '',
+        p1: seg2.startPoint, p2: seg2.endPoint, lengthMm: seg2.segmentLengthMm,
+        face: seg2.face, handrailDir: seg2.handrailDir, nx: seg2.nx, ny: seg2.ny,
+      }));
     if (prevPillarMatch) {
+      // S-6-3 (a): 柱併発辺は pillar 優先。p1 に柱(下屋境界)がある辺は旧来どおり pillar-from-upper の
+      //   cursor 規則(角で厳密接合)を保つ。柱辺は pillar 経由で既に縦も揃うため same-wall は不要で、
+      //   same-wall に横取りさせると cursor が cascade 化し同一壁線上で 30mm ズレ(=probe の回帰)を生む。
       startConstraint = { kind: 'pillar-from-upper', pillarPoint: prevPillarMatch.point };
       const segA = resultAbove.edgeSegments.find(s => s.edgeIndex === prevPillarMatch.upperEdgeIndex);
       startDist = segA?.startDistanceMm ?? distancesThis[edge.index] ?? 900;
+    } else if (sameWallSegAbove) {
+      startConstraint = { kind: 'same-wall-line', upperEdgeIndex: sameWallSegAbove.edgeIndex };
+      startDist = sameWallSegAbove.startDistanceMm;
     } else if (isStraightContinuation) {
       startConstraint = { kind: 'cascade-from-prev-segment' };
       startDist = prevSegmentStartDist ?? distancesThis[edge.index] ?? 900;
@@ -837,7 +856,9 @@ export function walkFloorLowerRole(
       if (segA && segA.handrailDir !== s.handrailDir) cursorStart = segA.scaffoldCoord;
       else if (segA) cursorStart = segA.cursorEnd;
       else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
-    } else if (scStart?.kind === 'cascade-from-prev-segment') {
+    } else if (scStart?.kind === 'cascade-from-prev-segment' || scStart?.kind === 'same-wall-line') {
+      // same-wall-line も along-wall の角接続は cascade と同一規則（perp 探索でL字接合）に倣う。
+      // 縦位置(scaffoldCoord)は継承した startDist で既に揃うため、cursor は従来どおりでよい。
       const prev = k > 0 ? intermediate[k - 1] : undefined;
       if (prev && prev.handrailDir !== s.handrailDir) {
         cursorStart = prev.scaffoldCoord;
