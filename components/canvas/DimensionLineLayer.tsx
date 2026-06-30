@@ -589,14 +589,20 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
 
       const scaffoldData = getFloorScaffoldEdges(floorHandrails);
 
+      // S-8: 寸法線の軸位置(壁直交方向)は overallBB ではなく「この階の bbox」を基準にする。
+      //   下屋等で 1F/2F の外周が違う面では 1F 寸法が 1F の外周側・2F 寸法が 2F の外周側に分離して出る
+      //   (overallBB だと両者が図面外周に重なり 2 本並ぶ)。面分類(S-7)・スパン・足場計算は不変。
+      const fbb = getOverallBB(floorBuildings, floorHandrails);
+      const floorBB = bbOk(fbb) ? fbb : overallBB;
+
       for (const face of ['north', 'south', 'east', 'west'] as Face[]) {
         const isH = face === 'north' || face === 'south';
         const sign = (face === 'north' || face === 'west') ? -1 : 1;
         const innerDir = -sign;
 
         const refGrid = isH
-          ? (face === 'north' ? overallBB.minY : overallBB.maxY)
-          : (face === 'west' ? overallBB.minX : overallBB.maxX);
+          ? (face === 'north' ? floorBB.minY : floorBB.maxY)
+          : (face === 'west' ? floorBB.minX : floorBB.maxX);
         const refPx = isH ? gy(refGrid) : gx(refGrid);
 
         // 段 (足場)
@@ -686,8 +692,8 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const sign = (face === 'north' || face === 'west') ? -1 : 1;
           const innerDir = -sign;
           const refGrid = isH
-            ? (face === 'north' ? overallBB.minY : overallBB.maxY)
-            : (face === 'west' ? overallBB.minX : overallBB.maxX);
+            ? (face === 'north' ? floorBB.minY : floorBB.maxY)
+            : (face === 'west' ? floorBB.minX : floorBB.maxX);
           const refPx = isH ? gy(refGrid) : gx(refGrid);
 
           // 外壁段: Φ(直径)
