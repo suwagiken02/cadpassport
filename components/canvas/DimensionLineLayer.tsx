@@ -549,10 +549,19 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
         color: COLOR_2F, scaffoldKey: 'scaffold2F', wallKey: 'wall2F', roofKey: 'roof2F' },
     ];
 
+    // S-9: 共有壁(1F/2Fが同位置・同スパン)で寸法線が 1F/2F 2本ダブるのを 1 本化する。
+    //   先に処理する階(1F)のキーを記録し、後の階(2F)の同一寸法はスキップする。キーの固定座標は
+    //   floor の「建物bbox端」(handrail非依存)を使う＝総二階(1F手摺0本)でも共有壁が一致する。
+    //   下屋/せり出しは建物bbox端 or スパンが違うので別キー→両方残る(S-8分離を維持)。
+    const seenDim = new Set<string>();
+
     for (const { floor, offWall, offRoof, offScaffold, color, scaffoldKey, wallKey, roofKey } of floors) {
       const floorBuildings = canvasData.buildings.filter(b => (b.floor ?? 1) === floor);
       if (floorBuildings.length === 0) continue;
       const floorHandrails = canvasData.handrails.filter(h => (h.floor ?? 1) === floor);
+      // 重複判定用: この階の建物のみの bbox(各面の壁直交固定座標)。
+      let bldgBB = bb0();
+      for (const b of floorBuildings) for (const p of b.points) bldgBB = bbG(bldgBB, p.x, p.y);
 
       const wallEdges: Record<Face, { from: number; to: number }[]> = {
         north: [], south: [], east: [], west: [],
@@ -604,11 +613,17 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           ? (face === 'north' ? floorBB.minY : floorBB.maxY)
           : (face === 'west' ? floorBB.minX : floorBB.maxX);
         const refPx = isH ? gy(refGrid) : gx(refGrid);
+        // S-9 重複排除キー用の壁固定座標(この面の建物bbox端・handrail非依存)
+        const faceFixed = isH
+          ? (face === 'north' ? bldgBB.minY : bldgBB.maxY)
+          : (face === 'west' ? bldgBB.minX : bldgBB.maxX);
 
         // 段 (足場)
         const scaffoldVisKey = floor === 1 ? 'scaffold1F' : 'scaffold2F';
         const scfEdges = scaffoldData.byFace[face];
-        if (dimensionVisibility[scaffoldVisKey] && scfEdges.length > 0) {
+        const sDupKey = `S|${face}|${Math.round(faceFixed)}|${scfEdges.length ? Math.round(Math.min(...scfEdges.map(e => e.from))) : 0}|${scfEdges.length ? Math.round(Math.max(...scfEdges.map(e => e.to))) : 0}`;
+        if (dimensionVisibility[scaffoldVisKey] && scfEdges.length > 0 && !seenDim.has(sDupKey)) {
+          seenDim.add(sDupKey);
           const axisScaffold = refPx + sign * offScaffold;
           const spans: Span[] = scfEdges.map(e => ({
             s: isH ? gx(e.from) : gy(e.from),
@@ -632,7 +647,9 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
         // 段 (外壁)
         const wallVisKey = floor === 1 ? 'wall1F' : 'wall2F';
         const wEdges = wallEdges[face];
-        if (dimensionVisibility[wallVisKey] && wEdges.length > 0) {
+        const wDupKey = `I|${face}|${Math.round(faceFixed)}|${wEdges.length ? Math.round(Math.min(...wEdges.map(e => e.from))) : 0}|${wEdges.length ? Math.round(Math.max(...wEdges.map(e => e.to))) : 0}`;
+        if (dimensionVisibility[wallVisKey] && wEdges.length > 0 && !seenDim.has(wDupKey)) {
+          seenDim.add(wDupKey);
           const axisWall = refPx + sign * offWall;
           const spans: Span[] = wEdges.map(e => ({
             s: isH ? gx(e.from) : gy(e.from),
@@ -655,7 +672,9 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
         const roofVisKey = floor === 1 ? 'roof1F' : 'roof2F';
         const rEdges = roofEdges[face];
         const ovEdges = overhangEdges[face];
-        if (dimensionVisibility[roofVisKey] && rEdges.length > 0 && ovEdges.length > 0) {
+        const rDupKey = `O|${face}|${Math.round(faceFixed)}|${rEdges.length ? Math.round(Math.min(...rEdges.map(r => r.from))) : 0}|${rEdges.length ? Math.round(Math.max(...rEdges.map(r => r.to))) : 0}`;
+        if (dimensionVisibility[roofVisKey] && rEdges.length > 0 && ovEdges.length > 0 && !seenDim.has(rDupKey)) {
+          seenDim.add(rDupKey);
           const axisOuter = refPx + sign * offRoof;
           const lineStartGrid = Math.min(...rEdges.map(r => r.from));
           const lineEndGrid = Math.max(...rEdges.map(r => r.to));
