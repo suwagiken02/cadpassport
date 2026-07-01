@@ -420,6 +420,19 @@ export function walkFloorUpperRole(
   let prevSegmentStartDist: number | undefined = undefined;
   let hasUnresolved = false;
 
+  // S-b: 先頭辺(k=0)の prevEdgeStartDistanceMm は 1st-pass 時点で前辺(周回で最後に処理する辺)が
+  //   未確定のため distances[前辺] ?? 900 にフォールバックし、cursor が使う実離れと食い違っていた
+  //   （北面 rails10700 vs 枠10600 の小物割り）。全辺確定後の実値で先頭辺を割り直すため、
+  //   1st-pass を収束まで最大4回まわす。初回は従来フォールバック値＝既存挙動。実値がそれと一致
+  //   すれば1回で収束（center/一律=no-op）。actualEnd 変化の次辺波及もループ全体再走で吸収する。
+  const firstPrevFallback = distancesThis[edgesThis[(startIdx - 1 + nThis) % nThis].index] ?? 900;
+  let firstEdgePrev = firstPrevFallback;
+  for (let pass = 0; pass < 4; pass++) {
+  intermediate.length = 0;
+  prevEndDistanceMm = undefined;
+  prevSegmentStartDist = undefined;
+  hasUnresolved = false;
+
   for (let k = 0; k < nThis; k++) {
     const i = (startIdx + k) % nThis;
     const edge = edgesThis[i];
@@ -471,8 +484,9 @@ export function walkFloorUpperRole(
       startDistanceMm = prevEndDistanceMm ?? distancesThis[edge.index] ?? 900;
     }
 
-    const prevEdgeStartDistanceMm = prevSegmentStartDist
-      ?? (distancesThis[edgesThis[(i - 1 + nThis) % nThis].index] ?? 900);
+    // S-b: 先頭辺(k=0, prevSegmentStartDist 未定義)は firstEdgePrev(初回=従来フォールバック、
+    //   収束時=前辺の実離れ)を使う。k>0 は prevSegmentStartDist（＝従来どおり）。
+    const prevEdgeStartDistanceMm = prevSegmentStartDist ?? firstEdgePrev;
 
     const segKey = `${edge.index}-0`;
     const adj = userAdjustments?.[segKey] ?? DEFAULT_EDGE_ADJUSTMENT;
@@ -547,6 +561,14 @@ export function walkFloorUpperRole(
       prevEndDistanceMm = desiredEndDistanceMm;
     }
     prevSegmentStartDist = startDistanceMm;
+  }
+
+  // S-b: 収束判定 — 先頭辺が使った prev(firstEdgePrev) と、全辺確定後の実際の前辺(周回最後)離れが
+  //   一致すれば収束。異なれば実値で先頭辺を割り直すため再走する（次辺への actualEnd 波及も再走で吸収）。
+  const firstPrevReal = intermediate.length > 0
+    ? intermediate[intermediate.length - 1].startDistanceMm : firstEdgePrev;
+  if (firstPrevReal === firstEdgePrev) break;
+  firstEdgePrev = firstPrevReal;
   }
 
   // 2nd pass: cursor 再計算（corner-aware、rails 合計と一致する形）。computeBothmode2FLayout と同一。

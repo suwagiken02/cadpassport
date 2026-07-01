@@ -10,10 +10,9 @@ import { DEFAULT_ENABLED_SIZES, DEFAULT_PRIORITY_CONFIG } from '@/types';
 //   先頭辺(アンカー辺)の prevEdgeStartDistanceMm が実値でなく distances[前辺] ?? 900 に
 //   フォールバックするため、mode='lower'(repDist=800)＋起点辺=anchor900 の下屋/L字/単一階で
 //   先頭辺の rails 合計(10700) が cursor 枠(10600) と食い違い、北面が小物割り(900+600+200)になる。
-//   【現状はバグ】。バグを固定するため lower 系は it.fails で「失敗が期待どおり(=緑)」として包む。
-//   S-b(最上階=北面) / S-e(単一階) でバグが直ると it.fails は「予期せず成功」で失敗に転じる
-//   → その時点で it.fails を通常 it に戻す合図になる。center(repDist=900) は 900 フォールバックと
-//   偶然一致するため通常 it で緑のまま。
+//   S-b(最上階=北面) で bothmode(下屋矩形/L字下屋/北面specific)のバグは解消済＝通常 it で緑。
+//   単一階は computeAutoLayoutSequential 由来のため S-b では未修正＝ it.fails のまま(S-e で緑化予定)。
+//   center(repDist=900) は 900 フォールバックと偶然一致するため元から通常 it で緑。
 // ============================================================
 
 const ss: ScaffoldStartConfig = {
@@ -75,7 +74,7 @@ describe('S-a 不変条件 rails合計==有効長（現状 lower×出隅 で赤�
     assertRailsMatchEffective(computeCascadeLayout({ 1: rect('1f', 1, 900, 700), 2: f2 }, D, ss, M, PC, undefined, undefined, bandCe), '下屋矩形 center');
   });
 
-  it.fails('[赤期待=バグ] 下屋(矩形) lower 起点辺900/他800', () => {
+  it('[S-b緑化] 下屋(矩形) lower 起点辺900/他800', () => {
     const D = { 1: fill(4, 800), 2: anchorDist(4, 800, 900) };
     assertRailsMatchEffective(computeCascadeLayout({ 1: rect('1f', 1, 900, 700), 2: f2 }, D, ss, M, PC, undefined, undefined, bandLo), '下屋矩形 lower');
   });
@@ -85,7 +84,7 @@ describe('S-a 不変条件 rails合計==有効長（現状 lower×出隅 で赤�
     assertRailsMatchEffective(computeCascadeLayout({ 1: L1F, 2: f2 }, D, ss, M, PC, undefined, undefined, bandCe), 'L字下屋 center');
   });
 
-  it.fails('[赤期待=バグ] L字下屋 lower 起点辺900/他800', () => {
+  it('[S-b緑化] L字下屋 lower 起点辺900/他800', () => {
     const D = { 1: fill(6, 800), 2: anchorDist(4, 800, 900) };
     assertRailsMatchEffective(computeCascadeLayout({ 1: L1F, 2: f2 }, D, ss, M, PC, undefined, undefined, bandLo), 'L字下屋 lower');
   });
@@ -97,7 +96,7 @@ describe('S-a 不変条件 rails合計==有効長（現状 lower×出隅 で赤�
 });
 
 describe('S-a specific: 北9000出隅 下屋 lower の北面（現状 赤）', () => {
-  it.fails('北面 effectiveMm=10600・rails=1800×5+1200+400・railsTotal==effectiveMm（現状バグで赤→it.fails）', () => {
+  it('北面 effectiveMm=10600・rails=1800×5+1200+400・railsTotal==effectiveMm（S-bで緑化）', () => {
     const D = { 1: fill(4, 800), 2: anchorDist(4, 800, 900) };
     const res = computeCascadeLayout({ 1: rect('1f', 1, 900, 700), 2: rect('2f', 2, 900, 400) }, D, ss, M, PC, undefined, undefined, { lo: 800, hi: 1000, mode: 'lower' });
     const north = res[2].edgeSegments.find(s => s.face === 'north' && s.segmentLengthMm === 9000);
