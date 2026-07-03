@@ -213,6 +213,33 @@ function formatRailsSummary(rails: HandrailLengthMm[]): string {
   return entries.map(([len, cnt]) => `${len}×${cnt}`).join(' + ');
 }
 
+// 範囲離れの前回値記憶（localStorage）。初回(未保存)は 800〜950・中央優先を既定に。
+//   lo!==hi なので初回から範囲離れが有効化される（案Y-2: 星無しでも計算可能）。
+const RANGE_STORAGE_KEY = 'ashiba-plan:rangeDist';
+type RangeSettings = { lo: number; hi: number; mode: 'center' | 'lower' };
+const DEFAULT_RANGE: RangeSettings = { lo: 800, hi: 950, mode: 'center' };
+
+// SSR安全に前回設定を読む（window未定義/private/壊れ値は既定へフォールバック）。
+function loadRangeSettings(): RangeSettings {
+  if (typeof window === 'undefined') return DEFAULT_RANGE;
+  try {
+    const raw = window.localStorage.getItem(RANGE_STORAGE_KEY);
+    if (!raw) return DEFAULT_RANGE;
+    const p = JSON.parse(raw);
+    const lo = Number(p?.lo), hi = Number(p?.hi);
+    const mode: 'center' | 'lower' = p?.mode === 'lower' ? 'lower' : 'center';
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0 || lo > hi) return DEFAULT_RANGE;
+    return { lo, hi, mode };
+  } catch {
+    return DEFAULT_RANGE;
+  }
+}
+
+function saveRangeSettings(s: RangeSettings): void {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+
 export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props) {
   const { canvasData, addHandrails, removeElements } = useCanvasStore();
   const enabledSizes = useHandrailSettingsStore(s => s.enabledSizes);
@@ -271,10 +298,12 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   // 範囲離れ S-1/S-2/S-5 + 案Y-2: 建物全体で1個の離れ範囲[lo,hi]と優先(center/lower)を band にして
   //   エンジンへ渡す。初期は lo===hi(単一離れに縮退=非band)。案Y-2: scaffoldStart の自動起点判定に
-  //   rangeActive を使うため、ここ(scaffoldStart useMemo より前)へ移動。初期値は defaultDist 未確定の
-  //   ため 900 固定に変更（星の離れは案X/S-e で band 追従するため初期表示のみの差）。
-  const [rangeDist, setRangeDist] = useState<{ lo: number; hi: number }>({ lo: 900, hi: 900 });
-  const [distMode, setDistMode] = useState<'center' | 'lower'>('center');
+  //   rangeActive を使うため、ここ(scaffoldStart useMemo より前)へ移動。初期値は localStorage の
+  //   前回値（無ければ 800〜950・中央優先）。lo!==hi なので初回から範囲離れ(星無し計算)が有効。
+  const [rangeDist, setRangeDist] = useState<{ lo: number; hi: number }>(() => {
+    const s = loadRangeSettings(); return { lo: s.lo, hi: s.hi };
+  });
+  const [distMode, setDistMode] = useState<'center' | 'lower'>(() => loadRangeSettings().mode);
   const repDist = distMode === 'center'
     ? Math.round((rangeDist.lo + rangeDist.hi) / 2)
     : rangeDist.lo;
@@ -591,6 +620,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   const handleCalc = () => {
     if (!building) return;
+
+    // 前回値記憶: 計算実行時の範囲/優先を localStorage に保存し、次回モーダルの既定にする。
+    saveRangeSettings({ lo: rangeDist.lo, hi: rangeDist.hi, mode: distMode });
 
     // Phase H-3d-2 Stage 5 Part B + 修正A + B1/B2: bothmode は normalizedBuilding1F/2F を使用
     // 単一階モードは下の既存ロジックで処理 (無変更)。
