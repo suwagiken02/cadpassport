@@ -327,9 +327,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 優先順: 新フィールド (scaffoldStart1F / scaffoldStart2F) → 旧 scaffoldStart (後方互換)
   // 該当階の建物が存在しない場合は undefined（偽スタート角防止）
   const scaffoldStart = useMemo(() => {
-    const effectiveFloor = targetFloor === 'both' ? 2 : targetFloor;
-    const hasFloorBuilding = effectiveFloor === 1 ? !!building1F : !!building2F;
-    if (!hasFloorBuilding) return undefined;
+    // S-3c: 'both'(=cascade)の起点は最上階。cascade 集合 [1,2] の最上階(現状=2)を使う
+    //   （S-5 で present-floors の maxFloor へ）。単一階は targetFloor そのもの。N=2 では
+    //   effectiveFloor=2 と従来同値。newSS の 1F/2F 読みは永続化2スロット互換のまま
+    //   （S-5 で scaffoldStartByFloor 化）。auto 起点の建物は buildingByFloor[最上階]。
+    const cascadeFloorsPresent = [1, 2].filter(f => buildingByFloor[f]);
+    const effectiveFloor = targetFloor === 'both'
+      ? (cascadeFloorsPresent.length ? Math.max(...cascadeFloorsPresent) : 2)
+      : targetFloor;
+    const topBuilding = buildingByFloor[effectiveFloor];
+    if (!topBuilding) return undefined;
     const newSS = effectiveFloor === 1 ? canvasData.scaffoldStart1F : canvasData.scaffoldStart2F;
     if (newSS) return newSS;
     const legacy = canvasData.scaffoldStart;
@@ -337,19 +344,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     // 案Y-2: range 指定時は星未設定でも内部自動起点(北西角)を生成して計算可能にする。位置(周回起点)
     //   だけ与え、離れは案X/S-e で band 追従済。band未指定(degenerate=非band順次決定)は従来どおり undefined。
     if (rangeActive) {
-      const b = effectiveFloor === 1 ? building1F : building2F;
-      if (b) {
-        const auto: ScaffoldStartConfig = {
-          corner: 'nw', startVertexIndex: autoStartVertexIndex(b),
-          face1DistanceMm: repDist, face2DistanceMm: repDist,
-          face1FirstHandrail: 1800, face2FirstHandrail: 1800,
-          floor: effectiveFloor,
-        };
-        return auto;
-      }
+      const auto: ScaffoldStartConfig = {
+        corner: 'nw', startVertexIndex: autoStartVertexIndex(topBuilding),
+        face1DistanceMm: repDist, face2DistanceMm: repDist,
+        face1FirstHandrail: 1800, face2FirstHandrail: 1800,
+        floor: effectiveFloor,
+      };
+      return auto;
     }
     return undefined;
-  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, building1F, building2F, rangeActive, repDist]);
+  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, buildingByFloor, rangeActive, repDist]);
 
   // Phase H-3d-2 重大変更: scaffoldStart.startVertexIndex を normalizedBuilding2F の頂点 index に再マッピング。
   // 元の building2F.points と normalizedBuilding2F.points は順序が変わる場合がある (CW NW 起点へ正規化)。
