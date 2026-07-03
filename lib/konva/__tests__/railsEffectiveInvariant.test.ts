@@ -3,6 +3,7 @@ import { computeCascadeLayout, type FloorLayoutResult } from '../autolayout/casc
 import { computeAutoLayoutSequential } from '../autoLayoutUtils';
 import { sequentialResultToFloorResult, segmentsToHandrails } from '../autolayout/adapter';
 import { findScaffoldViolations } from '../scaffoldViolations';
+import { mmToGrid } from '../gridUtils';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
 import { DEFAULT_ENABLED_SIZES, DEFAULT_PRIORITY_CONFIG } from '@/types';
 
@@ -204,5 +205,57 @@ describe('S-2 N=3 run: rails合計==有効長（S-2b=継続緑化／R1 same-wall
     const res = computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe);
     assertRailsMatchEffective(res, 'R3 center');
     expect(findScaffoldViolations(allH(res), Object.values(b))).toEqual([]);
+  });
+});
+
+// ============================================================
+// S-2d: 実物件 U字50mm北ズレ（children が上階/prev seg の「実着地」でなく「START離れ」を継承）。
+//   建物: 1F L字下屋 [(-150,-150),(750,-150),(750,550),(150,550),(150,250),(-150,250)]
+//         2F矩形   [(150,550),(750,550),(750,-150),(150,-150)]、band[700,950] center、自動起点(北西)。
+//   band center の下屋積層で 2F west run が非対称(startD=825/actEnd=875)になり、
+//   ・2F側: 2D1→2D2 straight-continuation の 2nd-pass 接合 cursor が 2D1 の実 cursorEnd(337.5)
+//           でなく prevSeg.startDistanceMm 由来の wrap(332.5) を使う → 接合点が 50mm ズレ。
+//   ・1F側: 1A(下屋 south)の pillar-from-upper が上階 2D1 の startDistanceMm(825) を継承し、
+//           実着地 875 で無いため scaffoldCoord が 332.5(正=337.5)。1B(下屋 west)は total≠eff。
+//   findScaffoldViolations は縦→横の角超過を検出しない(0件)ため、total==eff と接合点整合で固定。
+//   S-2d-a: it.fails で現状赤を固定（S-2d-b で真因を source-align し通常 it 化）。
+// ============================================================
+describe('S-2d 実物件U字: children離れ source-align（S-2d-aで赤固定）', () => {
+  const b1r: BuildingShape = {
+    id: '1f', type: 'polygon', fill: '#000', floor: 1,
+    points: [{ x: -150, y: -150 }, { x: 750, y: -150 }, { x: 750, y: 550 }, { x: 150, y: 550 }, { x: 150, y: 250 }, { x: -150, y: 250 }],
+  };
+  const b2r: BuildingShape = {
+    id: '2f', type: 'polygon', fill: '#000', floor: 2,
+    points: [{ x: 150, y: 550 }, { x: 750, y: 550 }, { x: 750, y: -150 }, { x: 150, y: -150 }],
+  };
+  const bandCe = { lo: 700, hi: 950, mode: 'center' as const };
+  const rep = 825; // center 代表値 = round((700+950)/2)
+  const ssR: ScaffoldStartConfig = {
+    corner: 'nw', startVertexIndex: 0,
+    face1DistanceMm: rep, face2DistanceMm: rep,
+    face1FirstHandrail: 1800, face2FirstHandrail: 1800,
+  };
+  const D = { 1: fill(7, rep), 2: fill(5, rep) }; // 正規化後 1F=7辺/2F=5辺・一律 rep
+  const run = () => computeCascadeLayout({ 1: b1r, 2: b2r }, D, ssR, M, PC, undefined, undefined, bandCe);
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.001;
+  const seg2D1 = (res: Record<number, FloorLayoutResult>) => res[2].edgeSegments.find(s => s.face === 'west' && near(s.startPoint.y, 550))!;
+  const seg2D2 = (res: Record<number, FloorLayoutResult>) => res[2].edgeSegments.find(s => s.face === 'west' && near(s.startPoint.y, 250))!;
+  const seg1A = (res: Record<number, FloorLayoutResult>) => res[1].edgeSegments.find(s => s.face === 'south' && near(s.startPoint.x, 150) && near(s.startPoint.y, 250))!;
+  const seg1B = (res: Record<number, FloorLayoutResult>) => res[1].edgeSegments.find(s => s.face === 'west' && near(s.startPoint.x, -150))!;
+
+  it.fails('1B(下屋west) total==eff（現状 5700≠5650）', () => {
+    const s = seg1B(run()); const sel = s.candidates[s.selectedIndex]!;
+    expect(sel.totalMm).toBe(s.effectiveMm);
+  });
+  it.fails('接合: 2D1.cursorEnd == 2D2.cursorStart（現状 337.5≠332.5）', () => {
+    const res = run();
+    expect(seg2D1(res).cursorEnd).toBe(seg2D2(res).cursorStart);
+  });
+  it.fails('1A.scaffoldCoord == 250 + mmToGrid(2D1実着地)（現状 332.5≠337.5）', () => {
+    const res = run();
+    const d1 = seg2D1(res);
+    const actEnd = d1.candidates[d1.selectedIndex]!.actualEndDistanceMm;
+    expect(seg1A(res).scaffoldCoord).toBe(250 + mmToGrid(actEnd));
   });
 });
