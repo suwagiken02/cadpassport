@@ -8,6 +8,11 @@ import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 import { INITIAL_GRID_PX, gridToMm } from '@/lib/konva/gridUtils';
 import { getEdgeOverhangs, computeOffsetPolygon } from '@/lib/konva/roofUtils';
 import { getHandrailEndpoints } from '@/lib/konva/snapUtils';
+import {
+  buildFloorDimDescriptors,
+  getPresentFloors,
+  readDimVisibility,
+} from '@/lib/konva/dimensionLineFloors';
 import { DEFAULT_DIMENSION_OFFSETS_MM } from '@/types';
 import type { BuildingShape, DimensionLineKey, DimensionOffsetsMm, Handrail, Point } from '@/types';
 
@@ -18,10 +23,12 @@ import type { BuildingShape, DimensionLineKey, DimensionOffsetsMm, Handrail, Poi
 // 寸法線移動 (= 本 task): 種別ごとの mm offset を canvasData に保存。
 // default 0 = 既存 hardcoded px 挙動完全維持、 ドラッグで法線方向のみ調整可。
 // 同 (floor, category) の 4 face は単一キーで連動。
+//
+// S-4: N 階解禁。floors/offset/色/キー/visibility を dimensionLineFloors の純関数へ委譲し
+//   存在階を昇順ユニークで反復(=N 階一般化)。offset は式 base+(maxFloor−floor)·step
+//   (複数階時)・単独階は SOLO 定数。N=2({1,2}) では従来リテラルと完全一致(byte 不変)。
 // ============================================================
 
-const COLOR_1F = '#444';
-const COLOR_2F = '#378ADD';
 const DRAG_COLOR = '#f59e0b'; // ドラッグ中ハイライト (= amber、 ★4 確定)
 const BG_FILL = '#ffffff';
 const BG_OPACITY = 0.92;
@@ -32,18 +39,6 @@ const PAD_X = 3;
 const PAD_Y = 2;
 const HIT_WIDTH = 20; // 透明ヒット領域 (= ★4 確定)
 const PX_TO_MM = 10 / INITIAL_GRID_PX; // 10/3 ≈ 3.33 mm/px (zoom 非依存)
-
-// 軸オフセット (= 紙上 mm 単位、 zoom 連動で px 換算、 PDF 印刷範囲内保証)
-const OFF_SCAFFOLD_SOLO_MM = 75;    // 150 → 75 (50% 縮小)
-const OFF_WALL_SOLO_MM = 150;       // 300 → 150
-const OFF_ROOF_SOLO_MM = 300;       // 550 → 300
-
-const OFF_SCAFFOLD_2F_BOTH_MM = 50;    // 100 → 50
-const OFF_SCAFFOLD_1F_BOTH_MM = 100;   // 175 → 100
-const OFF_WALL_2F_BOTH_MM = 200;       // 350 → 200
-const OFF_ROOF_2F_BOTH_MM = 350;       // 600 → 350
-const OFF_WALL_1F_BOTH_MM = 500;       // 900 → 500
-const OFF_ROOF_1F_BOTH_MM = 700;       // 1200 → 700
 
 type Face = 'north' | 'south' | 'east' | 'west';
 type BB = { minX: number; minY: number; maxX: number; maxY: number };
@@ -511,43 +506,25 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
     const overallBB = getOverallBB(canvasData.buildings, canvasData.handrails);
     if (!bbOk(overallBB)) return { elements: els, dragInfos: infos };
 
-    const has1FBuilding = canvasData.buildings.some(b => (b.floor ?? 1) === 1);
-    const has2FBuilding = canvasData.buildings.some(b => b.floor === 2);
-    const isBothmode = has1FBuilding && has2FBuilding;
-
     // mm → px 換算 (= mm * gridPx / 10、 INITIAL_GRID_PX=20 で 1 grid=10mm)
     const mmToPx = (mm: number) => mm * gridPx / 10;
-    const offsetsBase = isBothmode
-      ? {
-          wall1F: mmToPx(OFF_WALL_1F_BOTH_MM), roof1F: mmToPx(OFF_ROOF_1F_BOTH_MM),
-          wall2F: mmToPx(OFF_WALL_2F_BOTH_MM), roof2F: mmToPx(OFF_ROOF_2F_BOTH_MM),
-          scaffold1F: mmToPx(OFF_SCAFFOLD_1F_BOTH_MM), scaffold2F: mmToPx(OFF_SCAFFOLD_2F_BOTH_MM),
-        }
-      : {
-          wall1F: mmToPx(OFF_WALL_SOLO_MM), roof1F: mmToPx(OFF_ROOF_SOLO_MM),
-          wall2F: mmToPx(OFF_WALL_SOLO_MM), roof2F: mmToPx(OFF_ROOF_SOLO_MM),
-          scaffold1F: mmToPx(OFF_SCAFFOLD_SOLO_MM), scaffold2F: mmToPx(OFF_SCAFFOLD_SOLO_MM),
-        };
 
-    // ★5 相対 mm delta: base px + mmDelta * 0.3 (zoom 非依存) で px 換算
-    const offsets = {
-      wall1F: offsetsBase.wall1F + mmDeltaToPx(effectiveOffsetMm.wall1F),
-      roof1F: offsetsBase.roof1F + mmDeltaToPx(effectiveOffsetMm.roof1F),
-      wall2F: offsetsBase.wall2F + mmDeltaToPx(effectiveOffsetMm.wall2F),
-      roof2F: offsetsBase.roof2F + mmDeltaToPx(effectiveOffsetMm.roof2F),
-      scaffold1F: offsetsBase.scaffold1F + mmDeltaToPx(effectiveOffsetMm.scaffold1F),
-      scaffold2F: offsetsBase.scaffold2F + mmDeltaToPx(effectiveOffsetMm.scaffold2F),
-    };
-
+    // S-4: N 階一般化。存在階の昇順ユニークで反復し、offset(mm) は式
+    //   base+(maxFloor−floor)·step(複数階時)・単独階は SOLO 定数(→dimBaseOffsetMm)。
+    //   色は floorDimColor パレット、キーは `${cat}${floor}F`。N=2({1,2}) で従来リテラルと完全一致。
+    //   px 換算(mmToPx) + ドラッグ相対 delta(mmDeltaToPx) は従来どおり後段で加算。
+    const floorsPresent = getPresentFloors(canvasData.buildings);
     const floors: Array<{
-      floor: 1 | 2; offWall: number; offRoof: number; offScaffold: number; color: string;
+      floor: number; offWall: number; offRoof: number; offScaffold: number; color: string;
       scaffoldKey: DimensionLineKey; wallKey: DimensionLineKey; roofKey: DimensionLineKey;
-    }> = [
-      { floor: 1, offWall: offsets.wall1F, offRoof: offsets.roof1F, offScaffold: offsets.scaffold1F,
-        color: COLOR_1F, scaffoldKey: 'scaffold1F', wallKey: 'wall1F', roofKey: 'roof1F' },
-      { floor: 2, offWall: offsets.wall2F, offRoof: offsets.roof2F, offScaffold: offsets.scaffold2F,
-        color: COLOR_2F, scaffoldKey: 'scaffold2F', wallKey: 'wall2F', roofKey: 'roof2F' },
-    ];
+    }> = buildFloorDimDescriptors(floorsPresent).map(d => ({
+      floor: d.floor,
+      offWall: mmToPx(d.offWallMm) + mmDeltaToPx(effectiveOffsetMm[d.wallKey] ?? 0),
+      offRoof: mmToPx(d.offRoofMm) + mmDeltaToPx(effectiveOffsetMm[d.roofKey] ?? 0),
+      offScaffold: mmToPx(d.offScaffoldMm) + mmDeltaToPx(effectiveOffsetMm[d.scaffoldKey] ?? 0),
+      color: d.color,
+      scaffoldKey: d.scaffoldKey, wallKey: d.wallKey, roofKey: d.roofKey,
+    }));
 
     // S-9: 共有壁(1F/2Fが同位置・同スパン)で寸法線が 1F/2F 2本ダブるのを 1 本化する。
     //   先に処理する階(1F)のキーを記録し、後の階(2F)の同一寸法はスキップする。キーの固定座標は
@@ -619,10 +596,9 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           : (face === 'west' ? bldgBB.minX : bldgBB.maxX);
 
         // 段 (足場)
-        const scaffoldVisKey = floor === 1 ? 'scaffold1F' : 'scaffold2F';
         const scfEdges = scaffoldData.byFace[face];
         const sDupKey = `S|${face}|${Math.round(faceFixed)}|${scfEdges.length ? Math.round(Math.min(...scfEdges.map(e => e.from))) : 0}|${scfEdges.length ? Math.round(Math.max(...scfEdges.map(e => e.to))) : 0}`;
-        if (dimensionVisibility[scaffoldVisKey] && scfEdges.length > 0 && !seenDim.has(sDupKey)) {
+        if (readDimVisibility(dimensionVisibility, 'scaffold', floor) && scfEdges.length > 0 && !seenDim.has(sDupKey)) {
           seenDim.add(sDupKey);
           const axisScaffold = refPx + sign * offScaffold;
           const spans: Span[] = scfEdges.map(e => ({
@@ -645,10 +621,9 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
         }
 
         // 段 (外壁)
-        const wallVisKey = floor === 1 ? 'wall1F' : 'wall2F';
         const wEdges = wallEdges[face];
         const wDupKey = `I|${face}|${Math.round(faceFixed)}|${wEdges.length ? Math.round(Math.min(...wEdges.map(e => e.from))) : 0}|${wEdges.length ? Math.round(Math.max(...wEdges.map(e => e.to))) : 0}`;
-        if (dimensionVisibility[wallVisKey] && wEdges.length > 0 && !seenDim.has(wDupKey)) {
+        if (readDimVisibility(dimensionVisibility, 'wall', floor) && wEdges.length > 0 && !seenDim.has(wDupKey)) {
           seenDim.add(wDupKey);
           const axisWall = refPx + sign * offWall;
           const spans: Span[] = wEdges.map(e => ({
@@ -669,11 +644,10 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
         }
 
         // 外側 (屋根の出幅)
-        const roofVisKey = floor === 1 ? 'roof1F' : 'roof2F';
         const rEdges = roofEdges[face];
         const ovEdges = overhangEdges[face];
         const rDupKey = `O|${face}|${Math.round(faceFixed)}|${rEdges.length ? Math.round(Math.min(...rEdges.map(r => r.from))) : 0}|${rEdges.length ? Math.round(Math.max(...rEdges.map(r => r.to))) : 0}`;
-        if (dimensionVisibility[roofVisKey] && rEdges.length > 0 && ovEdges.length > 0 && !seenDim.has(rDupKey)) {
+        if (readDimVisibility(dimensionVisibility, 'roof', floor) && rEdges.length > 0 && ovEdges.length > 0 && !seenDim.has(rDupKey)) {
           seenDim.add(rDupKey);
           const axisOuter = refPx + sign * offRoof;
           const lineStartGrid = Math.min(...rEdges.map(r => r.from));
@@ -699,8 +673,6 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       }
 
       // === 円形建物 (templateId==='circle'): Φ/R 表示 (微小辺の細分なし) ===
-      const wallVisKey = floor === 1 ? 'wall1F' : 'wall2F';
-      const roofVisKey = floor === 1 ? 'roof1F' : 'roof2F';
       for (const b of floorBuildings) {
         const ci = getCircleInfo(b);
         if (!ci) continue;
@@ -716,7 +688,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           const refPx = isH ? gy(refGrid) : gx(refGrid);
 
           // 外壁段: Φ(直径)
-          if (dimensionVisibility[wallVisKey]) {
+          if (readDimVisibility(dimensionVisibility, 'wall', floor)) {
             const axisWall = refPx + sign * offWall;
             const lineS = isH ? gx(ci.minX) : gy(ci.minY);
             const lineE = isH ? gx(ci.maxX) : gy(ci.maxY);
@@ -728,7 +700,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
           }
 
           // 屋根段: Φ(屋根直径)。屋根ありのときのみ
-          if (ci.roofD != null && dimensionVisibility[roofVisKey]) {
+          if (ci.roofD != null && readDimVisibility(dimensionVisibility, 'roof', floor)) {
             const axisRoof = refPx + sign * offRoof;
             const lineS = isH ? gx(ci.rMinX) : gy(ci.rMinY);
             const lineE = isH ? gx(ci.rMaxX) : gy(ci.rMaxY);
@@ -760,7 +732,7 @@ export default function DimensionLineLayer({ visible = true }: { visible?: boole
       key: info.key,
       face: info.face,
       startPointer: { x: pointer.x, y: pointer.y },
-      startMm: storedOffsets[info.key],
+      startMm: storedOffsets[info.key] ?? 0,
     };
   };
 

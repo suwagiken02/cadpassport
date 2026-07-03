@@ -226,8 +226,10 @@ export type HeightMarker = {
 };
 
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===
-/** 寸法線の種別キー (= handrailSettingsStore の DimensionVisibility と同 6 key) */
-export type DimensionLineKey = 'scaffold1F' | 'scaffold2F' | 'wall1F' | 'wall2F' | 'roof1F' | 'roof2F';
+/** 寸法線の種別キー。S-4 で N 階へ template literal 拡張 (`${cat}${floor}F`)。
+ *  {1,2} では従来 6 key と一致。DEFAULT_DIMENSION_OFFSETS_MM は 6 key のまま維持し、
+ *  3F+ は読取側の `?? 0` フォールバックで吸収する (DB は jsonb で無改修)。 */
+export type DimensionLineKey = `${'scaffold' | 'wall' | 'roof'}${number}F`;
 
 /** 種別ごとの外向き mm offset (= 既存 hardcoded px からの相対 delta、 default 0 で挙動完全維持) */
 export type DimensionOffsetsMm = Record<DimensionLineKey, number>;
