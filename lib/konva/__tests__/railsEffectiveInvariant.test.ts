@@ -185,15 +185,24 @@ describe('S-2 N=3 run: rails合計==有効長（S-2b=継続緑化／R1 same-wall
     assertRailsMatchEffective(computeCascadeLayout(b, D3, ss, M, PC), 'NB2 noband');
   });
 
-  // R1: 410/620/900・center[800,950]（成長両方向）→ west が same-wall-line 残で total!=eff(d=100)。
-  //   S-2c 候補（同一壁線の startContribution source-align）。現状赤を it.fails で可視化。
-  it.fails('[S-2c残] R1 410/620/900 center: rails合計==有効長（same-wall-line残・現状赤）', () => {
+  // R1: 410/620/900・center[800,950]（成長両方向）→ west が same-wall-line/collinear-with-upper。
+  //   S-2c で collinear 終端 endContrib を上階実カーソルwrapへ pin し緑化（d=100→0）。
+  it('R1 410/620/900 center: rails合計==有効長', () => {
     const b = stack3(410, 390, 620, 650, 900, 910);
     assertRailsMatchEffective(computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe), 'R1 center');
   });
-  it.fails('[S-2c残] R1 410/620/900 center: findScaffoldViolations===[]（same-wall-line残・現状赤）', () => {
+  it('R1 410/620/900 center: findScaffoldViolations===[]', () => {
     const b = stack3(410, 390, 620, 650, 900, 910);
     const res = computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe);
+    expect(findScaffoldViolations(allH(res), Object.values(b))).toEqual([]);
+  });
+
+  // R3(S-2c回帰): 成長両方向・半端寸法の別形状。同一壁線(west/south)を跨ぐ collinear 終端で
+  //   total==eff と 物理違反0 を固定（S-2c の endpin が効くことのガード）。
+  it('R3 357x283/551x517/743x817 center: rails合計==有効長 & 違反0', () => {
+    const b = stack3(357, 283, 551, 517, 743, 817);
+    const res = computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe);
+    assertRailsMatchEffective(res, 'R3 center');
     expect(findScaffoldViolations(allH(res), Object.values(b))).toEqual([]);
   });
 });

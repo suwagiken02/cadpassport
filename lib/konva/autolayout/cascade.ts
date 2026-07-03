@@ -787,9 +787,26 @@ export function walkFloorLowerRole(
     const nextCls = classifications[nextEdgeIdx];
     let endConstraint: FloorSegmentEndConstraint;
     let desiredEndDist: number;
+    let endBand = band;
     if (nextCls.kind === 'collinear') {
       endConstraint = { kind: 'collinear-with-upper', upperEdgeIndex: nextCls.upperEdgeIndex };
       desiredEndDist = nextCls.fixedDistanceMm;
+      // S-2c: collinear 終端は 2nd pass で上階 collinear seg の実カーソル(edge.p2 と共有する角側)へ
+      //   snap される。band 有効時、tiling の終端離れも同じ実 wrap(|上階seg の該当カーソル − 共有角|)へ
+      //   pin し、band drift(actEnd を帯中央へ動かす)による rails 超過＝角での重複を防ぐ。
+      //   上階 seg が対称なら実 wrap == band 採用値 ＝ no-op(N=2 parity 保持)。
+      //   endContrib(横方向 run 長)のみ是正。scaffoldCoord(離れ線＝縦整合/S-6)は startDist 由来で不変。
+      if (band) {
+        const segAboveEnd = resultAbove.edgeSegments.find(s => s.edgeIndex === nextCls.upperEdgeIndex);
+        if (segAboveEnd) {
+          const endVar = edge.handrailDir === 'horizontal' ? edge.p2.x : edge.p2.y;
+          const nearestCursor = Math.abs(segAboveEnd.cursorStart - endVar) <= Math.abs(segAboveEnd.cursorEnd - endVar)
+            ? segAboveEnd.cursorStart : segAboveEnd.cursorEnd;
+          const pinnedEnd = Math.round(Math.abs(nearestCursor - endVar) * 10);
+          desiredEndDist = pinnedEnd;
+          endBand = { lo: pinnedEnd, hi: pinnedEnd, mode: band.mode };
+        }
+      }
     } else if (nextCls.kind === 'covered') {
       const endPillarMatch = pillarPoints.find(p => pointsMatch(p.point, edge.p2) && p.lowerEdgeIndex === nextEdgeIdx);
       if (endPillarMatch) {
@@ -818,7 +835,7 @@ export function walkFloorLowerRole(
       enabledSizes, priorityConfig,
       adj.larger.offsetIdx, adj.smaller.offsetIdx,
       adj.larger.variationIdx, adj.smaller.variationIdx,
-      band,
+      endBand,
     );
 
     let selectedIndex = userSelections?.[segKey] ?? 0;
