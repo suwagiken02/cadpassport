@@ -269,6 +269,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const building1F = buildingByFloor[1];
   const building2F = buildingByFloor[2];
 
+  // S-5a: 存在階の昇順ユニーク（cascade へ渡す配管の反復集合）。
+  //   この段では UI が 1|2|'both' のままなので present は実質 {1}/{2}/{1,2} だが、
+  //   コードは任意 N を受ける形にする（エンジンは present-floors 汎用・連続積層を要求）。
+  //   present=={1,2} のとき従来の [1,2] と同一配列＝byte 不変。
+  const presentFloors = useMemo<number[]>(() => {
+    const s = new Set<number>();
+    for (const b of canvasData.buildings) s.add(b.floor ?? 1);
+    return Array.from(s).sort((a, b) => a - b);
+  }, [canvasData.buildings]);
+
   // UI表示の「対象階建物」
   // 1Fのみ: 1F建物 / 2Fのみ: 2F建物 / both: 2F建物（常に全周配置されるため主表示）
   const building = useMemo(() => {
@@ -331,9 +341,10 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     //   （S-5 で present-floors の maxFloor へ）。単一階は targetFloor そのもの。N=2 では
     //   effectiveFloor=2 と従来同値。newSS の 1F/2F 読みは永続化2スロット互換のまま
     //   （S-5 で scaffoldStartByFloor 化）。auto 起点の建物は buildingByFloor[最上階]。
-    const cascadeFloorsPresent = [1, 2].filter(f => buildingByFloor[f]);
+    // S-5a: cascade 集合を present-floors 化。最上階(=maxFloor)を起点にする（既に Math.max 駆動）。
+    //   present=={1,2} のとき max=2 で従来同値。
     const effectiveFloor = targetFloor === 'both'
-      ? (cascadeFloorsPresent.length ? Math.max(...cascadeFloorsPresent) : 2)
+      ? (presentFloors.length ? Math.max(...presentFloors) : 2)
       : targetFloor;
     const topBuilding = buildingByFloor[effectiveFloor];
     if (!topBuilding) return undefined;
@@ -353,7 +364,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       return auto;
     }
     return undefined;
-  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, buildingByFloor, rangeActive, repDist]);
+  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, buildingByFloor, presentFloors, rangeActive, repDist]);
 
   // Phase H-3d-2 重大変更: scaffoldStart.startVertexIndex を normalizedBuilding2F の頂点 index に再マッピング。
   // 元の building2F.points と normalizedBuilding2F.points は順序が変わる場合がある (CW NW 起点へ正規化)。
@@ -506,9 +517,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   //   反復階集合は cascadeInput と同じ [1,2]（S-5 で present-floors 化）。
   const cascadeNormByFloor = useMemo(() => {
     const src: Record<number, (typeof canvasData.buildings)[number]> = {};
-    for (const f of [1, 2]) { const b = buildingByFloor[f]; if (b) src[f] = b; }
+    for (const f of presentFloors) { const b = buildingByFloor[f]; if (b) src[f] = b; } // S-5a: present-floors 反復
     return normalizeBuildingsByFloor(src);
-  }, [buildingByFloor]);
+  }, [buildingByFloor, presentFloors]);
 
   const normalizedDistances = useMemo(() => {
     // 最上階(cascade へ渡す主建物=2F)の生離れを cascade 正規化辺 index へ再キー。
@@ -525,13 +536,13 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const cascadeInput = useMemo(() => {
     const buildings: Record<number, (typeof canvasData.buildings)[number]> = {};
     const distancesRec: Record<number, Record<number, number>> = {};
-    for (const f of [1, 2]) {
+    for (const f of presentFloors) { // S-5a: present-floors 反復（distances の floor→source マッピングは S-3a のまま＝S-3b/S-5d で全階正規化）
       const b = buildingByFloor[f];
       if (b) buildings[f] = b;
       distancesRec[f] = f === 1 ? distances1F : normalizedDistances;
     }
     return { buildings, distances: distancesRec, topStart: normalizedScaffoldStart };
-  }, [buildingByFloor, distances1F, normalizedDistances, normalizedScaffoldStart]);
+  }, [buildingByFloor, presentFloors, distances1F, normalizedDistances, normalizedScaffoldStart]);
 
   // 下屋辺の変化時に下屋距離 distancesByFloor[subFloor] を初期化（デフォルト 900mm）。既に入力があれば保持。
   // P3-5 S5-a: 下屋距離は bothmode 専用。単一階では subFloor(=1) が primaryFloor と衝突するため書き込まない
@@ -1245,8 +1256,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     //   従来の overlap 置換(同一線上の重なりだけ削除)では、星設定時に焼かれた別離れ(900)の L字手摺(①)
     //   や過去の残骸・手動調整が「重ならない」ため残っていた。対象階を全消しして混在を構造的に解消する。
     //   消すのは手摺のみ(removeElements に手摺idだけ渡す)→建物/障害物/寸法/その他は無傷。
-    //   対象階: both→[1,2](全消し) / 単一→その階のみ(他階は温存)。
-    const clearFloors: number[] = targetFloor === 'both' ? [1, 2] : [targetFloor];
+    //   対象階: both→present-floors(全消し) / 単一→その階のみ(他階は温存)。
+    //   S-5a: present=={1,2} のとき従来 [1,2] と同集合＝byte 不変。
+    const clearFloors: number[] = targetFloor === 'both' ? presentFloors : [targetFloor];
     const clearIds = canvasData.handrails
       .filter(h => clearFloors.includes(h.floor ?? 1))
       .map(h => h.id);
