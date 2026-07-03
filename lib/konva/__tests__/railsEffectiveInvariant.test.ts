@@ -89,7 +89,7 @@ describe('S-a 不変条件 rails合計==有効長（現状 lower×出隅 で赤�
     assertRailsMatchEffective(computeCascadeLayout({ 1: L1F, 2: f2 }, D, ss, M, PC, undefined, undefined, bandLo), 'L字下屋 lower');
   });
 
-  it.fails('[赤期待=バグ] 単一階L字 lower 起点辺900/他800', () => {
+  it('[S-e緑化] 単一階L字 lower 起点辺900/他800', () => {
     const seq = computeAutoLayoutSequential(Lsingle, anchorDist(6, 800, 900), ss, M, PC, undefined, undefined, bandLo);
     assertRailsMatchEffective({ 1: sequentialResultToFloorResult(seq, 1) }, '単一階L字 lower');
   });

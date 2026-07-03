@@ -423,6 +423,14 @@ export function computeAutoLayoutSequential(
   let prevEndDistanceMm: number | undefined = undefined;
   let hasUnresolved = false;
 
+  // S-e: band 指定時は起点辺/閉じ辺の離れ(face固定)と k=0 の前辺離れも band に従わせる
+  //   (lower=lo / center=mid)。band 迂回の face(=900)が隣辺の frame に漏れる 100ズレ小物を解消。
+  //   起点/閉じ辺は band 値で決定的(drift 依存なし)なので収束ループ不要。band 未指定は従来の
+  //   face/distances（非band順次決定を保護）。center(mid=900)は face と一致で no-op。
+  const bandSeed: number | null = band
+    ? (band.mode === 'lower' ? band.lo : Math.round((band.lo + band.hi) / 2))
+    : null;
+
   for (let k = 0; k < n; k++) {
     const i = (startIdx + k) % n;
     const edge = edges[i];
@@ -437,17 +445,17 @@ export function computeAutoLayoutSequential(
     let startDistanceMm: number;
     if (k === 0) {
       if (scaffoldStart && isLocked) {
-        startDistanceMm = edge.handrailDir === 'horizontal'
+        startDistanceMm = bandSeed ?? (edge.handrailDir === 'horizontal'
           ? scaffoldStart.face1DistanceMm
-          : scaffoldStart.face2DistanceMm;
+          : scaffoldStart.face2DistanceMm);
       } else {
         startDistanceMm = distances[edge.index] ?? 900;
       }
     } else if (k === n - 1 && scaffoldStart && isLocked) {
-      // 閉じ辺: もう一方の locked を face で固定 (cascade 値を捨てる)
-      startDistanceMm = edge.handrailDir === 'horizontal'
+      // 閉じ辺: もう一方の locked を face で固定 (cascade 値を捨てる)。S-e: band 時は band 値へ。
+      startDistanceMm = bandSeed ?? (edge.handrailDir === 'horizontal'
         ? scaffoldStart.face1DistanceMm
-        : scaffoldStart.face2DistanceMm;
+        : scaffoldStart.face2DistanceMm);
     } else {
       startDistanceMm = prevEndDistanceMm ?? distances[edge.index] ?? 900;
     }
@@ -465,7 +473,7 @@ export function computeAutoLayoutSequential(
     // 一致 → 閉合誤差ゼロ。scaffoldStart 無し時は edges[n-1]/edges[0] 境界に残存。
     const prevIdx = (i - 1 + n) % n;
     const prevEdgeStartDistanceMm = k === 0
-      ? distances[edges[prevIdx].index] ?? 900
+      ? (bandSeed ?? distances[edges[prevIdx].index] ?? 900)
       : intermediate[prevIdx].startDistanceMm;
 
     // Phase I-2: 該当辺の adjustments を generateSequentialCandidates へ伝搬
