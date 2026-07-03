@@ -218,9 +218,10 @@ describe('S-2 N=3 run: rails合計==有効長（S-2b=継続緑化／R1 same-wall
 //   ・1F側: 1A(下屋 south)の pillar-from-upper が上階 2D1 の startDistanceMm(825) を継承し、
 //           実着地 875 で無いため scaffoldCoord が 332.5(正=337.5)。1B(下屋 west)は total≠eff。
 //   findScaffoldViolations は縦→横の角超過を検出しない(0件)ため、total==eff と接合点整合で固定。
-//   S-2d-a: it.fails で現状赤を固定（S-2d-b で真因を source-align し通常 it 化）。
+//   S-2d-b で真因を source-align 済（1F 柱起点辺の離れ線を上階実着地へ／2F 直線継続の接合を
+//   前辺実 cursorEnd へ、いずれも band 指定時のみ＝非band/非分割は byte 不変）→通常 it で緑。
 // ============================================================
-describe('S-2d 実物件U字: children離れ source-align（S-2d-aで赤固定）', () => {
+describe('S-2d 実物件U字: children離れ source-align（S-2d-bで緑化）', () => {
   const b1r: BuildingShape = {
     id: '1f', type: 'polygon', fill: '#000', floor: 1,
     points: [{ x: -150, y: -150 }, { x: 750, y: -150 }, { x: 750, y: 550 }, { x: 150, y: 550 }, { x: 150, y: 250 }, { x: -150, y: 250 }],
@@ -244,18 +245,57 @@ describe('S-2d 実物件U字: children離れ source-align（S-2d-aで赤固定�
   const seg1A = (res: Record<number, FloorLayoutResult>) => res[1].edgeSegments.find(s => s.face === 'south' && near(s.startPoint.x, 150) && near(s.startPoint.y, 250))!;
   const seg1B = (res: Record<number, FloorLayoutResult>) => res[1].edgeSegments.find(s => s.face === 'west' && near(s.startPoint.x, -150))!;
 
-  it.fails('1B(下屋west) total==eff（現状 5700≠5650）', () => {
+  it('1B(下屋west) total==eff（修正後 5700==5700）', () => {
     const s = seg1B(run()); const sel = s.candidates[s.selectedIndex]!;
     expect(sel.totalMm).toBe(s.effectiveMm);
   });
-  it.fails('接合: 2D1.cursorEnd == 2D2.cursorStart（現状 337.5≠332.5）', () => {
+  it('接合: 2D1.cursorEnd == 2D2.cursorStart（修正後 337.5==337.5）', () => {
     const res = run();
     expect(seg2D1(res).cursorEnd).toBe(seg2D2(res).cursorStart);
   });
-  it.fails('1A.scaffoldCoord == 250 + mmToGrid(2D1実着地)（現状 332.5≠337.5）', () => {
+  it('1A.scaffoldCoord == 250 + mmToGrid(2D1実着地)（修正後 337.5）', () => {
     const res = run();
     const d1 = seg2D1(res);
     const actEnd = d1.candidates[d1.selectedIndex]!.actualEndDistanceMm;
     expect(seg1A(res).scaffoldCoord).toBe(250 + mmToGrid(actEnd));
+  });
+  // 全周 rails合計==有効長 & 物理違反0（U字の他辺への波及がないことも同時に固定）。
+  it('全floor rails合計==有効長 & findScaffoldViolations===[]', () => {
+    const res = run();
+    assertRailsMatchEffective(res, 'S-2d 実物件');
+    const allHandrails = [2, 1].flatMap(f => segmentsToHandrails(res[f].edgeSegments));
+    expect(findScaffoldViolations(allHandrails, [b1r, b2r])).toEqual([]);
+  });
+});
+
+// ============================================================
+// S-2d-b 回帰網補強: 別形状の「N=2 下屋分割×band×pillar」。1F L字下屋の切欠き頂点が 2F 西壁を
+//   正規化分割し(=直線継続 run)、下屋 south が pillar-from-upper になる形。band center の
+//   非対称でも 全floor total==eff・物理違反0・U字接合連続 を固定する（source-align のガード）。
+// ============================================================
+describe('S-2d-b 回帰: 別形状 N=2 下屋分割×band×pillar', () => {
+  const g1: BuildingShape = {
+    id: '1f', type: 'polygon', fill: '#000', floor: 1,
+    points: [{ x: -100, y: -200 }, { x: 800, y: -200 }, { x: 800, y: 600 }, { x: 300, y: 600 }, { x: 300, y: 200 }, { x: -100, y: 200 }],
+  };
+  const g2: BuildingShape = {
+    id: '2f', type: 'polygon', fill: '#000', floor: 2,
+    points: [{ x: 300, y: 600 }, { x: 800, y: 600 }, { x: 800, y: -200 }, { x: 300, y: -200 }],
+  };
+  const bandCe = { lo: 800, hi: 1000, mode: 'center' as const };
+  const rep = 900;
+  const ssR: ScaffoldStartConfig = {
+    corner: 'nw', startVertexIndex: 0,
+    face1DistanceMm: rep, face2DistanceMm: rep,
+    face1FirstHandrail: 1800, face2FirstHandrail: 1800,
+  };
+  const D = { 1: fill(8, rep), 2: fill(6, rep) };
+  const run = () => computeCascadeLayout({ 1: g1, 2: g2 }, D, ssR, M, PC, undefined, undefined, bandCe);
+
+  it('全floor rails合計==有効長 & findScaffoldViolations===[]', () => {
+    const res = run();
+    assertRailsMatchEffective(res, '別形状 下屋分割');
+    const allHandrails = [2, 1].flatMap(f => segmentsToHandrails(res[f].edgeSegments));
+    expect(findScaffoldViolations(allHandrails, [g1, g2])).toEqual([]);
   });
 });

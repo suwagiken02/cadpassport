@@ -605,12 +605,26 @@ export function walkFloorUpperRole(
     const startDistGrid = mmToGrid(s.startDistanceMm);
     const actualEndMm = s.candidates[s.selectedIndex]?.actualEndDistanceMm ?? s.desiredEndDistanceMm;
     const endDistGrid = mmToGrid(actualEndMm);
-    const cursorStart = s.prevCornerIsConvex
-      ? wallStart - sign * prevDistGrid
-      : wallStart + sign * startDistGrid;
-    const cursorEnd = s.nextCornerIsConvex
-      ? wallEnd + sign * endDistGrid
-      : wallEnd - sign * endDistGrid;
+    // S-2d-b: band 指定時、直線継続(同一壁が正規化分割された run の続き＝前辺が同 face・同 dir)の接合は、
+    //   前辺の実 cursorEnd から連続させ終端を rails合計(totalMm)で導く → ①接合点整合(前辺実着地に一致)
+    //   ②eff==total を構造的に保証する。前辺 run が band/半端で非対称(startD≠actEnd)だと、従来の
+    //   「自 startDistanceMm 由来 wrap」では接合が前辺実端と 50mm ズレていた(実物件 2D1→2D2)。band 未指定
+    //   /非分割(単一辺=1 face)は else の従来式のまま＝N=2 parity保持。周回先頭(k=0)は前辺未再計算のため対象外。
+    const isPrevStraightCont = k > 0 && prevSeg.face === s.face && prevSeg.handrailDir === s.handrailDir;
+    let cursorStart: number;
+    let cursorEnd: number;
+    if (band && isPrevStraightCont) {
+      const railsTotal = s.candidates[s.selectedIndex]?.totalMm ?? s.effectiveMm;
+      cursorStart = prevSeg.cursorEnd;
+      cursorEnd = cursorStart + sign * (railsTotal / 10);
+    } else {
+      cursorStart = s.prevCornerIsConvex
+        ? wallStart - sign * prevDistGrid
+        : wallStart + sign * startDistGrid;
+      cursorEnd = s.nextCornerIsConvex
+        ? wallEnd + sign * endDistGrid
+        : wallEnd - sign * endDistGrid;
+    }
     intermediate[k] = {
       ...s,
       cursorStart,
@@ -916,13 +930,21 @@ export function walkFloorLowerRole(
     const sign = s.handrailDir === 'horizontal' ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? 1 : -1);
 
     let cursorStart: number;
+    // S-2d-b: 柱起点辺の離れ線(scaffoldCoord)を、上階 segA の「実着地」(segA.cursorEnd)へ source-align。
+    //   柱点は segA.endPoint(=s.startPoint)を共有し、s の離れ線は segA の壁軸=cursor 軸と同軸。segA の
+    //   run が band/半端で非対称(startD≠actEnd)だと、離れ線が startDistanceMm 由来のままでは segA の
+    //   実端とズレ、下屋U字が北ズレ・次辺(cascade-from-prev)の cursorStart も連鎖ズレ→ total≠eff。
+    //   candidate 生成の startDist は不変(=総長不変)。band 未指定は完全 no-op＝N=2/下位 parity 保持。
+    let scaffoldCoordOut = s.scaffoldCoord;
     const scStart = s.startConstraint;
     if (scStart?.kind === 'pillar-from-upper') {
       const pp = scStart.pillarPoint;
       const segA = resultAbove.edgeSegments.find(seg2 =>
         Math.abs(seg2.endPoint.x - pp.x) < 0.001 && Math.abs(seg2.endPoint.y - pp.y) < 0.001);
-      if (segA && segA.handrailDir !== s.handrailDir) cursorStart = segA.scaffoldCoord;
-      else if (segA) cursorStart = segA.cursorEnd;
+      if (segA && segA.handrailDir !== s.handrailDir) {
+        cursorStart = segA.scaffoldCoord;
+        if (band) scaffoldCoordOut = segA.cursorEnd;
+      } else if (segA) cursorStart = segA.cursorEnd;
       else cursorStart = s.handrailDir === 'horizontal' ? s.startPoint.x : s.startPoint.y;
     } else if (scStart?.kind === 'cascade-from-prev-segment' || scStart?.kind === 'same-wall-line') {
       // same-wall-line も along-wall の角接続は cascade と同一規則（perp 探索でL字接合）に倣う。
@@ -983,6 +1005,7 @@ export function walkFloorLowerRole(
 
     intermediate[k] = {
       ...s,
+      scaffoldCoord: scaffoldCoordOut,
       cursorStart,
       cursorEnd,
       effectiveMm: Math.max(0, Math.round(Math.abs(cursorEnd - cursorStart) * 10)),
