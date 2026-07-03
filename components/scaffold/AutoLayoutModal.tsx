@@ -502,8 +502,10 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const [focusedEdgeIndex, setFocusedEdgeIndex] = useState<number | null>(null);
   const [showConflictConfirm, setShowConflictConfirm] = useState(false);
   const [showLockedAlert, setShowLockedAlert] = useState(false);
-  const [pendingHandrails, setPendingHandrails] = useState<Handrail[]>([]);
-  const [conflictIds, setConflictIds] = useState<string[]>([]);
+  // 案Y-1: 全消し方式に移行し conflict ダイアログはバイパス（setter は未使用のため destructure から除外）。
+  //   dead な確認ダイアログ本体(handleConflictOk/Cancel・JSX)は撤去しすぎず残置（showConflictConfirm は常に false）。
+  const [pendingHandrails] = useState<Handrail[]>([]);
+  const [conflictIds] = useState<string[]>([]);
   // Phase H-3b-2-1 / H-3d-1: 順次決定の状態管理を 2F / 1F の 2 本立てに拡張
   // - 1Fのみ・2Fのみモードでは sequentialResult2F のみ使用、1F は null 維持
   // - bothmode では 2F 全周 + 1F 下屋辺の両方を保持
@@ -1155,37 +1157,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
     if (allHandrails.length === 0) return;
 
-    // 触れる既存手摺を検出（各手摺について同じ階のもののみ比較）。
-    // 1F+2F同時モードでも、1F 手摺は 1F と、2F 手摺は 2F と比較される。
-    const mmToG = (mm: number) => Math.round(mm / 10);
-    const TOL = 2;
-    const overlappingIds = canvasData.handrails.filter(existing => {
-      return allHandrails.some(newH => {
-        if ((newH.floor ?? 1) !== (existing.floor ?? 1)) return false;
-        if (existing.direction !== newH.direction) return false;
-        if (existing.direction === 'horizontal') {
-          if (Math.abs(existing.y - newH.y) > TOL) return false;
-          const e1 = existing.x, e2 = existing.x + mmToG(existing.lengthMm);
-          const n1 = newH.x, n2 = newH.x + mmToG(newH.lengthMm);
-          return e1 <= n2 + TOL && e2 >= n1 - TOL;
-        } else {
-          if (Math.abs(existing.x - newH.x) > TOL) return false;
-          const e1 = existing.y, e2 = existing.y + mmToG(existing.lengthMm);
-          const n1 = newH.y, n2 = newH.y + mmToG(newH.lengthMm);
-          return e1 <= n2 + TOL && e2 >= n1 - TOL;
-        }
-      });
-    }).map(h => h.id);
-
-    // 干渉する既存部材がある場合はカスタム確認ダイアログ
-    if (overlappingIds.length > 0) {
-      setConflictIds(overlappingIds);
-      setPendingHandrails(allHandrails);
-      useCanvasStore.getState().setHighlightIds(overlappingIds);
-      setShowConflictConfirm(true);
-      return;
-    }
-
+    // 案Y-1: 「配置する=再計算=割り直し」。対象階の既存手摺を全消ししてから計算結果を配置する。
+    //   従来の overlap 置換(同一線上の重なりだけ削除)では、星設定時に焼かれた別離れ(900)の L字手摺(①)
+    //   や過去の残骸・手動調整が「重ならない」ため残っていた。対象階を全消しして混在を構造的に解消する。
+    //   消すのは手摺のみ(removeElements に手摺idだけ渡す)→建物/障害物/寸法/その他は無傷。
+    //   対象階: both→[1,2](全消し) / 単一→その階のみ(他階は温存)。
+    const clearFloors: number[] = targetFloor === 'both' ? [1, 2] : [targetFloor];
+    const clearIds = canvasData.handrails
+      .filter(h => clearFloors.includes(h.floor ?? 1))
+      .map(h => h.id);
+    if (clearIds.length > 0) removeElements(clearIds);
     addHandrails(allHandrails);
     onClose();
   };
