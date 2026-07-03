@@ -256,10 +256,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 1F建物 / 2F建物（最初に一致したもの）
   // P3-4 S3: 実floorキーの byFloor record をソース化（P3-5 computeCascadeLayout 用）。
   // 旧 building1F/2F は record からの派生 alias として互換維持（参照無改変・挙動不変）。
-  const buildingByFloor = useMemo<Record<number, (typeof canvasData.buildings)[number] | null>>(() => ({
-    1: canvasData.buildings.find(b => (b.floor ?? 1) === 1) ?? null,
-    2: canvasData.buildings.find(b => b.floor === 2) ?? null,
-  }), [canvasData.buildings]);
+  // S-3a: present-floors 駆動へ一般化（各階の最初の建物）。1F/2F は従来 find と同値のため byte 不変。
+  //   3F以上も rec に入るが、cascade へは cascadeInput が現状 [1,2] のみ渡す（S-5 で 'all' 化）。
+  const buildingByFloor = useMemo<Record<number, (typeof canvasData.buildings)[number] | null>>(() => {
+    const rec: Record<number, (typeof canvasData.buildings)[number] | null> = { 1: null, 2: null };
+    for (const b of canvasData.buildings) {
+      const f = b.floor ?? 1;
+      if (rec[f] == null) rec[f] = b;
+    }
+    return rec;
+  }, [canvasData.buildings]);
   const building1F = buildingByFloor[1];
   const building2F = buildingByFloor[2];
 
@@ -497,6 +503,21 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return getNormalizedDistances(building2F, normalizedBuilding2F, distances);
   }, [distances, targetFloor, building2F, normalizedBuilding2F]);
 
+  // S-3a: cascade へ渡すバンドルを1本化（8箇所の重複を集約）。cascade へ渡す階集合は現状
+  //   'both'=1F+2F の2階（[1,2]）＝byte 不変。S-5 で present-floors/'all' へ拡張する起点。
+  //   distances の floor→source マッピング(1F=下屋 distances1F / 2F=normalizedDistances)は
+  //   S-3a では2階のまま（S-3b で全階正規化に整合）。topStart は最上階(=2F)の正規化起点。
+  const cascadeInput = useMemo(() => {
+    const buildings: Record<number, (typeof canvasData.buildings)[number]> = {};
+    const distancesRec: Record<number, Record<number, number>> = {};
+    for (const f of [1, 2]) {
+      const b = buildingByFloor[f];
+      if (b) buildings[f] = b;
+      distancesRec[f] = f === 1 ? distances1F : normalizedDistances;
+    }
+    return { buildings, distances: distancesRec, topStart: normalizedScaffoldStart };
+  }, [buildingByFloor, distances1F, normalizedDistances, normalizedScaffoldStart]);
+
   // 下屋辺の変化時に下屋距離 distancesByFloor[subFloor] を初期化（デフォルト 900mm）。既に入力があれば保持。
   // P3-5 S5-a: 下屋距離は bothmode 専用。単一階では subFloor(=1) が primaryFloor と衝突するため書き込まない
   // （挙動不変＝下屋距離は単一階で未使用。これが 1F-only クロバーの解消）。
@@ -629,9 +650,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     if (targetFloor === 'both' && normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) {
       // N階 P3-5 S5-d: cascade 本接続。両階を computeCascadeLayout で一括割付（せり出し対称化を含む）。
       const res = computeCascadeLayout(
-        { 1: building1F!, 2: building2F! },
-        { 1: distances1F, 2: normalizedDistances },
-        normalizedScaffoldStart!,
+        cascadeInput.buildings,
+        cascadeInput.distances,
+        cascadeInput.topStart!,
         enabledSizes,
         priorityConfig,
         bothmodeSelectionsByFloor,
@@ -760,9 +781,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
         // S5-d: 2F 変更後は cascade で両階一括再計算（1F は 2F 結果に追従）
         const res = computeCascadeLayout(
-          { 1: building1F!, 2: building2F! },
-          { 1: distances1F, 2: normalizedDistances },
-          normalizedScaffoldStart!, enabledSizes, priorityConfig,
+          cascadeInput.buildings,
+          cascadeInput.distances,
+          cascadeInput.topStart!, enabledSizes, priorityConfig,
           { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
           bothmodeAdjustmentsByFloor,
           band,
@@ -802,9 +823,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
 
         const res = computeCascadeLayout(
-          { 1: building1F!, 2: building2F! },
-          { 1: distances1F, 2: normalizedDistances },
-          normalizedScaffoldStart!, enabledSizes, priorityConfig,
+          cascadeInput.buildings,
+          cascadeInput.distances,
+          cascadeInput.topStart!, enabledSizes, priorityConfig,
           { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
           bothmodeAdjustmentsByFloor,
           band,
@@ -901,9 +922,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
           // S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
           const res = computeCascadeLayout(
-            { 1: building1F!, 2: building2F! },
-            { 1: distances1F, 2: normalizedDistances },
-            normalizedScaffoldStart!, enabledSizes, priorityConfig,
+            cascadeInput.buildings,
+            cascadeInput.distances,
+            cascadeInput.topStart!, enabledSizes, priorityConfig,
             { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
             { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
             band,
@@ -931,9 +952,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
           // S5-d cascade で両階再計算（2F の戻し後、1F も追従）
           const res = computeCascadeLayout(
-            { 1: building1F!, 2: building2F! },
-            { 1: distances1F, 2: normalizedDistances },
-            normalizedScaffoldStart!, enabledSizes, priorityConfig,
+            cascadeInput.buildings,
+            cascadeInput.distances,
+            cascadeInput.topStart!, enabledSizes, priorityConfig,
             { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
             { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
             band,
@@ -968,9 +989,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
       // S5-d cascade で両階再計算（2F の戻し後、1F も追従）
       const res = computeCascadeLayout(
-        { 1: building1F!, 2: building2F! },
-        { 1: distances1F, 2: normalizedDistances },
-        normalizedScaffoldStart!, enabledSizes, priorityConfig,
+        cascadeInput.buildings,
+        cascadeInput.distances,
+        cascadeInput.topStart!, enabledSizes, priorityConfig,
         { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
         { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
         band,
@@ -1059,9 +1080,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
         // S5-d cascade で両階再計算（2F 調整後、1F も追従）
         const res = computeCascadeLayout(
-          { 1: building1F!, 2: building2F! },
-          { 1: distances1F, 2: normalizedDistances },
-          normalizedScaffoldStart!, enabledSizes, priorityConfig,
+          cascadeInput.buildings,
+          cascadeInput.distances,
+          cascadeInput.topStart!, enabledSizes, priorityConfig,
           bothmodeSelectionsByFloor,
           { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
           band,
@@ -1080,9 +1101,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [subFloor]: newAdjustments1F }));
         // S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
         const res = computeCascadeLayout(
-          { 1: building1F!, 2: building2F! },
-          { 1: distances1F, 2: normalizedDistances },
-          normalizedScaffoldStart!, enabledSizes, priorityConfig,
+          cascadeInput.buildings,
+          cascadeInput.distances,
+          cascadeInput.topStart!, enabledSizes, priorityConfig,
           bothmodeSelectionsByFloor,
           { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
           band,
