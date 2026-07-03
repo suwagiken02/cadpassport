@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { numberToAlpha, relabelByFace2F, relabelByFace1F } from '../labelUtils';
+import { numberToAlpha, relabelByFace2F, relabelByFace1F, autoStartVertexIndex } from '../labelUtils';
 import { getBuildingEdgesClockwise, type EdgeInfo } from '../autoLayoutUtils';
 import type { BuildingShape } from '@/types';
 
@@ -257,5 +257,42 @@ describe('relabelByFace1F', () => {
     expect(labeled[0].label).toBe('A');
     expect(labeled[25].label).toBe('Z');
     expect(labeled[26].label).toBe('AA');
+  });
+});
+
+// ============================================================
+// 案Y-2: autoStartVertexIndex（星未設定時の内部自動起点＝北西角）
+// ============================================================
+describe('autoStartVertexIndex（北西角＝北の面が起点）', () => {
+  const mk = (pts: [number, number][]): BuildingShape => ({
+    id: 'b', type: 'polygon', points: pts.map(([x, y]) => ({ x, y })), fill: '#000', floor: 2,
+  });
+
+  it('矩形(NW始点CW): 北辺(index0)が起点', () => {
+    const rect = mk([[0, 0], [900, 0], [900, 700], [0, 700]]);
+    const idx = autoStartVertexIndex(rect);
+    const edges = getBuildingEdgesClockwise(rect);
+    expect(edges[idx].face).toBe('north'); // 起点辺は北向き
+    expect(idx).toBe(0);
+  });
+
+  it('矩形(SW始点で描画されても)北辺を起点に選ぶ', () => {
+    // 頂点順が北西始まりでない矩形でも、北向き辺の index を返す
+    const rect = mk([[0, 700], [0, 0], [900, 0], [900, 700]]);
+    const edges = getBuildingEdgesClockwise(rect);
+    const idx = autoStartVertexIndex(rect);
+    expect(edges[idx].face).toBe('north');
+    // 最も北(y最小)の辺
+    expect(edges[idx].p1.y).toBe(Math.min(...edges.map(e => e.p1.y)));
+  });
+
+  it('L字下屋(東に張り出し): 最北かつ最西の北辺を起点', () => {
+    const l = mk([[0, 0], [900, 0], [900, 400], [1200, 400], [1200, 700], [0, 700]]);
+    const edges = getBuildingEdgesClockwise(l);
+    const idx = autoStartVertexIndex(l);
+    expect(edges[idx].face).toBe('north');
+    // y=0 の最北北辺（西端 x=0）
+    expect(edges[idx].p1.y).toBe(0);
+    expect(Math.min(edges[idx].p1.x, edges[idx].p2.x)).toBe(0);
   });
 });

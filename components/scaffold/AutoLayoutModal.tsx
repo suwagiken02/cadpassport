@@ -28,7 +28,7 @@ import { computeCascadeLayout } from '@/lib/konva/autolayout/cascade';
 import type { FloorLayoutResult, FloorEdgeSegment } from '@/lib/konva/autolayout/cascade';
 import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
-import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint } from '@/lib/konva/labelUtils';
+import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint, autoStartVertexIndex } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
 type Props = { onClose: () => void; onOpenScaffoldStart: (lockFloor?: 1 | 2) => void };
 
@@ -269,6 +269,19 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return getEdgesNotCoveredBy(normalizedBuilding1F, normalizedBuilding2F);
   }, [targetFloor, normalizedBuilding1F, normalizedBuilding2F]);
 
+  // 範囲離れ S-1/S-2/S-5 + 案Y-2: 建物全体で1個の離れ範囲[lo,hi]と優先(center/lower)を band にして
+  //   エンジンへ渡す。初期は lo===hi(単一離れに縮退=非band)。案Y-2: scaffoldStart の自動起点判定に
+  //   rangeActive を使うため、ここ(scaffoldStart useMemo より前)へ移動。初期値は defaultDist 未確定の
+  //   ため 900 固定に変更（星の離れは案X/S-e で band 追従するため初期表示のみの差）。
+  const [rangeDist, setRangeDist] = useState<{ lo: number; hi: number }>({ lo: 900, hi: 900 });
+  const [distMode, setDistMode] = useState<'center' | 'lower'>('center');
+  const repDist = distMode === 'center'
+    ? Math.round((rangeDist.lo + rangeDist.hi) / 2)
+    : rangeDist.lo;
+  const band = { lo: Math.min(rangeDist.lo, rangeDist.hi), hi: Math.max(rangeDist.lo, rangeDist.hi), mode: distMode };
+  // range 指定(lo!==hi)中か。範囲離れモードの判定＝星未設定でも自動起点で計算可にする条件。
+  const rangeActive = rangeDist.lo !== rangeDist.hi;
+
   // Phase H-3d-6: scaffoldStart / normalizedScaffoldStart をラベル系 useMemo
   // (edges2FAll / subEdgesRelabeled) の前に定義する必要がある (= 宣言順依存)。
   // 元は collinear* の後に定義されていたが、 H-3d-6 で edges2FAll が
@@ -285,9 +298,23 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     const newSS = effectiveFloor === 1 ? canvasData.scaffoldStart1F : canvasData.scaffoldStart2F;
     if (newSS) return newSS;
     const legacy = canvasData.scaffoldStart;
-    if (!legacy) return undefined;
-    return (legacy.floor ?? 1) === effectiveFloor ? legacy : undefined;
-  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, building1F, building2F]);
+    if (legacy && (legacy.floor ?? 1) === effectiveFloor) return legacy;
+    // 案Y-2: range 指定時は星未設定でも内部自動起点(北西角)を生成して計算可能にする。位置(周回起点)
+    //   だけ与え、離れは案X/S-e で band 追従済。band未指定(degenerate=非band順次決定)は従来どおり undefined。
+    if (rangeActive) {
+      const b = effectiveFloor === 1 ? building1F : building2F;
+      if (b) {
+        const auto: ScaffoldStartConfig = {
+          corner: 'nw', startVertexIndex: autoStartVertexIndex(b),
+          face1DistanceMm: repDist, face2DistanceMm: repDist,
+          face1FirstHandrail: 1800, face2FirstHandrail: 1800,
+          floor: effectiveFloor,
+        };
+        return auto;
+      }
+    }
+    return undefined;
+  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, building1F, building2F, rangeActive, repDist]);
 
   // Phase H-3d-2 重大変更: scaffoldStart.startVertexIndex を normalizedBuilding2F の頂点 index に再マッピング。
   // 元の building2F.points と normalizedBuilding2F.points は順序が変わる場合がある (CW NW 起点へ正規化)。
@@ -422,19 +449,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     });
     return { [primaryFloor]: d };
   });
-  // 範囲離れ S-1: 建物全体で1個の離れ範囲[lo,hi]の型/state 土台。S-1 では未参照（UI非表示・
-  // handleCalc/エンジン無改変＝既存挙動完全不変）。初期は lo===hi=defaultDist で現状の単一離れに縮退し、
-  // S-4 で帯[lo,hi]探索（案B 帯内cascade）へ接続する。
-  const [rangeDist, setRangeDist] = useState<{ lo: number; hi: number }>({ lo: defaultDist, hi: defaultDist });
-  // 範囲離れ S-2: 帯[lo,hi]の優先（中央/下限）。S-4 で帯探索の優先ルールへ昇格。
-  const [distMode, setDistMode] = useState<'center' | 'lower'>('center');
-  // S-2: 帯を代表値1個に畳んで全辺へ展開（エンジン無改変）。center=中央値/lower=下限。
-  const repDist = distMode === 'center'
-    ? Math.round((rangeDist.lo + rangeDist.hi) / 2)
-    : rangeDist.lo;
-  // 範囲離れ S-5: rangeDist+distMode を band にしてエンジンへ渡す（帯探索を実機で有効化）。
-  // distances は従来どおり代表値(repDist)で埋め、band は追加で渡す（S-4a: band優先・帯外は現挙動）。
-  const band = { lo: Math.min(rangeDist.lo, rangeDist.hi), hi: Math.max(rangeDist.lo, rangeDist.hi), mode: distMode };
+  // 範囲離れ rangeDist/distMode/repDist/band/rangeActive は 案Y-2 で scaffoldStart useMemo より前へ移動済
+  //  （星未設定でも range 時に内部自動起点を生成するため rangeActive を早期参照）。定義は上方。
   // 旧 distances/distances1F は record からの派生 alias（reader 無改変・挙動不変）。
   const distances = distancesByFloor[primaryFloor] ?? {};
   const distances1F = distancesByFloor[subFloor] ?? {};

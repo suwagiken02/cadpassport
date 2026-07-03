@@ -36,6 +36,25 @@ export function numberToAlpha(n: number): string {
 }
 
 /**
+ * 案Y-2: 範囲離れで星(scaffoldStart)未設定でも計算できるよう、内部で使う自動起点(周回起点)を決める。
+ * 北向き辺(face==='north')のうち最も北(y最小)→最も西(x最小)の辺 index を返す＝北西角。
+ * これを relabelByFace2F / cascade の周回起点にすると「北の面=2A、時計回りに 2B, 2C...」になる。
+ * 北向き辺が無い(円形など)場合は 0 にフォールバック。
+ * 返り値は getBuildingEdgesClockwise(building) の辺 index 規約（startVertexIndex と同一規約）。
+ */
+export function autoStartVertexIndex(building: BuildingShape): number {
+  const edges = getBuildingEdgesClockwise(building);
+  let best = -1, bestY = Infinity, bestX = Infinity;
+  for (const e of edges) {
+    if (e.face !== 'north') continue;
+    const y = e.p1.y;
+    const x = Math.min(e.p1.x, e.p2.x);
+    if (y < bestY || (y === bestY && x < bestX)) { bestY = y; bestX = x; best = e.index; }
+  }
+  return best >= 0 ? best : 0;
+}
+
+/**
  * 2F edges に label を付与する (⭐ 起点 CW、 同面分割は suffix)。
  *
  * 入力 edges は normalizedBuilding2F の getBuildingEdgesClockwise 出力 (CW、
