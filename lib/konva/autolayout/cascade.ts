@@ -287,6 +287,28 @@ export function computeFloorLayout(
 // ============================================================
 
 /**
+ * 各階ポリゴンを「他の全階の頂点」で分割して整合させる（純幾何の頂点挿入）。
+ * computeCascadeLayout の前処理をそのまま切り出した純関数（挙動不変）。モーダル側の
+ * 離れ再キー（getNormalizedDistances）を cascade 内部と同一の正規化に揃えるため export する。
+ * 反復順は computeCascadeLayout と同じ「階番号 降順」に固定（頂点挿入順＝辺 index を一致させる）。
+ */
+export function normalizeBuildingsByFloor(
+  buildingsByFloor: Record<number, BuildingShape>,
+): Record<number, BuildingShape> {
+  const floors = Object.keys(buildingsByFloor).map(Number).sort((a, b) => b - a);
+  const normalized: Record<number, BuildingShape> = {};
+  for (const f of floors) {
+    let poly = buildingsByFloor[f];
+    for (const g of floors) {
+      if (g === f) continue;
+      poly = splitLowerAtUpper(poly, buildingsByFloor[g]); // poly に g の頂点を挿入
+    }
+    normalized[f] = poly;
+  }
+  return normalized;
+}
+
+/**
  * N階カスケード割付ドライバ。各階を最上階→最下階の順に computeFloorLayout で割付し、
  * resultAbove を上から順に継承する。scaffoldStart は最上階のみ渡し、下階は継承（null）。
  * 連続積層前提（階番号は連続・飛びなし）。モーダルには配線しない純関数層。
@@ -315,15 +337,7 @@ export function computeCascadeLayout(
   }
 
   // 前処理: 各階を他の全階の頂点で分割（純幾何の頂点挿入）。
-  const normalized: Record<number, BuildingShape> = {};
-  for (const f of floors) {
-    let poly = buildingsByFloor[f];
-    for (const g of floors) {
-      if (g === f) continue;
-      poly = splitLowerAtUpper(poly, buildingsByFloor[g]); // poly に g の頂点を挿入
-    }
-    normalized[f] = poly;
-  }
+  const normalized = normalizeBuildingsByFloor(buildingsByFloor);
 
   const results: Record<number, FloorLayoutResult> = {};
   let resultAbove: FloorLayoutResult | null = null;

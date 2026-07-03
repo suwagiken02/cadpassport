@@ -24,7 +24,7 @@ import {
   splitBuilding1FAtBuilding2FVertices,
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
-import { computeCascadeLayout } from '@/lib/konva/autolayout/cascade';
+import { computeCascadeLayout, normalizeBuildingsByFloor } from '@/lib/konva/autolayout/cascade';
 import type { FloorLayoutResult, FloorEdgeSegment } from '@/lib/konva/autolayout/cascade';
 import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
@@ -496,12 +496,23 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // Phase H-3d-5 の normalizedScaffoldStart (= 上記) と対称的なパターン。
   // 1F 側 distances1F は既に normalized 経由に統一済 (= Phase H-3d-3 / H-3d-6) のため、
   // ここで対応するのは 2F の distances のみ。
+  // S-3b: cascade 内部と同一の「全階 split」正規化建物。distances 再キーをこの正規化へ揃え、
+  //   N≥3 でも cascade の辺 index と整合させる。N=2 では normalizeBuildingsByFloor({1,2})[2] ===
+  //   splitBuilding2FAt1FVertices(=従来 normalizedBuilding2F) と一致するため byte 不変。
+  //   反復階集合は cascadeInput と同じ [1,2]（S-5 で present-floors 化）。
+  const cascadeNormByFloor = useMemo(() => {
+    const src: Record<number, (typeof canvasData.buildings)[number]> = {};
+    for (const f of [1, 2]) { const b = buildingByFloor[f]; if (b) src[f] = b; }
+    return normalizeBuildingsByFloor(src);
+  }, [buildingByFloor]);
+
   const normalizedDistances = useMemo(() => {
-    if (targetFloor !== 'both' || !building2F || !normalizedBuilding2F) {
+    // 最上階(cascade へ渡す主建物=2F)の生離れを cascade 正規化辺 index へ再キー。
+    if (targetFloor !== 'both' || !building2F || !cascadeNormByFloor[2]) {
       return distances;
     }
-    return getNormalizedDistances(building2F, normalizedBuilding2F, distances);
-  }, [distances, targetFloor, building2F, normalizedBuilding2F]);
+    return getNormalizedDistances(building2F, cascadeNormByFloor[2], distances);
+  }, [distances, targetFloor, building2F, cascadeNormByFloor]);
 
   // S-3a: cascade へ渡すバンドルを1本化（8箇所の重複を集約）。cascade へ渡す階集合は現状
   //   'both'=1F+2F の2階（[1,2]）＝byte 不変。S-5 で present-floors/'all' へ拡張する起点。
