@@ -478,8 +478,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         const outIsH = outEdge.face === 'north' || outEdge.face === 'south';
         const face1Edge = outIsH ? outEdge : inEdge;
         const face2Edge = outIsH ? inEdge : outEdge;
-        if (e.index === face1Edge.index) { d[e.index] = scaffoldStart.face1DistanceMm; return; }
-        if (e.index === face2Edge.index) { d[e.index] = scaffoldStart.face2DistanceMm; return; }
+        // 案X: range 指定時(lo!==hi)は起点2辺も band 追従(repDist)にして全周を band 一貫にする。
+        //   起点の faceDist(=900)が band を迂回して隣辺(2B)へ漏れる 100ズレ小物を防ぐ。
+        //   非range(degenerate)では従来どおり起点の face 距離を尊重。
+        if (e.index === face1Edge.index) { d[e.index] = rangeDist.lo !== rangeDist.hi ? repDist : scaffoldStart.face1DistanceMm; return; }
+        if (e.index === face2Edge.index) { d[e.index] = rangeDist.lo !== rangeDist.hi ? repDist : scaffoldStart.face2DistanceMm; return; }
       }
       d[e.index] = repDist; // S-2: 非起点辺は建物全体の範囲代表値を一律適用（起点角は上で温存）
     });

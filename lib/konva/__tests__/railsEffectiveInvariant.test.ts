@@ -110,3 +110,41 @@ describe('S-a specific: 北9000出隅 下屋 lower の北面（現状 赤）', (
     expect(sel.totalMm).toBe(north!.effectiveMm);
   });
 });
+
+// ============================================================
+// 案X: 起点(アンカー)の離れも band 追従。起点900の band 迂回による隣辺(2B東)への漏れを解消。
+//   S-a の rails合計==effectiveMm は「枠自体が誤り(frame value error)」を捕捉できなかったため、
+//   「同寸の対辺で effectiveMm 一致」「全周 startDistanceMm 整合」の網で②を固定する。
+// ============================================================
+describe('案X 起点離れ band化: 起点900の隣辺漏れ解消（対辺一致・全周整合）', () => {
+  // 2F=9000×7000(北9000/東西7000/南は下屋境界)、1F=9000×10000(南に下屋・同幅)
+  const f2 = rect('2f', 2, 900, 700);
+  const f1 = rect('1f', 1, 900, 1000);
+  // 起点2辺=900(旧モーダル出力相当)でも、エンジンが band(lower=800)へ寄せることを検証
+  const D = { 1: fill(4, 800), 2: anchorDist(4, 800, 900) };
+  const run = () => computeCascadeLayout({ 1: f1, 2: f2 }, D, ss, M, PC, undefined, undefined, { lo: 800, hi: 1000, mode: 'lower' });
+
+  it('同寸の対辺の effectiveMm が一致（東2B==西2D・北2A==南2C）', () => {
+    const segs = run()[2].edgeSegments;
+    const east = segs.find(s => s.face === 'east')!;
+    const west = segs.find(s => s.face === 'west')!;
+    const north = segs.find(s => s.face === 'north')!;
+    const south = segs.find(s => s.face === 'south')!;
+    expect(east.effectiveMm).toBe(west.effectiveMm);   // 修正前 8700≠8600
+    expect(north.effectiveMm).toBe(south.effectiveMm); // 10600
+  });
+
+  it('range lower で全2F辺の startDistanceMm が単一値(=lo=800・アンカーも浮かない)', () => {
+    const segs = run()[2].edgeSegments;
+    const starts = Array.from(new Set(segs.map(s => s.startDistanceMm)));
+    expect(starts).toEqual([800]);                     // 修正前は {900,800}
+  });
+
+  it('東2B: effectiveMm=8600・rails=1800×4+1200+200・railsTotal==effectiveMm', () => {
+    const east = run()[2].edgeSegments.find(s => s.face === 'east')!;
+    const sel = east.candidates[east.selectedIndex]!;
+    expect(east.effectiveMm).toBe(8600);               // 修正前 8700
+    expect(sel.rails).toEqual([1800, 1800, 1800, 1800, 1200, 200]);
+    expect(sel.totalMm).toBe(east.effectiveMm);
+  });
+});

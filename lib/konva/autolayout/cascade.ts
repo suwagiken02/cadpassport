@@ -475,9 +475,15 @@ export function walkFloorUpperRole(
 
     let startDistanceMm: number;
     if (isFirstInLoop) {
-      startDistanceMm = edge.handrailDir === 'horizontal'
-        ? scaffoldStart.face1DistanceMm
-        : scaffoldStart.face2DistanceMm;
+      // 案X: band 指定時は先頭辺(アンカー)の離れも band に従わせる（lower=lo / center=mid）。
+      //   従来は scaffoldStart.faceDist(=900) を band 迂回で使い、lower で他辺(800)と混在し、
+      //   隣辺(2B)の start corner へ 900 が漏れて 100ズレ小物になっていた。band 未指定は従来の
+      //   faceDist（非band順次決定モードを保護）。center(mid=900) は faceDist と一致し no-op。
+      startDistanceMm = band
+        ? (band.mode === 'lower' ? band.lo : Math.round((band.lo + band.hi) / 2))
+        : (edge.handrailDir === 'horizontal'
+          ? scaffoldStart.face1DistanceMm
+          : scaffoldStart.face2DistanceMm);
     } else if (isStraightContinuation) {
       startDistanceMm = prevSegmentStartDist ?? distancesThis[edge.index] ?? 900;
     } else {
