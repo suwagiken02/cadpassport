@@ -30,7 +30,7 @@ import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint, autoStartVertexIndex } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
-type Props = { onClose: () => void; onOpenScaffoldStart: (lockFloor?: 1 | 2) => void };
+type Props = { onClose: () => void; onOpenScaffoldStart: (lockFloor?: number) => void };
 
 /** 建物プレビューSVG（辺ラベル付き、1F+2F同時対応） */
 function PreviewSVG({ points, edges, focusedIndex, conflictHandrails, blinkEdgeIndex, subPoints, subEdges, subHighlightIndices, focusedSubIndex, scaffoldStart, showFloorPrefix }: {

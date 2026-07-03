@@ -267,6 +267,18 @@ export type CanvasData = {
   dimensionOffsetsMm?: DimensionOffsetsMm;
 };
 
+/**
+ * 永続化フィールド scaffoldStart1F / scaffoldStart2F を階番号キーの record に射影する派生アクセサ。
+ * 永続化の実体（1F/2F 個別フィールド）は無改変。読取 consumer を byFloor[floor] 形へ寄せて
+ * N 階一般化（S-3 以降で present-floors 反復に拡張）できるようにする土台。
+ * 現状は {1, 2} のみを返し、値・挙動は従来と完全同一。
+ */
+export function getScaffoldStartByFloor(
+  data: Pick<CanvasData, 'scaffoldStart1F' | 'scaffoldStart2F'>,
+): Record<number, ScaffoldStartConfig | undefined> {
+  return { 1: data.scaffoldStart1F, 2: data.scaffoldStart2F };
+}
+
 // === 建物テンプレート ===
 export type BuildingTemplateId =
   | 'rect'

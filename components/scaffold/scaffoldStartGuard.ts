@@ -6,8 +6,8 @@
 
 /** 起点階が固定(lockFloor)されているとき、選択階が不許可かを返す */
 export function isScaffoldFloorBlocked(
-  lockFloor: 1 | 2 | undefined,
-  selectedFloor: 1 | 2,
+  lockFloor: number | undefined,
+  selectedFloor: number,
 ): boolean {
   return lockFloor !== undefined && selectedFloor !== lockFloor;
 }

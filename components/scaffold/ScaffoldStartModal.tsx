@@ -12,7 +12,7 @@ import { getBuildingEdgesClockwise, EdgeInfo } from '@/lib/konva/autoLayoutUtils
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { isScaffoldFloorBlocked } from './scaffoldStartGuard';
 
-type Props = { onClose: () => void; lockFloor?: 1 | 2 };
+type Props = { onClose: () => void; lockFloor?: number };
 
 const FACE_LABEL: Record<string, string> = {
   north: '北面', south: '南面', east: '東面', west: '西面',
@@ -39,7 +39,7 @@ export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
   );
 
   // 対象階の選択（初期は 1F。bothmode 経由(lockFloor)なら固定階で開く）
-  const [targetFloor, setTargetFloor] = useState<1 | 2>(lockFloor ?? 1);
+  const [targetFloor, setTargetFloor] = useState<number>(lockFloor ?? 1);
 
   // 対象階に合致する最初の建物
   const targetBuilding = useMemo(

@@ -131,8 +131,8 @@ type CanvasStore = {
   setLastCompletedDirectionSession: (s: { points: { x: number; y: number }[] } | null) => void;
   autoOpenRoofForBuildingId: string | null;
   setAutoOpenRoofForBuildingId: (id: string | null) => void;
-  pendingBuildingFloor: 1 | 2;
-  setPendingBuildingFloor: (f: 1 | 2) => void;
+  pendingBuildingFloor: number;
+  setPendingBuildingFloor: (f: number) => void;
   pendingTargetType: 'building' | 'obstacle';
   setPendingTargetType: (t: 'building' | 'obstacle') => void;
   pendingObstacleType: import('@/types').ObstacleType | null;

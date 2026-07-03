@@ -9,7 +9,7 @@ import { DEFAULT_COLS, DEFAULT_ROWS } from '@/lib/konva/gridUtils';
 import NumInput from '@/components/ui/NumInput';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 
-type Props = { onClose: () => void; floor?: 1 | 2; floor1Building?: import('@/types').BuildingShape };
+type Props = { onClose: () => void; floor?: number; floor1Building?: import('@/types').BuildingShape };
 
 // --- SVG shape icons ---
 const SHAPE_PATHS: Record<BuildingTemplateId, string> = {

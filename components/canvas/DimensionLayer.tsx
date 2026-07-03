@@ -6,7 +6,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX, gridToMm, mmToGrid } from '@/lib/konva/gridUtils';
 import { getHandrailEndpoints } from '@/lib/konva/snapUtils';
 import { getBuildingEdgesClockwise } from '@/lib/konva/autoLayoutUtils';
-import { StartCorner } from '@/types';
+import { StartCorner, getScaffoldStartByFloor } from '@/types';
 
 const GUIDE_COLOR = '#378ADD';
 const GUIDE_OPACITY = 0.3;
@@ -93,14 +93,16 @@ export default function DimensionLayer() {
   // 描画対象の scaffoldStart を収集（1F/2F 両方保持対応）
   // 新フィールド (scaffoldStart1F / scaffoldStart2F) 優先、無ければ旧 scaffoldStart をフォールバック
   // 該当階の建物が存在しない場合はスキップ（偽寸法線防止）
-  const has1FBuilding = canvasData.buildings.some(b => (b.floor ?? 1) === 1);
-  const has2FBuilding = canvasData.buildings.some(b => b.floor === 2);
+  // S-1: byFloor 派生アクセサ経由で収集（反復は従来と同じ [1,2] 固定＝byte 不変。S-3 で present-floors 化）。
+  //   該当階の建物が存在しない場合はスキップ（偽寸法線防止）。
+  const startByFloor = getScaffoldStartByFloor(canvasData);
   const dimensionJobs: NonNullable<typeof canvasData.scaffoldStart>[] = [];
-  if (canvasData.scaffoldStart1F && has1FBuilding) {
-    dimensionJobs.push(canvasData.scaffoldStart1F);
-  }
-  if (canvasData.scaffoldStart2F && has2FBuilding) {
-    dimensionJobs.push(canvasData.scaffoldStart2F);
+  for (const floor of [1, 2] as const) {
+    const ss = startByFloor[floor];
+    const hasBuilding = canvasData.buildings.some(b => (b.floor ?? 1) === floor);
+    if (ss && hasBuilding) {
+      dimensionJobs.push(ss);
+    }
   }
   if (dimensionJobs.length === 0 && canvasData.scaffoldStart) {
     const legacyFloor = canvasData.scaffoldStart.floor ?? 1;

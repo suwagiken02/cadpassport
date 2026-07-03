@@ -6,6 +6,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { getStartVertexPoint } from '@/lib/konva/labelUtils';
 import type { BuildingShape, ScaffoldStartConfig } from '@/types';
+import { getScaffoldStartByFloor } from '@/types';
 
 /**
  * 足場開始アイコン (= ★) を canvas に描画する Layer。
@@ -32,15 +33,17 @@ export default function ScaffoldStartLayer() {
   const gridPx = INITIAL_GRID_PX * zoom;
 
   // 描画対象: scaffoldStart1F / 2F が優先、 どちらも無ければ legacy scaffoldStart をフォールバック
-  const jobs: { ss: ScaffoldStartConfig; floor: 1 | 2 }[] = [];
-  if (canvasData.scaffoldStart1F) {
-    jobs.push({ ss: canvasData.scaffoldStart1F, floor: 1 });
-  }
-  if (canvasData.scaffoldStart2F) {
-    jobs.push({ ss: canvasData.scaffoldStart2F, floor: 2 });
+  const jobs: { ss: ScaffoldStartConfig; floor: number }[] = [];
+  // S-1: byFloor 派生アクセサ経由で収集（反復は従来と同じ [1,2] 固定＝byte 不変。S-3 で present-floors 化）。
+  const startByFloor = getScaffoldStartByFloor(canvasData);
+  for (const floor of [1, 2] as const) {
+    const ss = startByFloor[floor];
+    if (ss) {
+      jobs.push({ ss, floor });
+    }
   }
   if (jobs.length === 0 && canvasData.scaffoldStart) {
-    const f = (canvasData.scaffoldStart.floor ?? 1) as 1 | 2;
+    const f = canvasData.scaffoldStart.floor ?? 1;
     jobs.push({ ss: canvasData.scaffoldStart, floor: f });
   }
 

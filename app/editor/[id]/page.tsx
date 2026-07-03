@@ -145,7 +145,7 @@ export default function EditorPage() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showScaffoldStartModal, setShowScaffoldStartModal] = useState(false);
   // bothmode から⭐設定を開いた場合の固定階(2F誘導)。通常起動は undefined。
-  const [scaffoldStartLockFloor, setScaffoldStartLockFloor] = useState<1 | 2 | undefined>(undefined);
+  const [scaffoldStartLockFloor, setScaffoldStartLockFloor] = useState<number | undefined>(undefined);
   const [showRoofModal, setShowRoofModal] = useState(false);
   const [showUdekiModal, setShowUdekiModal] = useState(false);
   const [showAutoLayoutModal, setShowAutoLayoutModal] = useState(false);
