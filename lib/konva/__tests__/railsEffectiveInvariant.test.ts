@@ -151,13 +151,15 @@ describe('案X 起点離れ band化: 起点900の隣辺漏れ解消（対辺一�
 });
 
 // ============================================================
-// S-2: N≥3 中間/下階の pillar run で rails合計==有効長 が破れる（現状赤→S-2bで緑化）。
-//   下屋積層 3階。上階runの離れ非対称(band centerや半端寸法)で pillar 子runの
-//   startContribution(=startDist) が実角(上階segのactEndD)と乖離し total!=eff。
-//   center=overshoot→重複(違反)、band未指定でも半端寸法(288/544/733)で発生。
-//   ※ it.fails = 現状赤の可視化。S-2b の source-align で通常 it へ戻して緑化する。
+// S-2: N≥3 中間/下階の run で rails合計==有効長 が破れる問題。
+//   上階runの離れ非対称(band centerや半端寸法)で子runの startContribution が実角(上階segの
+//   actEndD)と乖離し total!=eff → center=overshoot→重複(違反)。
+//   ・S-2b(壁継続 startContribution を actEndD へ source-align)で「下屋積層(成長=一方向)」
+//     の R2/NB2 は緑化（通常 it）。
+//   ・R1(成長=両方向)は west が same-wall-line 分岐(cascade.ts:766) の残で total!=eff が残る。
+//     これは pillar/継続とは別経路のため S-2c 候補として it.fails で据え置き（現状赤の可視化）。
 // ============================================================
-describe('S-2 N=3 pillar run: rails合計==有効長（現状赤→S-2bで緑化）', () => {
+describe('S-2 N=3 run: rails合計==有効長（S-2b=継続緑化／R1 same-wall-lineはS-2c残）', () => {
   const bandCe = { lo: 800, hi: 950, mode: 'center' as const };
   const stack3 = (w3: number, h3: number, w2: number, h2: number, w1: number, h1: number) =>
     ({ 3: rect('3f', 3, w3, h3), 2: rect('2f', 2, w2, h2), 1: rect('1f', 1, w1, h1) });
@@ -166,31 +168,32 @@ describe('S-2 N=3 pillar run: rails合計==有効長（現状赤→S-2bで緑化
     Object.keys(res).map(Number).sort((a, b) => b - a)
       .flatMap(f => segmentsToHandrails(res[f].edgeSegments));
 
-  // R2: 288/544/733・center[800,950] → 20mm 重複
-  it.fails('R2 288/544/733 center: rails合計==有効長（現状赤）', () => {
+  // R2: 288/544/733・center[800,950]（下屋積層=成長一方向）→ S-2b で緑化
+  it('R2 288/544/733 center: rails合計==有効長', () => {
     const b = stack3(288, 266, 544, 622, 733, 844);
     assertRailsMatchEffective(computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe), 'R2 center');
   });
-  it.fails('R2 288/544/733 center: findScaffoldViolations===[]（現状赤）', () => {
+  it('R2 288/544/733 center: findScaffoldViolations===[]', () => {
     const b = stack3(288, 266, 544, 622, 733, 844);
     const res = computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe);
     expect(findScaffoldViolations(allH(res), Object.values(b))).toEqual([]);
   });
 
-  // R1: 410/620/900・center[800,950] → 100mm 重複
-  it.fails('R1 410/620/900 center: rails合計==有効長（現状赤）', () => {
+  // NB2: 288/544/733・band未指定（band固有でない証跡）→ S-2b で緑化
+  it('NB2 288/544/733 band未指定: rails合計==有効長', () => {
+    const b = stack3(288, 266, 544, 622, 733, 844);
+    assertRailsMatchEffective(computeCascadeLayout(b, D3, ss, M, PC), 'NB2 noband');
+  });
+
+  // R1: 410/620/900・center[800,950]（成長両方向）→ west が same-wall-line 残で total!=eff(d=100)。
+  //   S-2c 候補（同一壁線の startContribution source-align）。現状赤を it.fails で可視化。
+  it.fails('[S-2c残] R1 410/620/900 center: rails合計==有効長（same-wall-line残・現状赤）', () => {
     const b = stack3(410, 390, 620, 650, 900, 910);
     assertRailsMatchEffective(computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe), 'R1 center');
   });
-  it.fails('R1 410/620/900 center: findScaffoldViolations===[]（現状赤）', () => {
+  it.fails('[S-2c残] R1 410/620/900 center: findScaffoldViolations===[]（same-wall-line残・現状赤）', () => {
     const b = stack3(410, 390, 620, 650, 900, 910);
     const res = computeCascadeLayout(b, D3, ss, M, PC, undefined, undefined, bandCe);
     expect(findScaffoldViolations(allH(res), Object.values(b))).toEqual([]);
-  });
-
-  // NB2: 288/544/733・band未指定 → 半端寸法で 20mm（band固有でない証跡）
-  it.fails('NB2 288/544/733 band未指定: rails合計==有効長（現状赤）', () => {
-    const b = stack3(288, 266, 544, 622, 733, 844);
-    assertRailsMatchEffective(computeCascadeLayout(b, D3, ss, M, PC), 'NB2 noband');
   });
 });

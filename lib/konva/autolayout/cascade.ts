@@ -730,8 +730,17 @@ export function walkFloorLowerRole(
       ? resultAbove.edgeSegments.find(s => s.edgeIndex === prevPillarMatchForDist.upperEdgeIndex)
       : undefined;
     if (isContinuationStart) prevCornerIsConvex = false;
+    // S-2b: 壁継続(下屋積層で上階runの続き)の startContribution は、上階segの「希望」離れ
+    //   (desiredEndDistanceMm) ではなく「実際に採用された」離れ(candidate.actualEndDistanceMm)を使う。
+    //   2nd pass の cursorStart は上階segの実end位置(actEndD由来)へ snap するため、希望値のままだと
+    //   band/半端寸法で上階runが非対称(desired≠actual)なとき rails合計≠有効長になり角で段差が出る。
+    //   actual==desired(対称)なら値不変＝N=2 parity保持。candidate 欠落時は従来どおり desired へ退避。
+    const contSegAboveEndDist = contSegAbove
+      ? (contSegAbove.candidates[contSegAbove.selectedIndex]?.actualEndDistanceMm
+          ?? contSegAbove.desiredEndDistanceMm)
+      : undefined;
     const prevEdgeStartDist: number = isContinuationStart
-      ? (contSegAbove?.desiredEndDistanceMm ?? distancesThis[edge.index] ?? 900)
+      ? (contSegAboveEndDist ?? distancesThis[edge.index] ?? 900)
       : prevPillarMatchForDist
       ? (resultAbove.edgeSegments.find(s => s.edgeIndex === prevPillarMatchForDist.upperEdgeIndex)
           ?.startDistanceMm ?? distancesThis[edge.index] ?? 900)
