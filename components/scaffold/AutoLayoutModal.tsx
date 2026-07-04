@@ -723,7 +723,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
     // Phase H-3d-2 Stage 5 Part B + 修正A + B1/B2: bothmode は normalizedBuilding1F/2F を使用
     // 単一階モードは下の既存ロジックで処理 (無変更)。
-    if (targetFloor === 'both' && normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) {
+    if (bothCascadeReady) {
       // N階 P3-5 S5-d: cascade 本接続。両階を computeCascadeLayout で一括割付（せり出し対称化を含む）。
       const res = computeCascadeLayout(
         cascadeInput.buildings,
@@ -750,26 +750,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
       setSelections(sel);
 
-      // activeEdge: 最初の未解決セグメントへ (2F 優先 → 1F の順)
-      const firstUnresolved2F = res[2].edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
-      if (firstUnresolved2F) {
-        setActiveEdge({
-          floor: 2,
-          index: firstUnresolved2F.edgeIndex,
-          segmentIndex: firstUnresolved2F.segmentIndex,
-        });
-      } else {
-        const firstUnresolved1F = res[1].edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
-        if (firstUnresolved1F) {
-          setActiveEdge({
-            floor: 1,
-            index: firstUnresolved1F.edgeIndex,
-            segmentIndex: firstUnresolved1F.segmentIndex,
-          });
-        } else {
-          setActiveEdge(null);
-        }
-      }
+      // S-5b-2: cascade 降順の最初の未解決セグメントへ（N=2 では 2F 優先→1F と同順）。
+      const firstUnresolved = flattenFocusList(res).find(x => !x.seg.isLocked && !x.seg.isAutoProgress);
+      setActiveEdge(firstUnresolved
+        ? { floor: firstUnresolved.floor, index: firstUnresolved.edgeIndex, segmentIndex: firstUnresolved.seg.segmentIndex }
+        : null);
       return;
     }
 
@@ -847,87 +832,44 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   ) => {
     if (!building) return;
 
-    // Phase H-3d-2 Stage 5 Part C + 修正A + B1/B2: normalizedBuilding1F/2F を使用
-    if (targetFloor === 'both' && normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) {
+    // Phase H-3d-2 Stage 5 Part C + 修正A + B1/B2 / S-5b-2: floor===2/===1 を融合
+    if (bothCascadeReady) {
       const key = `${edgeIndex}-${segmentIndex}`;
+      // record キーは floor 直用（both では primaryFloor=2/subFloor=1 と floor が恒等）。
+      if (floor !== topFloor && !layoutByFloor) return; // 旧 floor===1(下位階) 枝のガード
+      const newSelections = { ...(bothmodeSelectionsByFloor[floor] ?? {}), [key]: candIdx };
+      setBothmodeSelectionsByFloor(prev => ({ ...prev, [floor]: newSelections }));
 
-      if (floor === 2) {
-        const newSelections2F = { ...(bothmodeSelectionsByFloor[primaryFloor] ?? {}), [key]: candIdx };
-        setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
+      // S5-d: 変更後は cascade で全階一括再計算（下位階は上位階結果に追従）
+      const res = computeCascadeLayout(
+        cascadeInput.buildings,
+        cascadeInput.distances,
+        cascadeInput.topStart!, enabledSizes, priorityConfig,
+        { ...bothmodeSelectionsByFloor, [floor]: newSelections },
+        bothmodeAdjustmentsByFloor,
+        band,
+      );
+      setLayoutByFloor(res);
 
-        // S5-d: 2F 変更後は cascade で両階一括再計算（1F は 2F 結果に追従）
-        const res = computeCascadeLayout(
-          cascadeInput.buildings,
-          cascadeInput.distances,
-          cascadeInput.topStart!, enabledSizes, priorityConfig,
-          { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
-          bothmodeAdjustmentsByFloor,
-          band,
-        );
-        setLayoutByFloor(res);
+      // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
+      const adapted = floorResultToAutoLayoutResult(res);
+      setResult(adapted);
+      const sel: Record<number, number> = {};
+      adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
+      setSelections(sel);
 
-        // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult(res);
-        setResult(adapted);
-        const sel: Record<number, number> = {};
-        adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
-        setSelections(sel);
-
-        // 次の未解決セグメントへ (cascade 順)
-        const segs2F = res[2].edgeSegments;
-        const curIdx = segs2F.findIndex(
-          s => s.edgeIndex === edgeIndex && s.segmentIndex === segmentIndex,
-        );
-        const next2F = curIdx >= 0
-          ? segs2F.slice(curIdx + 1).find(s => !s.isLocked && !s.isAutoProgress)
-          : undefined;
-        if (next2F) {
-          setActiveEdge({ floor: 2, index: next2F.edgeIndex, segmentIndex: next2F.segmentIndex });
-          return;
-        }
-        // 2F 全解決 → 1F 最初の未解決
-        const first1F = res[1].edgeSegments.find(s => !s.isLocked && !s.isAutoProgress);
-        if (first1F) {
-          setActiveEdge({ floor: 1, index: first1F.edgeIndex, segmentIndex: first1F.segmentIndex });
-        } else {
-          setActiveEdge(null);
-        }
-      } else {
-        // floor === 1: S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
-        if (!layoutByFloor) return;
-        const newSelections1F = { ...(bothmodeSelectionsByFloor[subFloor] ?? {}), [key]: candIdx };
-        setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
-
-        const res = computeCascadeLayout(
-          cascadeInput.buildings,
-          cascadeInput.distances,
-          cascadeInput.topStart!, enabledSizes, priorityConfig,
-          { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
-          bothmodeAdjustmentsByFloor,
-          band,
-        );
-        setLayoutByFloor(res);
-
-        // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult(res);
-        setResult(adapted);
-        const sel: Record<number, number> = {};
-        adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
-        setSelections(sel);
-
-        const segs1F = res[1].edgeSegments;
-        const curIdx = segs1F.findIndex(
-          s => s.edgeIndex === edgeIndex && s.segmentIndex === segmentIndex,
-        );
-        const next1F = curIdx >= 0
-          ? segs1F.slice(curIdx + 1).find(s => !s.isLocked && !s.isAutoProgress)
-          : undefined;
-        if (next1F) {
-          setActiveEdge({ floor: 1, index: next1F.edgeIndex, segmentIndex: next1F.segmentIndex });
-        } else {
-          setActiveEdge(null);
-        }
-      }
+      // 次の未解決セグメントへ（cascade 降順 focusList で現在位置以降を探索・floor 跨ぎ含む）。
+      //   N=2 では「2F 内 next → 無ければ 1F 先頭」と同順。
+      const flat = flattenFocusList(res);
+      const curArrIdx = flat.findIndex(
+        x => x.floor === floor && x.edgeIndex === edgeIndex && x.seg.segmentIndex === segmentIndex,
+      );
+      const next = curArrIdx >= 0
+        ? flat.slice(curArrIdx + 1).find(x => !x.seg.isLocked && !x.seg.isAutoProgress)
+        : undefined;
+      setActiveEdge(next
+        ? { floor: next.floor, index: next.edgeIndex, segmentIndex: next.seg.segmentIndex }
+        : null);
       return;
     }
 
@@ -972,7 +914,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     if (!building || !activeEdge) return;
 
     // Phase H-3d-2 Stage 5 Part C + 修正A + B1/B2: normalizedBuilding1F/2F を使用
-    if (targetFloor === 'both' && normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) {
+    if (bothCascadeReady) {
       // 辺の全セグメント key を Record<string, T> から削除するヘルパー
       const stripEdge = <T,>(rec: Record<string, T>, edgeIdx: number): Record<string, T> => {
         const out: Record<string, T> = {};
@@ -982,94 +924,29 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         return out;
       };
 
-      if (activeEdge.floor === 1) {
-        if (!layoutByFloor) return;
-        const segs1F = layoutByFloor[1].edgeSegments;
-        const curIdx = segs1F.findIndex(s => s.edgeIndex === activeEdge.index);
-        const prev = curIdx > 0
-          ? [...segs1F].slice(0, curIdx).reverse().find(s => !s.isAutoProgress)
-          : undefined;
-
-        if (prev) {
-          const newSelections1F = stripEdge((bothmodeSelectionsByFloor[subFloor] ?? {}), prev.edgeIndex);
-          const newAdjustments1F = stripEdge((bothmodeAdjustmentsByFloor[subFloor] ?? {}), prev.edgeIndex);
-          setBothmodeSelectionsByFloor(prev => ({ ...prev, [subFloor]: newSelections1F }));
-          setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [subFloor]: newAdjustments1F }));
-
-          // S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
-          const res = computeCascadeLayout(
-            cascadeInput.buildings,
-            cascadeInput.distances,
-            cascadeInput.topStart!, enabledSizes, priorityConfig,
-            { ...bothmodeSelectionsByFloor, [subFloor]: newSelections1F },
-            { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
-            band,
-          );
-          setLayoutByFloor(res);
-
-          // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-          const adapted = floorResultToAutoLayoutResult(res);
-          setResult(adapted);
-          const sel: Record<number, number> = {};
-          adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
-          setSelections(sel);
-
-          setActiveEdge({ floor: 1, index: prev.edgeIndex, segmentIndex: prev.segmentIndex });
-          return;
-        }
-
-        // 1F 内に戻る先なし → 2F の最後の未解決セグメントへ
-        const last2F = [...layoutByFloor[2].edgeSegments].reverse().find(s => !s.isAutoProgress);
-        if (last2F) {
-          const newSelections2F = stripEdge((bothmodeSelectionsByFloor[primaryFloor] ?? {}), last2F.edgeIndex);
-          const newAdjustments2F = stripEdge((bothmodeAdjustmentsByFloor[primaryFloor] ?? {}), last2F.edgeIndex);
-          setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
-          setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
-
-          // S5-d cascade で両階再計算（2F の戻し後、1F も追従）
-          const res = computeCascadeLayout(
-            cascadeInput.buildings,
-            cascadeInput.distances,
-            cascadeInput.topStart!, enabledSizes, priorityConfig,
-            { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
-            { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
-            band,
-          );
-          setLayoutByFloor(res);
-
-          // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-          const adapted = floorResultToAutoLayoutResult(res);
-          setResult(adapted);
-          const sel: Record<number, number> = {};
-          adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
-          setSelections(sel);
-
-          setActiveEdge({ floor: 2, index: last2F.edgeIndex, segmentIndex: last2F.segmentIndex });
-        }
-        return;
-      }
-
-      // activeEdge.floor === 2
+      // S-5b-2: cascade 降順 focusList で「現在位置より前の未解決(非autoProgress)」へ戻る。
+      //   N=2 では「1F 内 prev → 無ければ 2F 末尾」「2F 内 prev → 無ければ no-op」と同順。
       if (!layoutByFloor) return;
-      const segs2F = layoutByFloor[2].edgeSegments;
-      const curIdx = segs2F.findIndex(s => s.edgeIndex === activeEdge.index);
-      const prev = curIdx > 0
-        ? [...segs2F].slice(0, curIdx).reverse().find(s => !s.isAutoProgress)
+      const flat = flattenFocusList(layoutByFloor);
+      const curArrIdx = flat.findIndex(x => x.floor === activeEdge.floor && x.edgeIndex === activeEdge.index);
+      const prevEntry = curArrIdx > 0
+        ? flat.slice(0, curArrIdx).reverse().find(x => !x.seg.isAutoProgress)
         : undefined;
-      if (!prev) return;
+      if (!prevEntry) return;
 
-      const newSelections2F = stripEdge((bothmodeSelectionsByFloor[primaryFloor] ?? {}), prev.edgeIndex);
-      const newAdjustments2F = stripEdge((bothmodeAdjustmentsByFloor[primaryFloor] ?? {}), prev.edgeIndex);
-      setBothmodeSelectionsByFloor(prev => ({ ...prev, [primaryFloor]: newSelections2F }));
-      setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
+      const pf = prevEntry.floor;
+      const newSelections = stripEdge((bothmodeSelectionsByFloor[pf] ?? {}), prevEntry.edgeIndex);
+      const newAdjustments = stripEdge((bothmodeAdjustmentsByFloor[pf] ?? {}), prevEntry.edgeIndex);
+      setBothmodeSelectionsByFloor(prev => ({ ...prev, [pf]: newSelections }));
+      setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [pf]: newAdjustments }));
 
-      // S5-d cascade で両階再計算（2F の戻し後、1F も追従）
+      // S5-d cascade で全階再計算（戻し後、下位階も追従）
       const res = computeCascadeLayout(
         cascadeInput.buildings,
         cascadeInput.distances,
         cascadeInput.topStart!, enabledSizes, priorityConfig,
-        { ...bothmodeSelectionsByFloor, [primaryFloor]: newSelections2F },
-        { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
+        { ...bothmodeSelectionsByFloor, [pf]: newSelections },
+        { ...bothmodeAdjustmentsByFloor, [pf]: newAdjustments },
         band,
       );
       setLayoutByFloor(res);
@@ -1081,7 +958,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
       setSelections(sel);
 
-      setActiveEdge({ floor: 2, index: prev.edgeIndex, segmentIndex: prev.segmentIndex });
+      setActiveEdge({ floor: pf, index: prevEntry.edgeIndex, segmentIndex: prevEntry.seg.segmentIndex });
       return;
     }
 
@@ -1143,56 +1020,33 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     if (!building) return;
 
     // Phase H-3d-2 Stage 5 Part C + 修正A + B1/B2: normalizedBuilding1F/2F を使用
-    if (targetFloor === 'both' && normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) {
+    if (bothCascadeReady) {
       const key = `${edgeIndex}-${segmentIndex}`;
-      const isF2 = floor === 2;
-      const curRec = isF2 ? (bothmodeAdjustmentsByFloor[primaryFloor] ?? {}) : (bothmodeAdjustmentsByFloor[subFloor] ?? {});
-      const cur = curRec[key] ?? DEFAULT_EDGE_ADJUSTMENT;
+      // S-5b-2: isF2 二枝を融合。record キーは floor 直用（both では primaryFloor/subFloor と恒等）。
+      if (floor !== topFloor && !layoutByFloor) return; // 旧 下位階(else)枝のガード
+      const cur = (bothmodeAdjustmentsByFloor[floor] ?? {})[key] ?? DEFAULT_EDGE_ADJUSTMENT;
       const next = updater(cur);
       if (next === null) return;
 
-      if (isF2) {
-        const newAdjustments2F = { ...(bothmodeAdjustmentsByFloor[primaryFloor] ?? {}), [key]: next };
-        setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [primaryFloor]: newAdjustments2F }));
-        // S5-d cascade で両階再計算（2F 調整後、1F も追従）
-        const res = computeCascadeLayout(
-          cascadeInput.buildings,
-          cascadeInput.distances,
-          cascadeInput.topStart!, enabledSizes, priorityConfig,
-          bothmodeSelectionsByFloor,
-          { ...bothmodeAdjustmentsByFloor, [primaryFloor]: newAdjustments2F },
-          band,
-        );
-        setLayoutByFloor(res);
+      const newAdjustments = { ...(bothmodeAdjustmentsByFloor[floor] ?? {}), [key]: next };
+      setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [floor]: newAdjustments }));
+      // S5-d cascade で全階再計算（調整後、下位階も追従）
+      const res = computeCascadeLayout(
+        cascadeInput.buildings,
+        cascadeInput.distances,
+        cascadeInput.topStart!, enabledSizes, priorityConfig,
+        bothmodeSelectionsByFloor,
+        { ...bothmodeAdjustmentsByFloor, [floor]: newAdjustments },
+        band,
+      );
+      setLayoutByFloor(res);
 
-        // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult(res);
-        setResult(adapted);
-        const sel: Record<number, number> = {};
-        adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
-        setSelections(sel);
-      } else {
-        if (!layoutByFloor) return;
-        const newAdjustments1F = { ...(bothmodeAdjustmentsByFloor[subFloor] ?? {}), [key]: next };
-        setBothmodeAdjustmentsByFloor(prev => ({ ...prev, [subFloor]: newAdjustments1F }));
-        // S5-d cascade で両階再計算（2F は同一 selections/adjustments から決定的に同一）
-        const res = computeCascadeLayout(
-          cascadeInput.buildings,
-          cascadeInput.distances,
-          cascadeInput.topStart!, enabledSizes, priorityConfig,
-          bothmodeSelectionsByFloor,
-          { ...bothmodeAdjustmentsByFloor, [subFloor]: newAdjustments1F },
-          band,
-        );
-        setLayoutByFloor(res);
-
-        // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
-        const adapted = floorResultToAutoLayoutResult(res);
-        setResult(adapted);
-        const sel: Record<number, number> = {};
-        adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
-        setSelections(sel);
-      }
+      // Phase H-3d-2 Stage 5 Part D-1: 描画系へも反映
+      const adapted = floorResultToAutoLayoutResult(res);
+      setResult(adapted);
+      const sel: Record<number, number> = {};
+      adapted.edgeLayouts.forEach((el, i) => { sel[i] = el.selectedIndex; });
+      setSelections(sel);
       return;
     }
 
