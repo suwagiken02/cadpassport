@@ -19,6 +19,8 @@ import UdekiModal from '@/components/scaffold/UdekiModal';
 import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
 import AlertDialog from '@/components/ui/AlertDialog';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import FeatureNoticeModal from '@/components/ui/FeatureNoticeModal';
+import { isNoticeDismissed, dismissNotice } from '@/lib/notice';
 import HeightInputModal from '@/components/canvas/HeightInputModal';
 import AreaCalculationModal from '@/components/canvas/AreaCalculationModal';
 import AreaDesignationModeBar from '@/components/scaffold/AreaDesignationModeBar';
@@ -150,6 +152,8 @@ export default function EditorPage() {
   const [showUdekiModal, setShowUdekiModal] = useState(false);
   const [showAutoLayoutModal, setShowAutoLayoutModal] = useState(false);
   const [showBackConfirm, setShowBackConfirm] = useState(false);
+  // 自動割付ルール変更のお知らせ（初回表示・「今後表示しない」で抑止）
+  const [showFeatureNotice, setShowFeatureNotice] = useState(false);
   const [drawingTitle, setDrawingTitle] = useState('');
   const [siteName, setSiteName] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -173,6 +177,11 @@ export default function EditorPage() {
     updateSize();
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // 自動割付ルール変更のお知らせ: 初回表示（localStorage 判定は client の useEffect 内＝SSR 安全）。
+  useEffect(() => {
+    if (!isNoticeDismissed()) setShowFeatureNotice(true);
   }, []);
 
   // 部材設定を（まだ読み込まれていなければ）DB からロード
@@ -743,6 +752,14 @@ export default function EditorPage() {
       )}
       {alertMessage && (
         <AlertDialog message={alertMessage} onClose={() => setAlertMessage(null)} />
+      )}
+      {showFeatureNotice && (
+        <FeatureNoticeModal
+          onClose={(dontShowAgain) => {
+            if (dontShowAgain) dismissNotice();
+            setShowFeatureNotice(false);
+          }}
+        />
       )}
       <HeightInputModal />
       <AreaCalculationModal siteName={siteName} />
