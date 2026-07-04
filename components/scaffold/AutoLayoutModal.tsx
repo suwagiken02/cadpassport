@@ -25,8 +25,9 @@ import {
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
 import { computeCascadeLayout, normalizeBuildingsByFloor } from '@/lib/konva/autolayout/cascade';
-import type { FloorLayoutResult, FloorEdgeSegment } from '@/lib/konva/autolayout/cascade';
+import type { FloorLayoutResult } from '@/lib/konva/autolayout/cascade';
 import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
+import { flattenFocusList, selfRelabeledEdge, computeNextFaceLabel } from '@/lib/konva/autolayout/focusList';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint, autoStartVertexIndex } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
@@ -278,6 +279,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     for (const b of canvasData.buildings) s.add(b.floor ?? 1);
     return Array.from(s).sort((a, b) => a - b);
   }, [canvasData.buildings]);
+  // S-5b: cascade 降順(上→下)。floorsDesc[0] = 最上階(=従来 2F)。N=2 では [2,1]。
+  const floorsDesc = useMemo<number[]>(() => [...presentFloors].sort((a, b) => b - a), [presentFloors]);
+  const topFloor = floorsDesc[0] ?? 2;
 
   // UI表示の「対象階建物」
   // 1Fのみ: 1F建物 / 2Fのみ: 2F建物 / both: 2F建物（常に全周配置されるため主表示）
@@ -521,6 +525,47 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return normalizeBuildingsByFloor(src);
   }, [buildingByFloor, presentFloors]);
 
+  // S-5b-1: per-floor 化した「直上との差(下屋辺)」と relabel リスト。
+  //   N=2 では uncoveredEdgesByFloor[1]≅uncoveredEdges1F・relabeledEdgesByFloor[2]≅edges2FAll・
+  //   [1]≅subEdgesRelabeled（cascadeNormByFloor≅normalizedBuildingXF のため deep equal）。
+  const uncoveredEdgesByFloor = useMemo<Record<number, EdgeInfo[]>>(() => {
+    if (targetFloor !== 'both') return {};
+    const rec: Record<number, EdgeInfo[]> = {};
+    for (const f of floorsDesc) {
+      if (f === topFloor) continue; // 最上階に下屋なし
+      const nb = cascadeNormByFloor[f];
+      const above = cascadeNormByFloor[f + 1];
+      if (nb && above) rec[f] = getEdgesNotCoveredBy(nb, above);
+    }
+    return rec;
+  }, [targetFloor, floorsDesc, topFloor, cascadeNormByFloor]);
+
+  const relabeledEdgesByFloor = useMemo<Record<number, EdgeInfo[]>>(() => {
+    if (targetFloor !== 'both') return {};
+    const rec: Record<number, EdgeInfo[]> = {};
+    for (const f of floorsDesc) {
+      const nb = cascadeNormByFloor[f];
+      if (!nb) continue;
+      if (f === topFloor) {
+        const startIdx = (normalizedScaffoldStart?.startVertexIndex ?? 0) % (nb.points.length || 1);
+        rec[f] = relabelByFace2F(getBuildingEdgesClockwise(nb), startIdx);
+      } else {
+        const uncoveredSet = new Set((uncoveredEdgesByFloor[f] ?? []).map(e => e.index));
+        rec[f] = relabelByFace1F(getBuildingEdgesClockwise(nb), uncoveredSet, commonStartPoint);
+      }
+    }
+    return rec;
+  }, [targetFloor, floorsDesc, topFloor, cascadeNormByFloor, normalizedScaffoldStart, uncoveredEdgesByFloor, commonStartPoint]);
+
+  // S-5b-1: bothmode cascade 実行の前提（全 present-floor 正規化済 ＋ topStart あり）。
+  //   N=2 では従来ガード (normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) と同値。
+  //   ※ 定義は b-1、使用（ガード集約）は b-2。
+  const bothCascadeReady = useMemo(() => {
+    if (targetFloor !== 'both' || !normalizedScaffoldStart) return false;
+    if (presentFloors.length < 2) return false;
+    return presentFloors.every(f => !!cascadeNormByFloor[f]);
+  }, [targetFloor, presentFloors, cascadeNormByFloor, normalizedScaffoldStart]);
+
   const normalizedDistances = useMemo(() => {
     // 最上階(cascade へ渡す主建物=2F)の生離れを cascade 正規化辺 index へ再キー。
     if (targetFloor !== 'both' || !building2F || !cascadeNormByFloor[2]) {
@@ -646,6 +691,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     if (!sequentialResult1F) return null;
     return [...sequentialResult1F.edgeResults];
   }, [sequentialResult1F]);
+
+  // S-5b-1: bothmode の全 seg を cascade 降順(上→下)に flatten した唯一のフォーカスリスト。
+  //   N=2 では [2F 全 seg → 1F 全 seg] ＝ 従来 rendering の allSegments と deep equal。
+  //   reader/rendering・ナビ(b-2)はこの 1 本を参照する。
+  const focusList = useMemo(() => flattenFocusList(layoutByFloor), [layoutByFloor]);
 
   const getDistance = (idx: number) => distances[idx] ?? defaultDist;
 
@@ -1739,15 +1789,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         let prevStartDistMm: number | null = null;
 
         if (targetFloor === 'both' && layoutByFloor) {
-          // bothmode: layoutByFloor[2] の全 segments + [1] の全 segments を cascade 順に並べる
-          type SegEntry = { seg: FloorEdgeSegment; floor: number; edgeIndex: number };
-          const allSegments: SegEntry[] = [];
-          for (const s of layoutByFloor[2].edgeSegments) {
-            allSegments.push({ seg: s, floor: 2, edgeIndex: s.edgeIndex });
-          }
-          for (const s of layoutByFloor[1].edgeSegments) {
-            allSegments.push({ seg: s, floor: 1, edgeIndex: s.edgeIndex });
-          }
+          // S-5b-1: cascade 降順の唯一のフォーカスリスト（N=2 では 2F→1F 順＝従来 allSegments）。
+          const allSegments = focusList;
           // Phase H-3d-2 Stage 5 残対応 Step 1 補足:
           // activeEdge.segmentIndex が指定されていれば一致するセグメントを優先、
           // されていなければ最初の未解決セグメントを使う (互換動作)。
@@ -1760,11 +1803,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           if (curArrIdx < 0) return null;
           const cur = allSegments[curArrIdx];
           const seg = cur.seg;
-          // Phase H-3d-2 ラベル衝突対応: 自身のラベルは normalizedBuilding の relabel 済 edges から取得
-          // Phase H-3d-3: 1F は uncovered (下屋) のみ segment 化されるので subEdgesRelabeled から引く
-          const relabeledSelf = cur.floor === 2
-            ? edges2FAll.find(e => e.index === cur.edgeIndex)
-            : subEdgesRelabeled.find(e => e.index === cur.edgeIndex);
+          // S-5b-1: 自身ラベル / 次面ラベルを per-floor(relabeledEdgesByFloor) + prefix `${f±1}` で解決。
+          //   N=2 では relabeledEdgesByFloor[2]≅edges2FAll・[1]≅subEdgesRelabeled、prefix も "2"/"1" で従来一致。
+          const relabeledSelf = selfRelabeledEdge(cur.floor, cur.edgeIndex, relabeledEdgesByFloor);
           const synthEdge: EdgeInfo = {
             index: cur.edgeIndex,
             originalIndex: cur.edgeIndex,
@@ -1777,39 +1818,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
             nx: seg.nx,
             ny: seg.ny,
           };
-          // 次の面のラベル: desiredEndSource (2F seg) / endConstraint (1F seg) を見て決定
-          let nextFaceLabel = '?';
-          if (cur.floor === 2) {
-            const src = seg.desiredEndSource;
-            if (src?.kind === 'next-face') {
-              const e2 = edges2FAll.find(e => e.index === src.edgeIndex);
-              nextFaceLabel = `2${e2?.label ?? '?'}`;
-            } else if (src?.kind === 'lower-face-pillar') {
-              // 下屋 edge を指すので subEdgesRelabeled から引く
-              const e1 = subEdgesRelabeled.find(e => e.index === src.lowerEdgeIndex);
-              nextFaceLabel = `1${e1?.label ?? '?'}`;
-            }
-          } else {
-            const ec = seg.endConstraint;
-            if (ec?.kind === 'collinear-with-upper') {
-              const e2 = edges2FAll.find(e => e.index === ec.upperEdgeIndex);
-              nextFaceLabel = `2${e2?.label ?? '?'}`;
-            } else if (ec?.kind === 'next-face') {
-              // 次も独立 (= 下屋 edge) を指すので subEdgesRelabeled から引く
-              const e1 = subEdgesRelabeled.find(e => e.index === ec.edgeIndex);
-              nextFaceLabel = `1${e1?.label ?? '?'}`;
-            } else if (ec?.kind === 'pillar-to-upper') {
-              // pillarPoint と startPoint が一致する 2F seg を探す
-              const pp = ec.pillarPoint;
-              const seg2FAtPillar = layoutByFloor[2].edgeSegments.find(s2 =>
-                Math.abs(s2.startPoint.x - pp.x) < 0.001 && Math.abs(s2.startPoint.y - pp.y) < 0.001,
-              );
-              if (seg2FAtPillar) {
-                const e2 = edges2FAll.find(e => e.index === seg2FAtPillar.edgeIndex);
-                nextFaceLabel = `2${e2?.label ?? '?'}`;
-              }
-            }
-          }
+          const nextFaceLabel = computeNextFaceLabel(
+            seg, cur.floor, cur.floor === topFloor, relabeledEdgesByFloor, layoutByFloor,
+          );
           activeItem = {
             edge: synthEdge,
             startDistanceMm: seg.startDistanceMm,
@@ -1897,27 +1908,28 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         // (= split された 5 edges) を使う。
         // bothmode + activeEdge.floor === 1 のときは下流で mainEdges = edges2FAll に
         // 上書きされるため、 ここでの値は無関係。
-        const previewEdges = useBothmodePreview && activeEdge.floor === 2
-          ? edges2FAll
+        // S-5b-1: main=最上階(topFloor)固定・sub=activeEdge.floor(非top)へ一般化。
+        //   N=2 では topFloor=2・relabeledEdgesByFloor[2]≅edges2FAll・cascadeNormByFloor[2]≅normalizedBuilding2F で従来一致。
+        const previewEdges = useBothmodePreview && activeEdge.floor === topFloor
+          ? (relabeledEdgesByFloor[topFloor] ?? [])
           : edges;
 
-        const mainPoints = useBothmodePreview ? normalizedBuilding2F!.points : previewBuilding?.points;
-        const mainEdges = useBothmodePreview ? edges2FAll : previewEdges;
+        const mainPoints = useBothmodePreview ? cascadeNormByFloor[topFloor]?.points : previewBuilding?.points;
+        const mainEdges = useBothmodePreview ? (relabeledEdgesByFloor[topFloor] ?? []) : previewEdges;
         const mainFocusedIdx = useBothmodePreview
-          ? (activeEdge.floor === 2 ? activeEdge.index : null)
+          ? (activeEdge.floor === topFloor ? activeEdge.index : null)
           : activeEdge.index;
         const mainBlinkIdx = useBothmodePreview
-          ? (activeEdge.floor === 2 ? activeEdge.index : undefined)
+          ? (activeEdge.floor === topFloor ? activeEdge.index : undefined)
           : activeEdge.index;
-        const subFocusedIdx = useBothmodePreview && activeEdge.floor === 1
+        const subFocusedIdx = useBothmodePreview && activeEdge.floor !== topFloor
           ? activeEdge.index : null;
 
-        // Phase K-2-fix: floorLabel は targetFloor を見て判定
-        // (activeEdge.floor は内部規約値。主要建物は常に 2 だが、
-        //  表示は targetFloor=1 (1F のみ) でも '1F' にする必要がある)
-        const floorLabel = activeEdge.floor === 1
-          ? '1F 下屋辺'
-          : (targetFloor === 1 ? '1F' : '2F');
+        // Phase K-2-fix / S-5b-1: sub(非top)は `${f}F 下屋辺`、それ以外は targetFloor/topFloor。
+        //   N=2 では top→'2F'・sub(1F)→'1F 下屋辺'・単一階→targetFloor で従来一致。
+        const floorLabel = (useBothmodePreview && activeEdge.floor !== topFloor)
+          ? `${activeEdge.floor}F 下屋辺`
+          : (targetFloor === 1 ? '1F' : targetFloor === 2 ? '2F' : `${topFloor}F`);
 
         return (
           <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
@@ -1942,7 +1954,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                     subEdges={useBothmodePreview ? subEdgesRelabeled : undefined}
                     subHighlightIndices={useBothmodePreview ? uncoveredIdxSet1F : undefined}
                     focusedSubIndex={subFocusedIdx}
-                    scaffoldStart={activeEdge.floor === 2 ? normalizedScaffoldStart : undefined}
+                    scaffoldStart={activeEdge.floor === topFloor ? normalizedScaffoldStart : undefined}
                     showFloorPrefix={useBothmodePreview}
                   />
                 </div>
@@ -1958,8 +1970,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                   {activeEdgeResult.edge.label}面の離れ <span className="font-mono text-canvas">{activeEdgeResult.startDistanceMm}mm</span>
                   <span className="ml-1">
                     {(() => {
-                      // 起点辺/閉じ辺判定: 2F のみ scaffoldStart 利用、1F は scaffoldStart=undefined
-                      if (activeEdge.floor !== 2 || !scaffoldStart) {
+                      // 起点辺/閉じ辺判定: 最上階のみ scaffoldStart 利用、下位階は scaffoldStart=undefined
+                      if (activeEdge.floor !== topFloor || !scaffoldStart) {
                         return '（前辺の終端から継承されています）';
                       }
                       const nP = previewEdges.length;
@@ -2008,12 +2020,12 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 }
                 const nPreview = previewEdges.length;
                 const nextEdge = previewEdges[(activeEdgeResult.edge.index + 1) % nPreview];
-                // Phase I-3-fix: 閉じ辺判定 (2F のみ、scaffoldStart 必須)
-                const sIdx = activeEdge.floor === 2 && scaffoldStart
+                // Phase I-3-fix / S-5b-1: 閉じ辺判定 (最上階のみ、scaffoldStart 必須)
+                const sIdx = activeEdge.floor === topFloor && scaffoldStart
                   ? (scaffoldStart.startVertexIndex ?? 0) % nPreview
                   : 0;
                 const closeIdx = (sIdx - 1 + nPreview) % nPreview;
-                const isCloseCorner = activeEdge.floor === 2 && !!scaffoldStart
+                const isCloseCorner = activeEdge.floor === topFloor && !!scaffoldStart
                   && activeEdgeResult.edge.index === closeIdx;
                 // 物理 prev の startDist (bothmode は cascade 配列の前要素、単一階は前 edge)
                 const prevStartForProbe = prevStartDistMm ?? (activeEdgeResult.startDistanceMm ?? 900);
