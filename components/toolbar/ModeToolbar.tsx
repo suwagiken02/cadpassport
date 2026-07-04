@@ -1,7 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { ModeType } from '@/types';
+import { ModeType, getScaffoldStartByFloor } from '@/types';
+import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function ModeToolbar() {
@@ -28,7 +29,8 @@ export default function ModeToolbar() {
 
   // ガイド点滅
   const hasBuildings = canvasData.buildings.length > 0;
-  const hasScaffoldStart = !!(canvasData.scaffoldStart1F || canvasData.scaffoldStart2F || canvasData.scaffoldStart);
+  // S-5e-1: 3F+ の星(scaffoldStartByFloor のみに載る)も検出。{1,2}/legacy は従来と同真偽。
+  const hasScaffoldStart = Object.values(getScaffoldStartByFloor(canvasData)).some(Boolean) || !!canvasData.scaffoldStart;
   const hasHandrails = canvasData.handrails.length > 0;
 
   const getCurrentStage = (): string | null => {
@@ -142,10 +144,10 @@ export default function ModeToolbar() {
             <button
               onClick={() => {
                 const s = useCanvasStore.getState();
-                // N階一般化 P2: 既存最上階+1 を追加 (上限8階)。実際の階番号は配置時に算出。
+                // N階一般化 P2 / S-5e-1: 既存最上階+1 を追加 (上限 MAX_BUILDING_FLOOR)。実際の階番号は配置時に算出。
                 const maxFloor = s.canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
-                if (maxFloor >= 8) {
-                  s.setAlertMessage('足場図は8階まで対応しています');
+                if (maxFloor >= MAX_BUILDING_FLOOR) {
+                  s.setAlertMessage(`足場図は${MAX_BUILDING_FLOOR}階まで対応しています`);
                   setShowKutaiMenu(false);
                   return;
                 }

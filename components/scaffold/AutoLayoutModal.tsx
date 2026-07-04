@@ -28,6 +28,7 @@ import { computeCascadeLayout, normalizeBuildingsByFloor } from '@/lib/konva/aut
 import type { FloorLayoutResult } from '@/lib/konva/autolayout/cascade';
 import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
 import { flattenFocusList, selfRelabeledEdge, computeNextFaceLabel } from '@/lib/konva/autolayout/focusList';
+import { isContiguousFloors, hasFloorAboveScaffoldLimit, MAX_SCAFFOLD_FLOOR } from '@/lib/konva/floorLimits';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { relabelByFace2F, relabelByFace1F, getBothmodeEdgesWithRelativeLabels, getNormalizedDistances, resolveScaffoldStartOnNormalized, getStartVertexPoint, autoStartVertexIndex } from '@/lib/konva/labelUtils';
 import VariationChangeButtons from '@/components/scaffold/VariationChangeButtons';
@@ -731,6 +732,20 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   const handleCalc = () => {
     if (!building) return;
+
+    // S-5e-1: 割付前バリデーション（'both'/将来 'all' のみ）。cascade は非連続階で throw するため
+    //   present-floors が非連続（中間階削除で {1,3} 等）なら中止。割付上限超も抑止。
+    //   {1,2}・単一階では発火しない（連続・上限内）。
+    if (targetFloor === 'both') {
+      if (!isContiguousFloors(presentFloors)) {
+        useCanvasStore.getState().setAlertMessage('階が連続していません（中間の階が抜けています）。抜けている階の建物を作成してください。');
+        return;
+      }
+      if (hasFloorAboveScaffoldLimit(presentFloors)) {
+        useCanvasStore.getState().setAlertMessage(`自動割付は現在 ${MAX_SCAFFOLD_FLOOR} 階までです。`);
+        return;
+      }
+    }
 
     // 前回値記憶: 計算実行時の範囲/優先を localStorage に保存し、次回モーダルの既定にする。
     saveRangeSettings({ lo: rangeDist.lo, hi: rangeDist.hi, mode: distMode });
@@ -1879,7 +1894,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 // Phase H-3d-2 Stage 5 残対応 Step 1: bothmode 時は bothmodeAdjustments を見る
                 let activeAdj: EdgeAdjustment = DEFAULT_EDGE_ADJUSTMENT;
                 if (targetFloor === 'both' && layoutByFloor) {
-                  const adjs = activeEdge.floor === 2 ? (bothmodeAdjustmentsByFloor[primaryFloor] ?? {}) : (bothmodeAdjustmentsByFloor[subFloor] ?? {});
+                  // S-5e-1: bothmode は record が floor キー・primaryFloor=2/subFloor=1 と activeEdge.floor が恒等。
+                  const adjs = bothmodeAdjustmentsByFloor[activeEdge.floor] ?? {};
                   const key = `${activeEdge.index}-${activeItem.segmentIndex}`;
                   activeAdj = adjs[key] ?? DEFAULT_EDGE_ADJUSTMENT;
                 } else {

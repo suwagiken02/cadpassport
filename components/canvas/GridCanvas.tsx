@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Stage, Layer, Line, Rect, Circle, Text, Path, Group, Ellipse, Arc } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
 import {
   INITIAL_GRID_PX,
   ZOOM_MIN,
@@ -412,9 +413,9 @@ export default function GridCanvas({ width, height }: Props) {
             x: p.x + draft2FPos.x,
             y: p.y + draft2FPos.y,
           }));
-          // N階一般化 P2: 新フロアは既存最上階+1 (上限8階)。下階をなぞった draft をその階で確定。
+          // N階一般化 P2 / S-5e-1: 新フロアは既存最上階+1 (上限 MAX_BUILDING_FLOOR)。下階をなぞった draft をその階で確定。
           const existingMaxFloor = useCanvasStore.getState().canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
-          const targetFloor = Math.min(8, Math.max(existingMaxFloor, 1) + 1);
+          const targetFloor = Math.min(MAX_BUILDING_FLOOR, Math.max(existingMaxFloor, 1) + 1);
           useCanvasStore.getState().addBuilding({
             id: uuidv4(),
             type: 'polygon',
