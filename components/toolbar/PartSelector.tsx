@@ -328,7 +328,7 @@ export default function PartSelector() {
 
       const canvasRect = getCanvasRect(e);
       if (canvasRect && toolbarDrag) {
-        const { zoom, panX, panY, canvasData } = useCanvasStore.getState();
+        const { zoom, panX, panY, canvasData, activeFloor } = useCanvasStore.getState();
         const gridPos = screenToGrid(e.clientX - canvasRect.left, e.clientY - canvasRect.top, panX, panY, zoom);
 
         if (toolbarDrag.type === 'handrail') {
@@ -336,7 +336,9 @@ export default function PartSelector() {
           const result = snapHandrailPlacement(gridPos, toolbarDrag.lengthMm as HandrailLengthMm, toolbarDrag.direction, canvasData.handrails, snapRadius, canvasData.antis);
           const dropPos = result ? result.snappedStart : gridPos;
           if (result) { useCanvasStore.getState().setSnapPoint(result.snapIndicator); setTimeout(() => useCanvasStore.getState().setSnapPoint(null), 400); }
-          addHandrail({ id: uuidv4(), x: dropPos.x, y: dropPos.y, lengthMm: toolbarDrag.lengthMm as HandrailLengthMm, direction: toolbarDrag.direction, color: getHandrailColor(toolbarDrag.lengthMm as HandrailLengthMm) });
+          // S-5e-4b: パレット drop の手摺に activeFloor を付与（従来は floor 未付与＝常に 1F 扱いの不具合）。
+          //   activeFloor=1(単一階/既定)では従来と同一（h.floor ?? 1）。
+          addHandrail({ id: uuidv4(), x: dropPos.x, y: dropPos.y, lengthMm: toolbarDrag.lengthMm as HandrailLengthMm, direction: toolbarDrag.direction, color: getHandrailColor(toolbarDrag.lengthMm as HandrailLengthMm), floor: activeFloor });
         } else if (toolbarDrag.type === 'anti') {
           const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
           const result = snapHandrailPlacement(gridPos, toolbarDrag.lengthMm as HandrailLengthMm, toolbarDrag.direction, canvasData.handrails, snapRadius, canvasData.antis);
