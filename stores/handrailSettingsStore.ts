@@ -27,35 +27,15 @@ const getOwnerId = (): string | null => {
   return uid && uid !== 'anonymous' ? uid : null;
 };
 
-// Phase J-5: 寸法線の段別表示設定
-export type DimensionVisibility = {
-  roof1F: boolean;
-  wall1F: boolean;
-  scaffold1F: boolean;
-  roof2F: boolean;
-  wall2F: boolean;
-  scaffold2F: boolean;
-};
-
-export const DEFAULT_DIMENSION_VISIBILITY: DimensionVisibility = {
-  roof1F: true, wall1F: true, scaffold1F: false,
-  roof2F: true, wall2F: true, scaffold2F: false,
-};
-
-function parseDimensionVisibility(raw: unknown): DimensionVisibility {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_DIMENSION_VISIBILITY };
-  const r = raw as Record<string, unknown>;
-  const pick = (k: keyof DimensionVisibility) =>
-    typeof r[k] === 'boolean' ? (r[k] as boolean) : DEFAULT_DIMENSION_VISIBILITY[k];
-  return {
-    roof1F: pick('roof1F'),
-    wall1F: pick('wall1F'),
-    scaffold1F: pick('scaffold1F'),
-    roof2F: pick('roof2F'),
-    wall2F: pick('wall2F'),
-    scaffold2F: pick('scaffold2F'),
-  };
-}
+// Phase J-5 / S-5e-4: 寸法線の段別表示設定は pure モジュールへ分離（N 階対応・node 安全）。
+//   後方互換のため型/既定を本 store から再エクスポート（既存 import 元を無改変）。
+export type { DimensionVisibility } from '@/lib/konva/dimensionVisibility';
+export { DEFAULT_DIMENSION_VISIBILITY } from '@/lib/konva/dimensionVisibility';
+import {
+  parseDimensionVisibility,
+  DEFAULT_DIMENSION_VISIBILITY,
+  type DimensionVisibility,
+} from '@/lib/konva/dimensionVisibility';
 
 type HandrailSettingsStore = {
   /** CAD パスポート: 現在の規格（メートル/インチ）。既定 'metric'。 */
@@ -77,7 +57,7 @@ type HandrailSettingsStore = {
   /** サイズ単位のトグル（UI のスイッチから呼ぶ） */
   toggleSize: (size: HandrailLengthMm) => Promise<void>;
   /** Phase J-5: 寸法線の段別表示を更新して DB に保存 (楽観的更新) */
-  updateDimensionVisibility: (updates: Partial<DimensionVisibility>) => Promise<void>;
+  updateDimensionVisibility: (updates: Record<string, boolean>) => Promise<void>;
   /** CAD パスポート: 規格を切り替える。enabledSizes / priorityConfig をその規格の既定へ載せ替えて保存。 */
   setUnitSystem: (unit: UnitSystem) => Promise<void>;
 };

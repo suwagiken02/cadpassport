@@ -561,7 +561,12 @@ export default function EditorPage() {
           {/* Phase J-5: 寸法線の段別チェックボックス (マスター ON 時のみ表示) */}
           {showDimensionLines && (
             <div className="bg-dark-surface border border-dark-border rounded-xl p-2 shadow-lg">
-              <DimensionVisibilityCheckboxes disabled={!showDimensionLines} />
+              {/* S-5e-4: 対象階を present-floors 化。{1,2} では従来 6 項目・同順。 */}
+              <DimensionVisibilityCheckboxes
+                disabled={!showDimensionLines}
+                floors={Array.from(new Set(canvasData.buildings.map(b => b.floor ?? 1))).sort((a, b) => a - b)}
+              />
+
             </div>
           )}
 

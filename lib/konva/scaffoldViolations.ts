@@ -14,7 +14,7 @@ export type ScaffoldHandrail = {
 };
 
 export type ScaffoldViolation = {
-  kind: 't-junction' | 'overlap' | 'overshoot';
+  kind: 't-junction' | 'overlap' | 'overshoot' | 'perpendicular-overshoot';
   idA: number;
   idB?: number;
   coord: [number, number]; // mm
@@ -84,6 +84,28 @@ export function findScaffoldViolations(
       const ov = Math.min(s.hi, t.hi) - Math.max(s.lo, t.lo);
       if (ov > EPS) {
         out.push({ kind: 'overlap', idA: i, idB: j, coord: [Math.max(s.lo, t.lo), s.fixed], amountMm: ov });
+      }
+    }
+  }
+
+  // (d) perpendicular-overshoot: 直交する2手摺が交差する(片方の線が他方の span 内部を貫く)。
+  //   宿題②: 縦→横の角超過。正常な L 字接合は「両手摺の端点が角で出会う」だけで交差点は
+  //   どちらの span でも端点(=角)にあるため非該当。角ラップ(自分の向きに離れ分伸びる)も交差点は
+  //   相手の端点側なので非該当。交差点が両 span の「内部」(端点から EPS より内)にあるとき＝
+  //   一方の端点が他方の固定軸線を角を越えて貫いた超過として検出する。amount は浅い側の貫入量。
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      const s = segs[i], t = segs[j];
+      if (s.dir === t.dir) continue; // 平行は (a)(b) が担当
+      const V = s.dir === 'vertical' ? s : t;   // 垂直: fixed=x, lo/hi=y範囲
+      const H = s.dir === 'vertical' ? t : s;    // 水平: fixed=y, lo/hi=x範囲
+      const px = V.fixed, py = H.fixed;          // 2 線の交点 (px, py)
+      const interiorV = py > V.lo + EPS && py < V.hi - EPS; // 交点が V の y span 内部(端点=角を除く)
+      const interiorH = px > H.lo + EPS && px < H.hi - EPS; // 交点が H の x span 内部
+      if (interiorV && interiorH) {
+        const penV = Math.min(py - V.lo, V.hi - py);
+        const penH = Math.min(px - H.lo, H.hi - px);
+        out.push({ kind: 'perpendicular-overshoot', idA: i, idB: j, coord: [px, py], amountMm: Math.min(penV, penH) });
       }
     }
   }
