@@ -4,6 +4,7 @@ import {
   MAX_SCAFFOLD_FLOOR,
   isContiguousFloors,
   hasFloorAboveScaffoldLimit,
+  nextBuildingFloor,
 } from '../floorLimits';
 
 describe('floorLimits 定数', () => {
@@ -48,5 +49,26 @@ describe('hasFloorAboveScaffoldLimit', () => {
   it('limit 引数で閾値変更可', () => {
     expect(hasFloorAboveScaffoldLimit([1, 2, 3], 2)).toBe(true);
     expect(hasFloorAboveScaffoldLimit([1, 2], 8)).toBe(false);
+  });
+});
+
+describe('nextBuildingFloor（壁入力/なぞり経路の実階算出）', () => {
+  it('地上階(isUpper=false)は常に 1', () => {
+    expect(nextBuildingFloor(0, false)).toBe(1);
+    expect(nextBuildingFloor(5, false)).toBe(1);
+  });
+  it('上階: 存在最上階+1（N=2 byte不変: existingMax=1 → 2）', () => {
+    expect(nextBuildingFloor(1, true)).toBe(2);
+  });
+  it('上階: {1,2} → 3 / {1,2,3} → 4', () => {
+    expect(nextBuildingFloor(2, true)).toBe(3);
+    expect(nextBuildingFloor(3, true)).toBe(4);
+  });
+  it('上階: MAX_BUILDING_FLOOR(8) でクランプ', () => {
+    expect(nextBuildingFloor(8, true)).toBe(8);
+    expect(nextBuildingFloor(20, true)).toBe(8);
+  });
+  it('建物ゼロ(existingMax=0)でも上階は最低 2（安全）', () => {
+    expect(nextBuildingFloor(0, true)).toBe(2);
   });
 });

@@ -25,3 +25,12 @@ export function isContiguousFloors(floors: number[]): boolean {
 export function hasFloorAboveScaffoldLimit(floors: number[], limit: number = MAX_SCAFFOLD_FLOOR): boolean {
   return floors.some(f => f > limit);
 }
+
+/** 建物作成時に割り当てる階番号。
+ *  isUpper=false(地上階): 常に 1。
+ *  isUpper=true(「上の階を追加」): 既存最上階+1（上限 MAX_BUILDING_FLOOR にクランプ・建物ゼロでも最低 2）。
+ *  なぞり/テンプレ経路(GridCanvas)の Math.min(MAX_BUILDING_FLOOR, Math.max(existingMaxFloor,1)+1) と対称。 */
+export function nextBuildingFloor(existingMaxFloor: number, isUpper: boolean): number {
+  if (!isUpper) return 1;
+  return Math.min(MAX_BUILDING_FLOOR, Math.max(existingMaxFloor, 1) + 1);
+}

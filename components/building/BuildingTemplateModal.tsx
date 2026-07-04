@@ -8,6 +8,7 @@ import { BuildingTemplateId, BuildingInputMethod, RoofType, RoofConfig, Point } 
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@/lib/konva/gridUtils';
 import NumInput from '@/components/ui/NumInput';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
+import { nextBuildingFloor } from '@/lib/konva/floorLimits';
 
 type Props = { onClose: () => void; floor?: number; floor1Building?: import('@/types').BuildingShape };
 
@@ -369,7 +370,10 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
               onClick={() => {
                 setBuildingInputMethod(m);
                 if (m === 'direction') {
-                  useCanvasStore.getState().setPendingBuildingFloor(floor || 1);
+                  // N=3 修正: 壁入力(方向入力)経路の実階を なぞり/テンプレ経路(GridCanvas)と対称に算出。
+                  //   上階モード(floor===2)は既存最上階+1、地上階は 1。二値 prop 固定だと 3F+ が floor:2 になる不具合の修正。
+                  const existingMaxFloor = useCanvasStore.getState().canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
+                  useCanvasStore.getState().setPendingBuildingFloor(nextBuildingFloor(existingMaxFloor, floor === 2));
                   useCanvasStore.getState().setMode('building');
                   useCanvasStore.getState().setHeightMarkerMode(false);
                   useCanvasStore.getState().clearDirectionPoints();
