@@ -605,19 +605,23 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return { buildings, distances: distancesRec, topStart: normalizedScaffoldStart };
   }, [buildingByFloor, presentFloors, normalizedDistancesByFloor, normalizedScaffoldStart]);
 
-  // 下屋辺の変化時に下屋距離 distancesByFloor[subFloor] を初期化（デフォルト 900mm）。既に入力があれば保持。
-  // P3-5 S5-a: 下屋距離は bothmode 専用。単一階では subFloor(=1) が primaryFloor と衝突するため書き込まない
-  // （挙動不変＝下屋距離は単一階で未使用。これが 1F-only クロバーの解消）。
+  // 下屋距離の初期化（band 代表値を一律適用）。
+  // S-5e-3: 各非top階 f の下屋辺(uncoveredEdgesByFloor[f]=直上との差)を repDist で seed。
+  //   {1,2} では floorsDesc=[2,1]・f=1 のみ・uncoveredEdgesByFloor[1]≅uncoveredEdges1F で従来 [subFloor(1)] と同値。
+  //   top 階は primaryFloor seed(下の effect)が担当するためここでは書かない。単一階は 'all' 以外で非発火。
   useEffect(() => {
     if (targetFloor !== 'all') return;
     setDistancesByFloor(prev => {
-      const next: Record<number, number> = {};
-      uncoveredEdges1F.forEach(e => {
-        next[e.index] = repDist; // S-2: 1F下屋辺も建物全体の範囲代表値を一律適用
-      });
-      return { ...prev, [subFloor]: next };
+      const nextAll: Record<number, Record<number, number>> = { ...prev };
+      for (const f of floorsDesc) {
+        if (f === topFloor) continue;
+        const d: Record<number, number> = {};
+        (uncoveredEdgesByFloor[f] ?? []).forEach(e => { d[e.index] = repDist; });
+        nextAll[f] = d;
+      }
+      return nextAll;
     });
-  }, [uncoveredEdges1F, targetFloor, repDist]);
+  }, [uncoveredEdgesByFloor, floorsDesc, topFloor, targetFloor, repDist]);
 
   // 対象階切替時は distances をその階用に再構築
   useEffect(() => {

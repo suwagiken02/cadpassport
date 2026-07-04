@@ -11,6 +11,7 @@ import { getHandrailColor } from '@/lib/konva/handrailColors';
 import { getBuildingEdgesClockwise, EdgeInfo } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { isScaffoldFloorBlocked } from './scaffoldStartGuard';
+import { MAX_SCAFFOLD_FLOOR } from '@/lib/konva/floorLimits';
 
 type Props = { onClose: () => void; lockFloor?: number };
 
@@ -29,7 +30,7 @@ function vertexToCorner(vtx: Point, center: Point): StartCorner {
 }
 
 export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
-  const { setScaffoldStart, canvasData, addHandrail } = useCanvasStore();
+  const { setScaffoldStartFloor, canvasData, addHandrail } = useCanvasStore();
   const enabledSizes = useHandrailSettingsStore(s => s.enabledSizes);
 
   // 部材設定で ON のサイズを降順で表示。OFF サイズは選択肢から除外。
@@ -46,6 +47,13 @@ export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
     () => canvasData.buildings.find(b => (b.floor ?? 1) === targetFloor) ?? null,
     [canvasData.buildings, targetFloor],
   );
+
+  // S-5e-3: 建物が存在する階の昇順ユニーク（対象階ボタンの母集合）。{1,2} では [1,2]。
+  const presentFloors = useMemo<number[]>(() => {
+    const s = new Set<number>();
+    for (const b of canvasData.buildings) s.add(b.floor ?? 1);
+    return Array.from(s).sort((a, b) => a - b);
+  }, [canvasData.buildings]);
 
   // 建物の辺情報を取得（対象階の建物基準）
   const edgeInfo = useMemo(() => {
@@ -107,7 +115,8 @@ export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
 
     const computedCorner = vertexToCorner(vtx, center);
 
-    setScaffoldStart({
+    // S-5e-3: byFloor へ保存（floor 1/2 は既存2スロットへ両建て・3F+ は byFloor のみ）。合成アクセサ経由で N 階の起点を取得可能に。
+    setScaffoldStartFloor(targetFloor, {
       corner: computedCorner,
       startVertexIndex: selectedIdx % n,
       face1DistanceMm: face1Distance,
@@ -176,15 +185,18 @@ export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
           {/* 対象階 */}
           <div>
             <label className="block text-sm text-dimension mb-2">対象階</label>
-            <div className="flex gap-2">
-              {([1, 2] as const).map((f) => {
-                const blocked = isScaffoldFloorBlocked(lockFloor, f);
+            {/* S-5e-3: 建物が存在する階のボタン。lockFloor 固定 or MAX_SCAFFOLD_FLOOR 超は無効化。
+                {1,2} では [1F][2F] の 2 ボタンで従来と同等（present=={1,2} 時）。 */}
+            <div className="flex gap-2 flex-wrap">
+              {presentFloors.map((f) => {
+                const blocked = isScaffoldFloorBlocked(lockFloor, f) || f > MAX_SCAFFOLD_FLOOR;
                 return (
                   <button
                     key={f}
                     type="button"
                     onClick={() => { if (!blocked) setTargetFloor(f); }}
                     disabled={blocked}
+                    title={f > MAX_SCAFFOLD_FLOOR ? `自動割付は${MAX_SCAFFOLD_FLOOR}階までです` : undefined}
                     className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
                       targetFloor === f
                         ? 'border-accent bg-accent/15 text-accent'
@@ -196,9 +208,9 @@ export default function ScaffoldStartModal({ onClose, lockFloor }: Props) {
                 );
               })}
             </div>
-            {lockFloor === 2 && (
+            {lockFloor !== undefined && (
               <p className="text-[11px] text-yellow-500 mt-2">
-                1F+2F同時割付では足場開始(⭐)を2Fに設定します。
+                全階同時割付では足場開始(⭐)を{lockFloor}Fに設定します。
               </p>
             )}
             {!targetBuilding && (
