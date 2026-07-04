@@ -249,10 +249,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
   // 対象階（1F / 2F / both = 1F+2F同時）
   // 初期値: scaffoldStart1F があれば 1F、2F だけあれば 2F、旧 scaffoldStart があればその floor、どれもなければ 1F
-  const [targetFloor, setTargetFloor] = useState<1 | 2 | 'both'>(() => {
+  // S-5e-2: 'both'→'all'。単一階は数値(1..N)、全階同時は 'all'。ephemeral(永続化なし)。
+  const [targetFloor, setTargetFloor] = useState<number | 'all'>(() => {
     if (canvasData.scaffoldStart1F) return 1;
     if (canvasData.scaffoldStart2F) return 2;
-    return (canvasData.scaffoldStart?.floor ?? 1) as 1 | 2;
+    return canvasData.scaffoldStart?.floor ?? 1;
   });
 
   // 1F建物 / 2F建物（最初に一致したもの）
@@ -272,7 +273,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const building2F = buildingByFloor[2];
 
   // S-5a: 存在階の昇順ユニーク（cascade へ渡す配管の反復集合）。
-  //   この段では UI が 1|2|'both' のままなので present は実質 {1}/{2}/{1,2} だが、
+  //   この段では UI が 1|2|'all' のままなので present は実質 {1}/{2}/{1,2} だが、
   //   コードは任意 N を受ける形にする（エンジンは present-floors 汎用・連続積層を要求）。
   //   present=={1,2} のとき従来の [1,2] と同一配列＝byte 不変。
   const presentFloors = useMemo<number[]>(() => {
@@ -285,12 +286,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const topFloor = floorsDesc[0] ?? 2;
 
   // UI表示の「対象階建物」
-  // 1Fのみ: 1F建物 / 2Fのみ: 2F建物 / both: 2F建物（常に全周配置されるため主表示）
+  // S-5e-2: 単一階=その階の建物 / 'all'=最上階(topFloor)を主表示。N=2 では 1→1F・2→2F・'all'→2F で従来同値。
   const building = useMemo(() => {
-    if (targetFloor === 2) return building2F;
-    if (targetFloor === 'both') return building2F; // bothは2Fを主表示
-    return building1F;
-  }, [targetFloor, building1F, building2F]);
+    const f = targetFloor === 'all' ? topFloor : targetFloor;
+    return buildingByFloor[f] ?? null;
+  }, [targetFloor, buildingByFloor, topFloor]);
 
   // Phase H-3d-2 修正A: 1Fポリゴンに2F頂点を投影して自動分割 (normalizedBuilding1F)
   // 1F辺が「2F直下部分」と「下屋部分」の複合辺の場合、2F頂点で分割する。
@@ -299,7 +299,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // bothmode 以外、または片方の建物がない場合は元の building1F/2F をそのまま返す（両辺で同一ガード）。
   // P3-4 S3: 実floorキーの byFloor record 化。旧 normalizedBuilding1F/2F は派生 alias（挙動不変）。
   const normalizedBuildingByFloor = useMemo<Record<number, (typeof canvasData.buildings)[number] | null>>(() => {
-    if (targetFloor !== 'both' || !building1F || !building2F) {
+    if (targetFloor !== 'all' || !building1F || !building2F) {
       return { 1: building1F, 2: building2F };
     }
     return {
@@ -313,7 +313,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // bothモード時、1F のうち 2F で覆われていない辺（= 下屋辺）
   // 修正A + B1/B2: 両方分割済を基準にする。
   const uncoveredEdges1F = useMemo(() => {
-    if (targetFloor !== 'both' || !normalizedBuilding1F || !normalizedBuilding2F) return [];
+    if (targetFloor !== 'all' || !normalizedBuilding1F || !normalizedBuilding2F) return [];
     return getEdgesNotCoveredBy(normalizedBuilding1F, normalizedBuilding2F);
   }, [targetFloor, normalizedBuilding1F, normalizedBuilding2F]);
 
@@ -342,13 +342,13 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 優先順: 新フィールド (scaffoldStart1F / scaffoldStart2F) → 旧 scaffoldStart (後方互換)
   // 該当階の建物が存在しない場合は undefined（偽スタート角防止）
   const scaffoldStart = useMemo(() => {
-    // S-3c: 'both'(=cascade)の起点は最上階。cascade 集合 [1,2] の最上階(現状=2)を使う
+    // S-3c: 'all'(=cascade)の起点は最上階。cascade 集合 [1,2] の最上階(現状=2)を使う
     //   （S-5 で present-floors の maxFloor へ）。単一階は targetFloor そのもの。N=2 では
     //   effectiveFloor=2 と従来同値。newSS の 1F/2F 読みは永続化2スロット互換のまま
     //   （S-5 で scaffoldStartByFloor 化）。auto 起点の建物は buildingByFloor[最上階]。
     // S-5a: cascade 集合を present-floors 化。最上階(=maxFloor)を起点にする（既に Math.max 駆動）。
     //   present=={1,2} のとき max=2 で従来同値。
-    const effectiveFloor = targetFloor === 'both'
+    const effectiveFloor = targetFloor === 'all'
       ? (presentFloors.length ? Math.max(...presentFloors) : 2)
       : targetFloor;
     const topBuilding = buildingByFloor[effectiveFloor];
@@ -378,7 +378,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 同じ物理座標の頂点を coordinate match で探し、その index を新 startVertexIndex とする。
   // bothmode 以外、または building2F/normalizedBuilding2F が同一の場合は元の scaffoldStart をそのまま返す。
   const normalizedScaffoldStart = useMemo(() => {
-    if (!scaffoldStart || targetFloor !== 'both' || !building2F || !normalizedBuilding2F) {
+    if (!scaffoldStart || targetFloor !== 'all' || !building2F || !normalizedBuilding2F) {
       return scaffoldStart;
     }
     // H-3d-7 修正: ⭐ 起点を単一規約 (CW 辺順) で再解決する。
@@ -393,7 +393,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 修正 (B1/B2): 分割済の normalizedBuilding2F を基準にする (B 面が B1/B2 に分かれる)
   // Phase H-3d-6: ラベル付けは ⭐ 起点 CW 順 (relabelByFace2F、 同面分割は suffix 付与)。
   const edges2FAll = useMemo(() => {
-    if (targetFloor !== 'both' || !normalizedBuilding2F) return [];
+    if (targetFloor !== 'all' || !normalizedBuilding2F) return [];
     const startIdx = (normalizedScaffoldStart?.startVertexIndex ?? 0)
       % normalizedBuilding2F.points.length;
     return relabelByFace2F(getBuildingEdgesClockwise(normalizedBuilding2F), startIdx);
@@ -424,7 +424,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // Phase H-3d-6: relabelByFace1F (= ⭐ → 最近接 1F 頂点 → CW 巡回で最初に出会う
   // 下屋辺を 1A、 以降順次 1B, 1C, ...)。 旧 midpoint 距離方式から書き直し。
   const subEdgesRelabeled = useMemo(() => {
-    if (targetFloor !== 'both' || !normalizedBuilding1F) return [];
+    if (targetFloor !== 'all' || !normalizedBuilding1F) return [];
     const allEdges1F = getBuildingEdgesClockwise(normalizedBuilding1F);
     const uncoveredIdxSet = new Set(uncoveredEdges1F.map(e => e.index));
     return relabelByFace1F(allEdges1F, uncoveredIdxSet, commonStartPoint);
@@ -434,7 +434,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 同一直線連動の 1F辺は希望離れ入力を無効化し「= 2F-X面」表示に切り替える。
   // 修正A + B1/B2: 両方分割済 (normalizedBuilding1F / normalizedBuilding2F) を基準にする。
   const collinearPairs = useMemo(() => {
-    if (targetFloor !== 'both' || !normalizedBuilding1F || !normalizedBuilding2F) return [];
+    if (targetFloor !== 'all' || !normalizedBuilding1F || !normalizedBuilding2F) return [];
     return findCollinearEdgePairs(normalizedBuilding1F, normalizedBuilding2F);
   }, [targetFloor, normalizedBuilding1F, normalizedBuilding2F]);
 
@@ -460,7 +460,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // 経由で raw 入力欄数を維持しつつ ⭐-relative ラベル表示を実現する。
   const edges = useMemo(() => {
     if (!building) return [];
-    if (targetFloor === 'both' && normalizedBuilding2F && normalizedScaffoldStart) {
+    if (targetFloor === 'all' && normalizedBuilding2F && normalizedScaffoldStart) {
       return getBothmodeEdgesWithRelativeLabels(
         building, normalizedBuilding2F, normalizedScaffoldStart,
       );
@@ -486,7 +486,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const [bulkMm, setBulkMm] = useState(900);  // 一括入力欄の現在値 (= 「全部に適用」 で各辺の離れに一斉コピー)
   // P3-5 S5-a: distances を実floorキーの byFloor record へ統合（cascade未接続＝挙動不変）。
   // primary=主建物の離れ(raw building edge index)、sub=下屋(常に1F・normalized済)。S2a 解決子を上方移動。
-  const primaryFloor = targetFloor === 1 ? 1 : 2;
+  // S-5e-2: 'all' は最上階(topFloor)を主に、単一階は自身。N=2 では 'all'→2・1→1・2→2 で従来同値。
+  const primaryFloor = targetFloor === 'all' ? topFloor : targetFloor;
   const subFloor = 1;
   const [distancesByFloor, setDistancesByFloor] = useState<Record<number, Record<number, number>>>(() => {
     const d: Record<number, number> = {};
@@ -532,7 +533,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   //   N=2 では uncoveredEdgesByFloor[1]≅uncoveredEdges1F・relabeledEdgesByFloor[2]≅edges2FAll・
   //   [1]≅subEdgesRelabeled（cascadeNormByFloor≅normalizedBuildingXF のため deep equal）。
   const uncoveredEdgesByFloor = useMemo<Record<number, EdgeInfo[]>>(() => {
-    if (targetFloor !== 'both') return {};
+    if (targetFloor !== 'all') return {};
     const rec: Record<number, EdgeInfo[]> = {};
     for (const f of floorsDesc) {
       if (f === topFloor) continue; // 最上階に下屋なし
@@ -544,7 +545,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   }, [targetFloor, floorsDesc, topFloor, cascadeNormByFloor]);
 
   const relabeledEdgesByFloor = useMemo<Record<number, EdgeInfo[]>>(() => {
-    if (targetFloor !== 'both') return {};
+    if (targetFloor !== 'all') return {};
     const rec: Record<number, EdgeInfo[]> = {};
     for (const f of floorsDesc) {
       const nb = cascadeNormByFloor[f];
@@ -564,7 +565,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   //   N=2 では従来ガード (normalizedBuilding1F && normalizedBuilding2F && scaffoldStart) と同値。
   //   ※ 定義は b-1、使用（ガード集約）は b-2。
   const bothCascadeReady = useMemo(() => {
-    if (targetFloor !== 'both' || !normalizedScaffoldStart) return false;
+    if (targetFloor !== 'all' || !normalizedScaffoldStart) return false;
     if (presentFloors.length < 2) return false;
     return presentFloors.every(f => !!cascadeNormByFloor[f]);
   }, [targetFloor, presentFloors, cascadeNormByFloor, normalizedScaffoldStart]);
@@ -579,7 +580,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   //     3F+ 用の distances 入力(state 持ち方+UI)は S-5e 送り。
   const normalizedDistancesByFloor = useMemo(() => {
     const rec: Record<number, Record<number, number>> = {};
-    if (targetFloor !== 'both') return rec;
+    if (targetFloor !== 'all') return rec;
     for (const f of presentFloors) {
       const normB = cascadeNormByFloor[f];
       if (!normB) continue;
@@ -608,7 +609,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   // P3-5 S5-a: 下屋距離は bothmode 専用。単一階では subFloor(=1) が primaryFloor と衝突するため書き込まない
   // （挙動不変＝下屋距離は単一階で未使用。これが 1F-only クロバーの解消）。
   useEffect(() => {
-    if (targetFloor !== 'both') return;
+    if (targetFloor !== 'all') return;
     setDistancesByFloor(prev => {
       const next: Record<number, number> = {};
       uncoveredEdges1F.forEach(e => {
@@ -733,10 +734,10 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const handleCalc = () => {
     if (!building) return;
 
-    // S-5e-1: 割付前バリデーション（'both'/将来 'all' のみ）。cascade は非連続階で throw するため
+    // S-5e-1: 割付前バリデーション（'all'/将来 'all' のみ）。cascade は非連続階で throw するため
     //   present-floors が非連続（中間階削除で {1,3} 等）なら中止。割付上限超も抑止。
     //   {1,2}・単一階では発火しない（連続・上限内）。
-    if (targetFloor === 'both') {
+    if (targetFloor === 'all') {
       if (!isContiguousFloors(presentFloors)) {
         useCanvasStore.getState().setAlertMessage('階が連続していません（中間の階が抜けています）。抜けている階の建物を作成してください。');
         return;
@@ -798,7 +799,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
     // bothmode: 1F 下屋辺の順次決定（H-3d-1: 1F 用 sequentialResult を独立保持）
     let seqRes1F: SequentialLayoutResult | null = null;
-    if (targetFloor === 'both' && building1F && building2F && uncoveredEdges1F.length > 0) {
+    if (targetFloor === 'all' && building1F && building2F && uncoveredEdges1F.length > 0) {
       const d1: Record<number, number> = {};
       getBuildingEdgesClockwise(building1F).forEach(e => {
         d1[e.index] = distances1F[e.index] ?? 900;
@@ -1150,7 +1151,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       // 所属階:
       // - bothmode: adapter が originFloor を埋めているのでそれを使う (2F 由来 → 2F、1F 由来 → 1F)
       // - 単一階: 1Fのみ → 1F、2Fのみ → 2F (originFloor は undefined)
-      const placeFloor: number = el.originFloor ?? (targetFloor === 1 ? 1 : 2);
+      const placeFloor: number = el.originFloor ?? (typeof targetFloor === 'number' ? targetFloor : topFloor);
       for (const p of placements) {
         allHandrails.push({
           id: uuidv4(),
@@ -1164,7 +1165,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     }
 
     // 1F+2F 同時: 1F のうち 2F で覆われない辺（下屋辺）の手摺を追加
-    if (targetFloor === 'both' && resultSub) {
+    if (targetFloor === 'all' && resultSub) {
       for (const el of resultSub.edgeLayouts) {
         const selIdx = selectionsSub[el.edge.index] ?? 0;
         const candidate = el.candidates[selIdx];
@@ -1191,7 +1192,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     //   消すのは手摺のみ(removeElements に手摺idだけ渡す)→建物/障害物/寸法/その他は無傷。
     //   対象階: both→present-floors(全消し) / 単一→その階のみ(他階は温存)。
     //   S-5a: present=={1,2} のとき従来 [1,2] と同集合＝byte 不変。
-    const clearFloors: number[] = targetFloor === 'both' ? presentFloors : [targetFloor];
+    const clearFloors: number[] = targetFloor === 'all' ? presentFloors : [targetFloor];
     const clearIds = canvasData.handrails
       .filter(h => clearFloors.includes(h.floor ?? 1))
       .map(h => h.id);
@@ -1236,53 +1237,67 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           {/* 対象階 */}
           <div>
             <label className="block text-xs text-dimension mb-1.5">対象階</label>
-            <div className="flex gap-1.5">
-              {([1, 2] as const).map(f => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setTargetFloor(f)}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                    targetFloor === f
-                      ? 'border-accent bg-accent/15 text-accent'
-                      : 'border-dark-border text-dimension hover:border-accent/50'
-                  }`}
-                >
-                  {f}Fのみ
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setTargetFloor('both')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                  targetFloor === 'both'
-                    ? 'border-accent bg-accent/15 text-accent'
-                    : 'border-dark-border text-dimension hover:border-accent/50'
-                }`}
-              >
-                1F+2F
-              </button>
+            {/* S-5e-2: 存在階の個別ボタン + 「全階」。MAX_SCAFFOLD_FLOOR 超は無効化。
+                N=2({1,2}) では [1Fのみ][2Fのみ][全階] の 3 ボタンで従来と同レイアウト・同選択挙動。 */}
+            <div className="flex gap-1.5 flex-wrap">
+              {presentFloors.map(f => {
+                const over = f > MAX_SCAFFOLD_FLOOR;
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => { if (!over) setTargetFloor(f); }}
+                    disabled={over}
+                    title={over ? `自動割付は${MAX_SCAFFOLD_FLOOR}階までです` : undefined}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                      targetFloor === f
+                        ? 'border-accent bg-accent/15 text-accent'
+                        : 'border-dark-border text-dimension hover:border-accent/50'
+                    } ${over ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    {f}Fのみ
+                  </button>
+                );
+              })}
+              {presentFloors.length >= 2 && (() => {
+                const over = topFloor > MAX_SCAFFOLD_FLOOR;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => { if (!over) setTargetFloor('all'); }}
+                    disabled={over}
+                    title={over ? `自動割付は${MAX_SCAFFOLD_FLOOR}階までです` : undefined}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                      targetFloor === 'all'
+                        ? 'border-accent bg-accent/15 text-accent'
+                        : 'border-dark-border text-dimension hover:border-accent/50'
+                    } ${over ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    全階
+                  </button>
+                );
+              })()}
             </div>
-            {targetFloor === 'both' && (
+            {targetFloor === 'all' && (
               <p className="mt-1.5 text-[10px] text-dimension">
-                {!building2F
-                  ? '⚠️ 2F建物が未作成です。先に2Fを作成してください'
+                {!buildingByFloor[topFloor]
+                  ? `⚠️ ${topFloor}F建物が未作成です。先に${topFloor}Fを作成してください`
                   : !building1F
                   ? '⚠️ 1F建物が未作成です'
                   : !scaffoldStart
-                  ? '⚠️ 足場開始位置(⭐)を2Fに設定してください（1F+2Fは2F起点で割り付けます）'
+                  ? `⚠️ 足場開始位置(⭐)を${topFloor}Fに設定してください（全階は${topFloor}F起点で割り付けます）`
                   : uncoveredEdges1F.length === 0
-                  ? '✓ 1F全辺が2Fで覆われます: 2F全周のみ配置、1F足場不要'
-                  : `✓ 2F全周配置 + 1Fの下屋辺 ${uncoveredEdges1F.length} 本にも配置`}
+                  ? `✓ 下位階が上階で覆われます: ${topFloor}F全周のみ配置`
+                  : `✓ ${topFloor}F全周配置 + 下屋辺 ${uncoveredEdges1F.length} 本にも配置`}
               </p>
             )}
-            {targetFloor === 'both' && !!building1F && !!building2F && !scaffoldStart && (
+            {targetFloor === 'all' && !!buildingByFloor[topFloor] && !scaffoldStart && (
               <button
                 type="button"
-                onClick={() => { onClose(); onOpenScaffoldStart(2); }}
+                onClick={() => { onClose(); onOpenScaffoldStart(topFloor); }}
                 className="mt-1.5 w-full py-2 rounded-lg text-xs font-bold border border-accent text-accent hover:bg-accent/10 transition-colors"
               >
-                ⭐ 足場開始位置を2Fに設定する
+                ⭐ 足場開始位置を{topFloor}Fに設定する
               </button>
             )}
           </div>
@@ -1299,16 +1314,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           {/* プレビューSVG（bothモードでは 1F を背景、下屋辺を緑で強調） */}
           {/* Phase H-3d-3: bothmode では normalize 後の 2F (B1/B2 等の分割辺込み) を表示 */}
           <PreviewSVG
-            points={targetFloor === 'both' && normalizedBuilding2F ? normalizedBuilding2F.points : building.points}
-            edges={targetFloor === 'both' ? edges2FAll : edges}
+            points={targetFloor === 'all' && normalizedBuilding2F ? normalizedBuilding2F.points : building.points}
+            edges={targetFloor === 'all' ? edges2FAll : edges}
             focusedIndex={focusedEdgeIndex}
             conflictHandrails={showConflictConfirm ? canvasData.handrails.filter(h => conflictIds.includes(h.id)) : undefined}
-            subPoints={targetFloor === 'both' && normalizedBuilding1F ? normalizedBuilding1F.points : undefined}
-            subEdges={targetFloor === 'both' ? subEdgesRelabeled : undefined}
-            subHighlightIndices={targetFloor === 'both' ? uncoveredIdxSet1F : undefined}
+            subPoints={targetFloor === 'all' && normalizedBuilding1F ? normalizedBuilding1F.points : undefined}
+            subEdges={targetFloor === 'all' ? subEdgesRelabeled : undefined}
+            subHighlightIndices={targetFloor === 'all' ? uncoveredIdxSet1F : undefined}
             focusedSubIndex={focusedSubEdgeIndex}
             scaffoldStart={normalizedScaffoldStart}
-            showFloorPrefix={targetFloor === 'both'}
+            showFloorPrefix={targetFloor === 'all'}
           />
 
           {/* 範囲離れ入力（S-2: 建物全体で1個の範囲[lo,hi]＋優先。代表値を全辺へ展開しエンジンは無改変。
@@ -1375,7 +1390,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
           {/* 1F下屋辺（1F+2F同時モード・下屋辺あり時のみ）。S-2: 専用の辺ごと離れ入力を廃止し、
               上の「範囲離れ」を1F/2F共通で適用する（連動辺は従来どおり2Fに追従）。 */}
-          {targetFloor === 'both' && subEdgesRelabeled.length > 0 && (() => {
+          {targetFloor === 'all' && subEdgesRelabeled.length > 0 && (() => {
             const collinearCount = subEdgesRelabeled.filter(e => collinear1FToEdge2F.has(e.index)).length;
             const indepCount = subEdgesRelabeled.length - collinearCount;
             return (
@@ -1398,7 +1413,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
 
           {/* 計算ボタン */}
           <button onClick={handleCalc} data-tutorial-id="autolayout-calc"
-            disabled={targetFloor === 'both' && !!building1F && !!building2F && !scaffoldStart}
+            disabled={targetFloor === 'all' && !!building1F && !!building2F && !scaffoldStart}
             className="w-full py-2.5 bg-dark-bg border border-accent text-accent font-bold rounded-xl text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-dark-bg"
           >
             計算する
@@ -1408,7 +1423,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
           {result && (
             <div className="space-y-2">
               <p className="text-sm font-bold text-canvas">
-                {targetFloor === 'both' ? '割付結果 (2F全周)' : '割付結果'}
+                {targetFloor === 'all' ? '割付結果 (2F全周)' : '割付結果'}
               </p>
 
               {result.edgeLayouts.map((el, i) => {
@@ -1436,7 +1451,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-bold">
                         {/* Phase H-3d-3: bothmode は 1F 側 (1{label}) と対称に "2" prefix */}
-                        {targetFloor === 'both' ? '2' : ''}{((targetFloor === 'both' ? edges2FAll : edges).find(e => e.index === el.edge.index)?.label ?? el.edge.label)} ({FACE_LABEL[el.edge.face]})
+                        {targetFloor === 'all' ? '2' : ''}{((targetFloor === 'all' ? edges2FAll : edges).find(e => e.index === el.edge.index)?.label ?? el.edge.label)} ({FACE_LABEL[el.edge.face]})
                         {el.locked && <span className="text-[10px] text-dimension ml-1">L字固定</span>}
                       </span>
                       <span className="text-[10px] text-dimension">
@@ -1511,7 +1526,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                   単一階モード (現状到達なし) は従来 resultSub 経由 */}
               {(() => {
                 type SubEntry = { el: typeof result.edgeLayouts[number]; mergedIdx: number; useBothmodeState: boolean };
-                const subEntries: SubEntry[] = targetFloor === 'both'
+                const subEntries: SubEntry[] = targetFloor === 'all'
                   ? result.edgeLayouts
                       .map((el, mergedIdx) => ({ el, mergedIdx, useBothmodeState: true }))
                       .filter(({ el }) => el.originFloor === 1)
@@ -1671,7 +1686,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         let currentNum = 0;
         let prevStartDistMm: number | null = null;
 
-        if (targetFloor === 'both' && layoutByFloor) {
+        if (targetFloor === 'all' && layoutByFloor) {
           // S-5b-1: cascade 降順の唯一のフォーカスリスト（N=2 では 2F→1F 順＝従来 allSegments）。
           const allSegments = focusList;
           // Phase H-3d-2 Stage 5 残対応 Step 1 補足:
@@ -1784,7 +1799,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         // Phase H-3d-3 修正B: bothmode の modal preview は top-level と同じく
         // 主=2F / sub=1F 固定で表示 (= 設定画面のプレビューと整合)。
         // activeEdge.floor で focus 対象を切り替えるが、 主従構成は不変。
-        const useBothmodePreview = targetFloor === 'both' && !!normalizedBuilding2F && !!normalizedBuilding1F;
+        const useBothmodePreview = targetFloor === 'all' && !!normalizedBuilding2F && !!normalizedBuilding1F;
 
         // Phase H-3d-4: 案 β。 単一階モードでも modal preview にラベル表示するため
         // edges に統一。 bothmode + activeEdge.floor === 2 のときのみ edges2FAll
@@ -1893,7 +1908,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
               {(() => {
                 // Phase H-3d-2 Stage 5 残対応 Step 1: bothmode 時は bothmodeAdjustments を見る
                 let activeAdj: EdgeAdjustment = DEFAULT_EDGE_ADJUSTMENT;
-                if (targetFloor === 'both' && layoutByFloor) {
+                if (targetFloor === 'all' && layoutByFloor) {
                   // S-5e-1: bothmode は record が floor キー・primaryFloor=2/subFloor=1 と activeEdge.floor が恒等。
                   const adjs = bothmodeAdjustmentsByFloor[activeEdge.floor] ?? {};
                   const key = `${activeEdge.index}-${activeItem.segmentIndex}`;
@@ -2105,7 +2120,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 onClick={() => {
                   setShowLockedAlert(false);
                   onClose();
-                  onOpenScaffoldStart(targetFloor === 'both' ? 2 : undefined);
+                  onOpenScaffoldStart(targetFloor === 'all' ? topFloor : undefined);
                 }}
                 className="flex-1 py-2.5 bg-accent text-white font-bold rounded-xl text-sm"
               >
