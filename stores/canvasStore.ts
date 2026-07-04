@@ -384,6 +384,8 @@ type CanvasStore = {
   setScaffoldStart: (config: ScaffoldStartConfig) => void;
   setScaffoldStart1F: (config: ScaffoldStartConfig | undefined) => void;
   setScaffoldStart2F: (config: ScaffoldStartConfig | undefined) => void;
+  /** S-5c: N 階のスタート角を byFloor へ保存（floor 1/2 は既存2スロットへ両建て）。 */
+  setScaffoldStartFloor: (floor: number, config: ScaffoldStartConfig | undefined) => void;
   removeScaffoldStart1F: () => void;
   removeScaffoldStart2F: () => void;
   zoomToFitBuildings: (viewportWidth: number, viewportHeight: number, marginMm?: number) => void;
@@ -1295,6 +1297,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       canvasData: { ...canvasData, scaffoldStart2F: config },
       isDirty: true,
     });
+  },
+  setScaffoldStartFloor: (floor, config) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    // S-5c: byFloor(新) に保存。floor 1/2 は既存2スロットへも両建て
+    //   （ModeToolbar/tutorial 等の直読み consumer が floor 1/2 を直接参照するため）。
+    //   合成アクセサ getScaffoldStartByFloor は byFloor 優先なので {1,2} は従来と同値。
+    const nextByFloor = { ...(canvasData.scaffoldStartByFloor ?? {}) };
+    if (config) nextByFloor[floor] = config; else delete nextByFloor[floor];
+    const next: CanvasData = { ...canvasData, scaffoldStartByFloor: nextByFloor };
+    if (floor === 1) next.scaffoldStart1F = config;
+    else if (floor === 2) next.scaffoldStart2F = config;
+    set({ canvasData: next, isDirty: true });
   },
   removeScaffoldStart1F: () => {
     const { canvasData, pushHistory } = get();

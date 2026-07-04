@@ -261,6 +261,9 @@ export type CanvasData = {
   scaffoldStart1F?: ScaffoldStartConfig;
   /** 2F のスタート角（1F+2F 両方保持可能）*/
   scaffoldStart2F?: ScaffoldStartConfig;
+  /** N 階のスタート角（S-5c）。floor→config。3F 以上はここにのみ保存。
+   *  floor 1/2 は既存 scaffoldStart1F/2F へ両建て（後方互換の直読み consumer 用）。 */
+  scaffoldStartByFloor?: Record<number, ScaffoldStartConfig>;
   /** マグネットピン（undefined は既存プロジェクト互換、実行時は [] に正規化）*/
   magnetPins?: MagnetPin[];
   /** 高さマーカー (= undefined は既存プロジェクト互換、 normalize で [] に正規化) */
@@ -270,15 +273,22 @@ export type CanvasData = {
 };
 
 /**
- * 永続化フィールド scaffoldStart1F / scaffoldStart2F を階番号キーの record に射影する派生アクセサ。
- * 永続化の実体（1F/2F 個別フィールド）は無改変。読取 consumer を byFloor[floor] 形へ寄せて
- * N 階一般化（S-3 以降で present-floors 反復に拡張）できるようにする土台。
- * 現状は {1, 2} のみを返し、値・挙動は従来と完全同一。
+ * スタート角を階番号キーの record に射影する派生アクセサ。
+ * S-5c: scaffoldStartByFloor(新・N階) を優先し、floor 1/2 は既存 scaffoldStart1F/2F を
+ * フォールバックとして合成する。3F 以上は byFloor から取得。
+ *
+ * - {1, 2} で byFloor 未設定なら {1: scaffoldStart1F, 2: scaffoldStart2F} を返し、従来と完全同一。
+ * - deprecated な全体 legacy `scaffoldStart` はここに畳み込まない（consumer 側が「全階に星が無い
+ *   ときのみ」の粗いフォールバックとして扱うため。畳み込むと {1,2} の読取値が変わり byte 不変を破る）。
+ * - 返り値は常に key 1/2 を含む（値は undefined 可）＋ byFloor の全 floor key。
  */
 export function getScaffoldStartByFloor(
-  data: Pick<CanvasData, 'scaffoldStart1F' | 'scaffoldStart2F'>,
+  data: Pick<CanvasData, 'scaffoldStart1F' | 'scaffoldStart2F' | 'scaffoldStartByFloor'>,
 ): Record<number, ScaffoldStartConfig | undefined> {
-  return { 1: data.scaffoldStart1F, 2: data.scaffoldStart2F };
+  const out: Record<number, ScaffoldStartConfig | undefined> = { ...(data.scaffoldStartByFloor ?? {}) };
+  if (out[1] === undefined) out[1] = data.scaffoldStart1F;
+  if (out[2] === undefined) out[2] = data.scaffoldStart2F;
+  return out;
 }
 
 // === 建物テンプレート ===

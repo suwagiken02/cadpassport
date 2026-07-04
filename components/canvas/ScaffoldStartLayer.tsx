@@ -34,9 +34,9 @@ export default function ScaffoldStartLayer() {
 
   // 描画対象: scaffoldStart1F / 2F が優先、 どちらも無ければ legacy scaffoldStart をフォールバック
   const jobs: { ss: ScaffoldStartConfig; floor: number }[] = [];
-  // S-1: byFloor 派生アクセサ経由で収集（反復は従来と同じ [1,2] 固定＝byte 不変。S-3 で present-floors 化）。
+  // S-5c: 合成アクセサのキー（存在する星の階）を昇順反復。{1,2} では [1,2] で従来同値。
   const startByFloor = getScaffoldStartByFloor(canvasData);
-  for (const floor of [1, 2] as const) {
+  for (const floor of Object.keys(startByFloor).map(Number).sort((a, b) => a - b)) {
     const ss = startByFloor[floor];
     if (ss) {
       jobs.push({ ss, floor });

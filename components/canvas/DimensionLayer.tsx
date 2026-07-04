@@ -93,11 +93,12 @@ export default function DimensionLayer() {
   // 描画対象の scaffoldStart を収集（1F/2F 両方保持対応）
   // 新フィールド (scaffoldStart1F / scaffoldStart2F) 優先、無ければ旧 scaffoldStart をフォールバック
   // 該当階の建物が存在しない場合はスキップ（偽寸法線防止）
-  // S-1: byFloor 派生アクセサ経由で収集（反復は従来と同じ [1,2] 固定＝byte 不変。S-3 で present-floors 化）。
+  // S-1/S-5c: byFloor 派生アクセサ経由で収集。反復は合成アクセサのキー（present-floors）。
   //   該当階の建物が存在しない場合はスキップ（偽寸法線防止）。
   const startByFloor = getScaffoldStartByFloor(canvasData);
   const dimensionJobs: NonNullable<typeof canvasData.scaffoldStart>[] = [];
-  for (const floor of [1, 2] as const) {
+  // S-5c: 合成アクセサのキー（存在する星の階）を昇順反復。{1,2} では [1,2] で従来同値。
+  for (const floor of Object.keys(startByFloor).map(Number).sort((a, b) => a - b)) {
     const ss = startByFloor[floor];
     const hasBuilding = canvasData.buildings.some(b => (b.floor ?? 1) === floor);
     if (ss && hasBuilding) {

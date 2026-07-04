@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { Handrail, HandrailLengthMm, Point, ScaffoldStartConfig } from '@/types';
+import { Handrail, HandrailLengthMm, Point, ScaffoldStartConfig, getScaffoldStartByFloor } from '@/types';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import NumInput from '@/components/ui/NumInput';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
@@ -352,8 +352,10 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       : targetFloor;
     const topBuilding = buildingByFloor[effectiveFloor];
     if (!topBuilding) return undefined;
-    const newSS = effectiveFloor === 1 ? canvasData.scaffoldStart1F : canvasData.scaffoldStart2F;
-    if (newSS) return newSS;
+    // S-5c: 永続化2スロット直読みから合成アクセサ経由へ。effectiveFloor 1/2 は従来同値、
+    //   3F+ は byFloor から取得（旧実装は effectiveFloor>=3 で誤って 2F の星を読んでいた）。
+    const stored = getScaffoldStartByFloor(canvasData)[effectiveFloor];
+    if (stored) return stored;
     const legacy = canvasData.scaffoldStart;
     if (legacy && (legacy.floor ?? 1) === effectiveFloor) return legacy;
     // 案Y-2: range 指定時は星未設定でも内部自動起点(北西角)を生成して計算可能にする。位置(周回起点)
@@ -368,7 +370,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       return auto;
     }
     return undefined;
-  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStart, targetFloor, buildingByFloor, presentFloors, rangeActive, repDist]);
+  }, [canvasData.scaffoldStart1F, canvasData.scaffoldStart2F, canvasData.scaffoldStartByFloor, canvasData.scaffoldStart, targetFloor, buildingByFloor, presentFloors, rangeActive, repDist]);
 
   // Phase H-3d-2 重大変更: scaffoldStart.startVertexIndex を normalizedBuilding2F の頂点 index に再マッピング。
   // 元の building2F.points と normalizedBuilding2F.points は順序が変わる場合がある (CW NW 起点へ正規化)。
