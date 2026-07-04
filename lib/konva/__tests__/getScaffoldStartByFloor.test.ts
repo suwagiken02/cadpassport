@@ -36,8 +36,11 @@ describe('getScaffoldStartByFloor: {1,2} 4パタン deep equal (byFloor 未設�
     expect(getScaffoldStartByFloor(d)).toEqual(oldImpl(d));
     expect(getScaffoldStartByFloor(d)).toEqual({ 1: ss1, 2: ss2 });
   });
-  it('legacy のみ（scaffoldStart は畳み込まれない → {1:undef,2:undef}）', () => {
-    const d = { scaffoldStart: legacy } as { scaffoldStart?: ScaffoldStartConfig };
+  it('legacy のみ（アクセサは scaffoldStart を読まない → 1F/2F/byFloor 空で {1:undef,2:undef}）', () => {
+    // getScaffoldStartByFloor は scaffoldStart(deprecated 全体 legacy)を参照しない。
+    // legacy のみのデータでも 1F/2F/byFloor が空なら {1:undef,2:undef}（consumer 側が legacy を扱う）。
+    void legacy;
+    const d = {};
     expect(getScaffoldStartByFloor(d)).toEqual(oldImpl({}));
     expect(getScaffoldStartByFloor(d)).toEqual({ 1: undefined, 2: undefined });
   });

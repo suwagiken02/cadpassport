@@ -568,28 +568,40 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     return presentFloors.every(f => !!cascadeNormByFloor[f]);
   }, [targetFloor, presentFloors, cascadeNormByFloor, normalizedScaffoldStart]);
 
-  const normalizedDistances = useMemo(() => {
-    // 最上階(cascade へ渡す主建物=2F)の生離れを cascade 正規化辺 index へ再キー。
-    if (targetFloor !== 'both' || !building2F || !cascadeNormByFloor[2]) {
-      return distances;
+  // S-5d: distances の per-floor 一様正規化。各階 f の生 distances(distancesByFloor[f]) を
+  //   cascadeNormByFloor[f] の辺 index へ getNormalizedDistances で再キーする。
+  //   primaryFloor(星の主建物=現状 2F) の distances のみ raw building index キーなので raw building を
+  //   source に、他階は既に normalized index キー(下屋 uncovered 由来 or 未 seed=空)のため
+  //   cascadeNormByFloor[f] を source に（＝ getNormalizedDistances(B,B,d)=identity）。
+  //   N=2 では [primaryFloor(2)]=従来 normalizedDistances・[subFloor(1)]=従来 distances1F と deep equal。
+  //   ※中間階(3F+)の distances state seeding は primaryFloor/subFloor のみ実装済＝繋ぎだけ一般化・
+  //     3F+ 用の distances 入力(state 持ち方+UI)は S-5e 送り。
+  const normalizedDistancesByFloor = useMemo(() => {
+    const rec: Record<number, Record<number, number>> = {};
+    if (targetFloor !== 'both') return rec;
+    for (const f of presentFloors) {
+      const normB = cascadeNormByFloor[f];
+      if (!normB) continue;
+      const rawD = distancesByFloor[f] ?? {};
+      const rawB = (f === primaryFloor ? buildingByFloor[f] : normB) ?? normB;
+      rec[f] = getNormalizedDistances(rawB, normB, rawD);
     }
-    return getNormalizedDistances(building2F, cascadeNormByFloor[2], distances);
-  }, [distances, targetFloor, building2F, cascadeNormByFloor]);
+    return rec;
+  }, [targetFloor, presentFloors, cascadeNormByFloor, buildingByFloor, primaryFloor, distancesByFloor]);
 
-  // S-3a: cascade へ渡すバンドルを1本化（8箇所の重複を集約）。cascade へ渡す階集合は現状
-  //   'both'=1F+2F の2階（[1,2]）＝byte 不変。S-5 で present-floors/'all' へ拡張する起点。
-  //   distances の floor→source マッピング(1F=下屋 distances1F / 2F=normalizedDistances)は
-  //   S-3a では2階のまま（S-3b で全階正規化に整合）。topStart は最上階(=2F)の正規化起点。
+  // S-3a: cascade へ渡すバンドルを1本化（8箇所の重複を集約）。
+  //   S-5a で階集合を present-floors 化、S-5d で distances を per-floor 一様正規化
+  //   (normalizedDistancesByFloor) へ整合。topStart は最上階の正規化起点。
   const cascadeInput = useMemo(() => {
     const buildings: Record<number, (typeof canvasData.buildings)[number]> = {};
     const distancesRec: Record<number, Record<number, number>> = {};
-    for (const f of presentFloors) { // S-5a: present-floors 反復（distances の floor→source マッピングは S-3a のまま＝S-3b/S-5d で全階正規化）
+    for (const f of presentFloors) { // S-5d: present-floors 反復・per-floor 一様正規化済 distances を使用
       const b = buildingByFloor[f];
       if (b) buildings[f] = b;
-      distancesRec[f] = f === 1 ? distances1F : normalizedDistances;
+      distancesRec[f] = normalizedDistancesByFloor[f] ?? {};
     }
     return { buildings, distances: distancesRec, topStart: normalizedScaffoldStart };
-  }, [buildingByFloor, presentFloors, distances1F, normalizedDistances, normalizedScaffoldStart]);
+  }, [buildingByFloor, presentFloors, normalizedDistancesByFloor, normalizedScaffoldStart]);
 
   // 下屋辺の変化時に下屋距離 distancesByFloor[subFloor] を初期化（デフォルト 900mm）。既に入力があれば保持。
   // P3-5 S5-a: 下屋距離は bothmode 専用。単一階では subFloor(=1) が primaryFloor と衝突するため書き込まない
