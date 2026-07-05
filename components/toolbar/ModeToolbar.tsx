@@ -22,7 +22,7 @@ export default function ModeToolbar() {
     { id: 'ashiba' as const, label: '足場', icon: '▦', color: '#FFD700' },
     { id: 'buzai' as const, label: '部材', icon: '━', color: '#FFA500' },
     { id: 'memo' as const, label: 'メモ', icon: 'T', color: '#DDA0DD' },
-    { id: 'magnet-pin' as const, label: 'ピン', icon: '📌', color: '#EC4899' },
+    { id: 'calculator' as const, label: '電卓', icon: '🧮', color: '#EC4899' },
     { id: 'erase' as const, label: '消去', icon: '✕', color: '#EF4444' },
     { id: 'settings' as const, label: '設定', icon: '⚙', color: '#96CEB4' },
   ];
@@ -68,6 +68,11 @@ export default function ModeToolbar() {
     }
     if (id === 'magnet-pin') {
       setMagnetPinMode(!isMagnetPinMode);
+      return;
+    }
+    // ピン→電卓 置換: 電卓ボタンでモーダルを開く（ピン機能本体は温存・上の magnet-pin 分岐は dead path）。
+    if (id === 'calculator') {
+      useCanvasStore.getState().setShowCalculator(true);
       return;
     }
     if (id === 'select') {

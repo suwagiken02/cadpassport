@@ -20,6 +20,7 @@ import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
 import AlertDialog from '@/components/ui/AlertDialog';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import FeatureNoticeModal from '@/components/ui/FeatureNoticeModal';
+import CalculatorModal from '@/components/ui/CalculatorModal';
 import { isNoticeDismissed, dismissNotice } from '@/lib/notice';
 import HeightInputModal from '@/components/canvas/HeightInputModal';
 import AreaCalculationModal from '@/components/canvas/AreaCalculationModal';
@@ -89,6 +90,8 @@ export default function EditorPage() {
     setShowAutoLayout,
     showBuildingModal: showBuildingModalStore,
     setShowBuildingModal: setShowBuildingModalStore,
+    showCalculator,
+    setShowCalculator,
     showBuilding2FModal: showBuilding2FModalStore,
     setShowBuilding2FModal: setShowBuilding2FModalStore,
     showSettings,
@@ -760,6 +763,9 @@ export default function EditorPage() {
             setShowFeatureNotice(false);
           }}
         />
+      )}
+      {showCalculator && (
+        <CalculatorModal onClose={() => setShowCalculator(false)} />
       )}
       <HeightInputModal />
       <AreaCalculationModal siteName={siteName} />

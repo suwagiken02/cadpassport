@@ -222,6 +222,9 @@ type CanvasStore = {
   setShowBuildingModal: (show: boolean) => void;
   showBuilding2FModal: boolean;
   setShowBuilding2FModal: (show: boolean) => void;
+  /** 電卓モーダル表示（ツールバー「電卓」ボタン） */
+  showCalculator: boolean;
+  setShowCalculator: (show: boolean) => void;
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
   showPartSelector: boolean;
@@ -421,6 +424,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     showAutoLayout: false,
     showBuildingModal: false,
     showBuilding2FModal: false,
+    showCalculator: false,
     showSettings: false,
     showInnerPost: false,
     alertMessage: null,
@@ -646,6 +650,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setAlertMessage: (msg) => set({ alertMessage: msg }),
   showBuildingModal: false,
   setShowBuildingModal: (show) => set({ showBuildingModal: show }),
+  showCalculator: false,
+  setShowCalculator: (show) => set({ showCalculator: show }),
   showBuilding2FModal: false,
   setShowBuilding2FModal: (show) => set({ showBuilding2FModal: show }),
   showSettings: false,
