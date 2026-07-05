@@ -2,6 +2,8 @@
 // 電卓の計算ロジック（pure・node 安全・テスト可能）。
 //   c-1: 四則演算の評価。c-2: 割付(fillByLargest)・高さ(heightToFloors)。
 // ============================================================
+import type { HandrailLengthMm, PriorityConfig } from '@/types';
+import { getSectionOfSize } from './autolayout/scoring';
 
 /** 足場 1 層の高さ(mm)。高さ計算の 1 段分。 */
 export const LAYER_HEIGHT_MM = 1800;
@@ -80,4 +82,46 @@ export function evalExpr(expr: string): number | null {
     else return null; // * / は pass1 で消えているはず
   }
   return Number.isFinite(acc) ? acc : null;
+}
+
+// ---- c-2: 割付（長さ→部材の大物優先グリーディ＋余り） ----
+export type RailCombo = { size: number; count: number };
+export type FillResult = { combo: RailCombo[]; usedMm: number; remainderMm: number };
+
+/** 長さ(mm)を enabledSizes の大物優先グリーディで埋め、組み合わせと余りを返す。
+ *  priorityConfig 指定時は excluded サイズを除外（本体割付と同じ規則）。
+ *  非正/非整数はガード（Math.round・0 以下や部材なしは combo 空・余りは length）。 */
+export function fillByLargest(
+  lengthMm: number,
+  enabledSizes: number[],
+  priorityConfig?: PriorityConfig,
+): FillResult {
+  const L = Math.round(lengthMm);
+  if (!Number.isFinite(L) || L <= 0) return { combo: [], usedMm: 0, remainderMm: Math.max(0, L || 0) };
+  const usable = priorityConfig
+    ? enabledSizes.filter(s => getSectionOfSize(s as HandrailLengthMm, priorityConfig) !== 'excluded')
+    : [...enabledSizes];
+  const sizes = usable.filter(s => s > 0).sort((a, b) => b - a);
+  if (sizes.length === 0) return { combo: [], usedMm: 0, remainderMm: L };
+
+  let remaining = L;
+  const combo: RailCombo[] = [];
+  for (const s of sizes) {
+    const n = Math.floor(remaining / s);
+    if (n > 0) { combo.push({ size: s, count: n }); remaining -= n * s; }
+  }
+  return { combo, usedMm: L - remaining, remainderMm: remaining };
+}
+
+// ---- c-2: 高さ（高さ→段数＋スタート端数） ----
+export type HeightResult = { startMm: number; floors: number };
+
+/** 高さ(mm)を段数とスタート端数に分解。
+ *  floors = 高さから layerMm(=1800) を引いて >0 を保てる回数 = floor((H-1)/layerMm)（H<=0 は 0）。
+ *  startMm = H − layerMm×floors（残った端数＝スタート）。例: 5000 → {startMm:1400, floors:2}。 */
+export function heightToFloors(heightMm: number, layerMm: number = LAYER_HEIGHT_MM): HeightResult {
+  const H = Math.round(heightMm);
+  if (!Number.isFinite(H) || H <= 0 || layerMm <= 0) return { startMm: Math.max(0, H || 0), floors: 0 };
+  const floors = Math.max(0, Math.floor((H - 1) / layerMm));
+  return { startMm: H - layerMm * floors, floors };
 }

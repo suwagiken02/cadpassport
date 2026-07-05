@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { evalExpr } from '@/lib/konva/calculator';
+import { evalExpr, fillByLargest, heightToFloors } from '@/lib/konva/calculator';
+import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 
 // 足場職人向け電卓モーダル（c-1: 四則演算）。OS キーボードを出さず、画面内ボタンで入力。
 
@@ -18,15 +19,41 @@ const OP_MAP: Record<string, string> = { '÷': '/', '×': '*', '−': '-', '＋'
 export default function CalculatorModal({ onClose }: Props) {
   const [expr, setExpr] = useState('');
   const [error, setError] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const enabledSizes = useHandrailSettingsStore((s) => s.enabledSizes);
+  const priorityConfig = useHandrailSettingsStore((s) => s.priorityConfig);
 
-  const append = (ch: string) => { setError(false); setExpr((e) => e + ch); };
-  const clearAll = () => { setError(false); setExpr(''); };
-  const backspace = () => { setError(false); setExpr((e) => e.slice(0, -1)); };
+  const append = (ch: string) => { setError(false); setResult(null); setExpr((e) => e + ch); };
+  const clearAll = () => { setError(false); setResult(null); setExpr(''); };
+  const backspace = () => { setError(false); setResult(null); setExpr((e) => e.slice(0, -1)); };
   const equals = () => {
     const r = evalExpr(expr);
     if (r === null) { setError(true); return; }
+    setResult(null);
     // 小数は最大 6 桁で丸めて末尾 0 を除去
     setExpr(String(Math.round(r * 1e6) / 1e6));
+  };
+
+  /** 表示中の数値（式なら評価結果）。無効なら null。 */
+  const currentValue = (): number | null => {
+    if (expr.trim() === '') return null;
+    return evalExpr(expr);
+  };
+
+  const doAllocate = () => {
+    const v = currentValue();
+    if (v === null || v <= 0) { setError(true); return; }
+    const { combo, usedMm, remainderMm } = fillByLargest(v, enabledSizes, priorityConfig);
+    if (combo.length === 0) { setResult('配置できる部材がありません'); return; }
+    const parts = combo.map((c) => `${c.size}×${c.count}`).join('＋');
+    setResult(`${parts}＝${usedMm}　余り${remainderMm}`);
+  };
+
+  const doHeight = () => {
+    const v = currentValue();
+    if (v === null || v <= 0) { setError(true); return; }
+    const { startMm, floors } = heightToFloors(v);
+    setResult(`${startMm}スタートの${floors}段`);
   };
 
   const onDigit = (label: string) => {
@@ -80,6 +107,23 @@ export default function CalculatorModal({ onClose }: Props) {
               );
             })}
           </div>
+
+          {/* 足場専用ボタン: 表示中の数値を使う */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button type="button" onClick={doAllocate} className={`${btn} bg-yellow-500/15 text-yellow-400 border border-yellow-500/30`}>
+              割付
+            </button>
+            <button type="button" onClick={doHeight} className={`${btn} bg-teal-500/15 text-teal-300 border border-teal-500/30`}>
+              高さ
+            </button>
+          </div>
+
+          {/* 結果表示 */}
+          {result !== null && (
+            <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
+              <p className="text-sm font-mono text-canvas break-all leading-relaxed">{result}</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
