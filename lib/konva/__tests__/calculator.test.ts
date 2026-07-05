@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evalExpr, fillByLargest, heightToFloors } from '../calculator';
+import { evalExpr, fillByLargest, heightToFloors, formatHeightResult } from '../calculator';
 import type { PriorityConfig } from '@/types';
 
 describe('evalExpr（四則演算）', () => {
@@ -93,5 +93,15 @@ describe('heightToFloors（高さ→段数＋スタート）', () => {
   it('非正は 0 段', () => {
     expect(heightToFloors(0)).toEqual({ startMm: 0, floors: 0 });
     expect(heightToFloors(-100)).toEqual({ startMm: 0, floors: 0 });
+  });
+});
+
+describe('formatHeightResult（高さ結果の表示文言）', () => {
+  it('5000 → 「1400スタートの2段で1800下がりになります」', () => {
+    expect(formatHeightResult(5000)).toBe('1400スタートの2段で1800下がりになります');
+  });
+  it('floors=0（1800未満）→ 「足場不要の高さです」', () => {
+    expect(formatHeightResult(1000)).toBe('足場不要の高さです');
+    expect(formatHeightResult(1800)).toBe('足場不要の高さです');
   });
 });

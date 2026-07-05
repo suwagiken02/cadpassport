@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { evalExpr, fillByLargest, heightToFloors } from '@/lib/konva/calculator';
+import { evalExpr, fillByLargest, formatHeightResult } from '@/lib/konva/calculator';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 
 // 足場職人向け電卓モーダル（c-1: 四則演算）。OS キーボードを出さず、画面内ボタンで入力。
@@ -52,8 +52,7 @@ export default function CalculatorModal({ onClose }: Props) {
   const doHeight = () => {
     const v = currentValue();
     if (v === null || v <= 0) { setError(true); return; }
-    const { startMm, floors } = heightToFloors(v);
-    setResult(`${startMm}スタートの${floors}段`);
+    setResult(formatHeightResult(v));
   };
 
   const onDigit = (label: string) => {

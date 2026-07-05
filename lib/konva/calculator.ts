@@ -125,3 +125,14 @@ export function heightToFloors(heightMm: number, layerMm: number = LAYER_HEIGHT_
   const floors = Math.max(0, Math.floor((H - 1) / layerMm));
   return { startMm: H - layerMm * floors, floors };
 }
+
+/** 高さの結果表示文言。floors>=1 は「NスタートのM段でK下がりになります」、
+ *  floors=0（1800 未満で段が立たない）は「足場不要の高さです」。
+ *  K(下がり) = H − (startMm + 1800×(floors−1))（現行式では常に 1800 だが計算で出す）。 */
+export function formatHeightResult(heightMm: number): string {
+  const H = Math.round(heightMm);
+  const { startMm, floors } = heightToFloors(H);
+  if (floors === 0) return '足場不要の高さです';
+  const sagari = H - (startMm + LAYER_HEIGHT_MM * (floors - 1));
+  return `${startMm}スタートの${floors}段で${sagari}下がりになります`;
+}
