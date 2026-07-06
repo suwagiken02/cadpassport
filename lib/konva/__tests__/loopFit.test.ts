@@ -73,3 +73,25 @@ describe('proposeClosingBand（閉じる帯の提案）', () => {
     expect(proposeL({ lo: 850, hi: 870, mode: 'lower' })).toBeNull();
   });
 });
+
+// 誤提案ゼロ: 良帯・広帯・lower・実運用デフォルトで honored=true（=UI のダイアログ条件が発火しない）。
+describe('誤提案ゼロ（良ケースで dialog 条件 !honored が成立しない）', () => {
+  const Rb = { 2: rect('2f', 2, 900, 700), 1: rect('1f', 1, 1500, 1300) };
+  const RD = { 1: fill(4, 900), 2: fill(4, 900) };
+  const runR = (band: { lo: number; hi: number; mode: 'center' | 'lower' }) => computeCascadeLayout(Rb, RD, ss, M, PC, undefined, undefined, band);
+  const cases: [string, { lo: number; hi: number; mode: 'center' | 'lower' }][] = [
+    ['L字 既定[800,950]center', { lo: 800, hi: 950, mode: 'center' }],
+    ['L字 広帯[800,1000]center', { lo: 800, hi: 1000, mode: 'center' }],
+    ['L字 運用[700,950]center', { lo: 700, hi: 950, mode: 'center' }],
+    ['L字 lower[800,950]', { lo: 800, hi: 950, mode: 'lower' }],
+  ];
+  for (const [tag, band] of cases) {
+    it(`${tag}: honored=true（提案なし）`, () => {
+      expect(isBandHonored(runL(band), band).honored).toBe(true);
+    });
+  }
+  it('矩形 既定[800,950]center / 運用[700,950]center: honored=true', () => {
+    expect(isBandHonored(runR({ lo: 800, hi: 950, mode: 'center' }), { lo: 800, hi: 950 }).honored).toBe(true);
+    expect(isBandHonored(runR({ lo: 700, hi: 950, mode: 'center' }), { lo: 700, hi: 950 }).honored).toBe(true);
+  });
+});
