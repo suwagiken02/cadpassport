@@ -1,12 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { evalExpr, fillByLargest, formatHeightResult } from '@/lib/konva/calculator';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 
-// 足場職人向け電卓モーダル（c-1: 四則演算）。OS キーボードを出さず、画面内ボタンで入力。
+// 足場職人向け電卓（フローティングパネル・部材パレット PartSelector と同方式）。
+// オーバーレイなし＝開いたまま図面のズーム/パン/部材選択が可能。ヘッダーをドラッグで移動。
+// OS キーボードを出さず画面内ボタンで入力。計算ロジックは lib/konva/calculator.ts（無改変）。
 
 type Props = { onClose: () => void };
+
+const PANEL_W = 264;
 
 const DIGITS: string[][] = [
   ['7', '8', '9', '÷'],
@@ -22,6 +26,28 @@ export default function CalculatorModal({ onClose }: Props) {
   const [result, setResult] = useState<string | null>(null);
   const enabledSizes = useHandrailSettingsStore((s) => s.enabledSizes);
   const priorityConfig = useHandrailSettingsStore((s) => s.priorityConfig);
+
+  // --- フローティングパネル位置（PartSelector と同じドラッグ方式・オーバーレイなし） ---
+  const [panelPos, setPanelPos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window === 'undefined') return { x: 16, y: 72 };
+    // 既定は右上寄り（PartSelector 既定=下部中央・ツールバー=下部・FloorSelector=上部中央 と重ならない）
+    return { x: Math.max(8, window.innerWidth - PANEL_W - 12), y: 72 };
+  });
+  const [panelDrag, setPanelDrag] = useState<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  useEffect(() => {
+    if (!panelDrag) return;
+    const onMove = (e: PointerEvent) => {
+      setPanelPos({
+        x: Math.max(0, Math.min(window.innerWidth - 60, panelDrag.origX + e.clientX - panelDrag.startX)),
+        y: Math.max(0, Math.min(window.innerHeight - 40, panelDrag.origY + e.clientY - panelDrag.startY)),
+      });
+    };
+    const onUp = () => setPanelDrag(null);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+  }, [panelDrag]);
 
   const append = (ch: string) => { setError(false); setResult(null); setExpr((e) => e + ch); };
   const clearAll = () => { setError(false); setResult(null); setExpr(''); };
@@ -64,66 +90,85 @@ export default function CalculatorModal({ onClose }: Props) {
   // 表示は演算子を見やすい記号へ戻す
   const shown = (expr || '0').replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−');
 
-  const btn = 'min-h-[56px] rounded-xl text-lg font-bold flex items-center justify-center active:opacity-70 transition-opacity';
+  const btn = 'min-h-[52px] rounded-xl text-lg font-bold flex items-center justify-center active:opacity-70 transition-opacity';
 
   return (
-    <div className="fixed inset-0 modal-overlay z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-dark-surface border-t sm:border border-dark-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-xs mx-0 sm:mx-4 max-h-[92vh] overflow-y-auto">
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-dark-border">
-          <h2 className="text-base font-bold text-canvas">電卓</h2>
-          <button type="button" onClick={onClose} className="text-dimension hover:text-canvas px-2 text-lg">✕</button>
+    <div
+      data-calc-panel
+      style={{ left: panelPos.x, top: panelPos.y, width: PANEL_W }}
+      className="fixed z-50 flex flex-col rounded-xl shadow-2xl border bg-dark-surface border-dark-border max-h-[85vh]"
+    >
+      {/* ヘッダー（ドラッグハンドル） */}
+      <div
+        className="flex items-center justify-between px-3 py-2 cursor-grab active:cursor-grabbing select-none shrink-0 border-b border-dark-border touch-none"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setPanelDrag({ startX: e.clientX, startY: e.clientY, origX: panelPos.x, origY: panelPos.y });
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-dimension text-sm leading-none">⠿</span>
+          <span className="text-sm font-bold text-canvas">電卓</span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="text-dimension hover:text-canvas text-base px-1 leading-none"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* 本体 */}
+      <div className="p-3 space-y-3 overflow-y-auto">
+        {/* 表示エリア（div = OS キーボード抑止） */}
+        <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3 min-h-[52px] text-right">
+          <span className={`font-mono text-2xl break-all ${error ? 'text-red-500' : 'text-canvas'}`}>
+            {error ? 'エラー' : shown}
+          </span>
         </div>
 
-        <div className="p-3 space-y-3">
-          {/* 表示エリア（div = OS キーボード抑止） */}
-          <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3 min-h-[52px] text-right">
-            <span className={`font-mono text-2xl break-all ${error ? 'text-red-500' : 'text-canvas'}`}>
-              {error ? 'エラー' : shown}
-            </span>
-          </div>
-
-          {/* 操作行: AC / ← */}
-          <div className="grid grid-cols-4 gap-2">
-            <button type="button" onClick={clearAll} className={`${btn} col-span-2 bg-red-500/15 text-red-400`}>AC</button>
-            <button type="button" onClick={backspace} className={`${btn} col-span-2 bg-dark-bg border border-dark-border text-canvas`}>←</button>
-          </div>
-
-          {/* 数字パッド */}
-          <div className="grid grid-cols-4 gap-2">
-            {DIGITS.flat().map((label) => {
-              const isOp = label in OP_MAP;
-              const isEq = label === '=';
-              const cls = isEq
-                ? 'bg-accent text-white'
-                : isOp
-                ? 'bg-accent/15 text-accent'
-                : 'bg-dark-bg border border-dark-border text-canvas';
-              return (
-                <button key={label} type="button" onClick={() => onDigit(label)} className={`${btn} ${cls}`}>
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 足場専用ボタン: 表示中の数値を使う */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button type="button" onClick={doAllocate} className={`${btn} bg-yellow-500/15 text-yellow-400 border border-yellow-500/30`}>
-              割付
-            </button>
-            <button type="button" onClick={doHeight} className={`${btn} bg-teal-500/15 text-teal-300 border border-teal-500/30`}>
-              高さ
-            </button>
-          </div>
-
-          {/* 結果表示 */}
-          {result !== null && (
-            <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
-              <p className="text-sm font-mono text-canvas break-all leading-relaxed">{result}</p>
-            </div>
-          )}
+        {/* 操作行: AC / ← */}
+        <div className="grid grid-cols-4 gap-2">
+          <button type="button" onClick={clearAll} className={`${btn} col-span-2 bg-red-500/15 text-red-400`}>AC</button>
+          <button type="button" onClick={backspace} className={`${btn} col-span-2 bg-dark-bg border border-dark-border text-canvas`}>←</button>
         </div>
+
+        {/* 数字パッド */}
+        <div className="grid grid-cols-4 gap-2">
+          {DIGITS.flat().map((label) => {
+            const isOp = label in OP_MAP;
+            const isEq = label === '=';
+            const cls = isEq
+              ? 'bg-accent text-white'
+              : isOp
+              ? 'bg-accent/15 text-accent'
+              : 'bg-dark-bg border border-dark-border text-canvas';
+            return (
+              <button key={label} type="button" onClick={() => onDigit(label)} className={`${btn} ${cls}`}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 足場専用ボタン: 表示中の数値を使う */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button type="button" onClick={doAllocate} className={`${btn} bg-yellow-500/15 text-yellow-400 border border-yellow-500/30`}>
+            割付
+          </button>
+          <button type="button" onClick={doHeight} className={`${btn} bg-teal-500/15 text-teal-300 border border-teal-500/30`}>
+            高さ
+          </button>
+        </div>
+
+        {/* 結果表示 */}
+        {result !== null && (
+          <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
+            <p className="text-sm font-mono text-canvas break-all leading-relaxed">{result}</p>
+          </div>
+        )}
       </div>
     </div>
   );
