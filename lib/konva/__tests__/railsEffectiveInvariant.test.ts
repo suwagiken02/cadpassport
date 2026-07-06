@@ -301,39 +301,60 @@ describe('S-2d-b 回帰: 別形状 N=2 下屋分割×band×pillar', () => {
 });
 
 // ============================================================
-// S-2e-a: 上階（N=2 の 2F 含む）が入隅（reentrant/凹角＝L字/U字）を持つとき、入隅から出る辺で
-//   railsTotal != effectiveMm。宿題①調査で機構確定:
-//   candidates.ts の concave startContribution(=前辺 start=prevEdgeStartDist) と
-//   walkFloorUpperRole 2nd-pass cursor(concave=自 startDistanceMm=前辺 actualEnd) が
-//   band 非対称時(前辺 start≠actualEnd)に乖離 → d = 前辺 actualEnd − 前辺 start。
-//   findScaffoldViolations は 0 件（隙間/はみ出しだが overlap/T字/超過でない）。
-//   it.fails で赤固定（S-2e-b で緑化予定）。
+// S-2e: 上階（N=2 の 2F 含む）が入隅（reentrant/凹角＝L字/U字）を持つとき、入隅から出る辺の
+//   非タイル eff を修正（S-2e-b: 案A' 実着地 source-align）。
+//   機構: candidates.ts の concave startContribution が前辺 start(prevEdgeStartDist) を使う一方、
+//   walkFloorUpperRole 2nd-pass cursor(concave)は自 startDistanceMm(=前辺 actualEnd) を使い、
+//   band で前辺が非対称(start≠actualEnd)だと d = 前辺 actualEnd − 前辺 start ≠ 0 だった。
+//   → walkFloorUpperRole の入隅辺で候補の start 寄与を「前辺 start」から「自 startDistanceMm
+//     (=前辺の実着地)」へ source-align（支柱共有＝手摺は実着地の角から敷き始める）。
+//   結果: 入隅辺 total==eff（d==0）。convex/straight-continuation/前辺対称は byte 不変。
+//   NB(既知・別スコープ): center 帯では入隅を直すと 25mm の位相的余りが loop 閉じの west 辺
+//   (アンカー隣接・sp=(0,y)) へ移る（findScaffoldViolations は 0＝物理違反なし）。lower 帯は全辺 d==0。
+//   ここでは task の受入基準（入隅辺 d==0 & findScaffoldViolations==[]）を固定する。
 // ============================================================
-describe('S-2e 上階入隅辺の非タイルeff（S-2e-aで赤固定）', () => {
+describe('S-2e 上階入隅辺の非タイルeff（S-2e-b source-align で緑化）', () => {
   const Lshape = (id: string, floor: number, w: number, h: number, nx: number, ny: number): BuildingShape => ({
     id, type: 'polygon', fill: '#000', floor,
     points: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: ny }, { x: nx, y: ny }, { x: nx, y: h }, { x: 0, y: h }],
   });
-  const bandCe = { lo: 800, hi: 950, mode: 'center' as const };
   // 入隅辺 = 上階 east 辺・startPoint=(495,495)
   const innerEdge = (res: Record<number, FloorLayoutResult>, floor: number) =>
     res[floor].edgeSegments.find(s => s.face === 'east' && Math.abs(s.startPoint.x - 495) < 0.1 && Math.abs(s.startPoint.y - 495) < 0.1)!;
+  const allHof = (res: Record<number, FloorLayoutResult>) =>
+    Object.keys(res).map(Number).sort((a, b) => b - a).flatMap(f => segmentsToHandrails(res[f].edgeSegments));
 
-  // N=2: 上階(F2)が L字、F1 は覆う大きめ矩形
-  const n2 = () => computeCascadeLayout(
-    { 2: Lshape('2f', 2, 900, 900, 495, 495), 1: rect('1f', 1, 2250, 2350) },
-    { 1: fill(8, 900), 2: fill(8, 900) }, ss, M, PC, undefined, undefined, bandCe);
-  // N=3: L字両成長
-  const n3 = () => computeCascadeLayout(
-    { 3: Lshape('3f', 3, 900, 900, 495, 495), 2: Lshape('2f', 2, 1575, 1625, 832, 858), 1: Lshape('1f', 1, 2250, 2350, 1169, 1221) },
-    { 1: fill(16, 900), 2: fill(16, 900), 3: fill(16, 900) }, ss, M, PC, undefined, undefined, bandCe);
+  const n2Blds = (): BuildingShape[] => [Lshape('2f', 2, 900, 900, 495, 495), rect('1f', 1, 2250, 2350)];
+  const n3Blds = (): BuildingShape[] => [Lshape('3f', 3, 900, 900, 495, 495), Lshape('2f', 2, 1575, 1625, 832, 858), Lshape('1f', 1, 2250, 2350, 1169, 1221)];
+  const n2 = (band: { lo: number; hi: number; mode: 'center' | 'lower' }) => computeCascadeLayout(
+    { 2: n2Blds()[0], 1: n2Blds()[1] }, { 1: fill(8, 900), 2: fill(8, 900) }, ss, M, PC, undefined, undefined, band);
+  const n3 = (band: { lo: number; hi: number; mode: 'center' | 'lower' }) => computeCascadeLayout(
+    { 3: n3Blds()[0], 2: n3Blds()[1], 1: n3Blds()[2] }, { 1: fill(16, 900), 2: fill(16, 900), 3: fill(16, 900) }, ss, M, PC, undefined, undefined, band);
 
-  it.fails('N=2 上階L字 入隅辺 total==eff（現状 4000!=4025 で赤）', () => {
-    const s = innerEdge(n2(), 2); const sel = s.candidates[s.selectedIndex]!;
-    expect(sel.totalMm).toBe(s.effectiveMm);
-  });
-  it.fails('N=3 上階L字両成長 入隅辺 total==eff（現状 d!=0 で赤）', () => {
-    const s = innerEdge(n3(), 3); const sel = s.candidates[s.selectedIndex]!;
-    expect(sel.totalMm).toBe(s.effectiveMm);
+  const bands: { lo: number; hi: number; mode: 'center' | 'lower' }[] = [
+    { lo: 800, hi: 950, mode: 'center' }, // 修正前 d=-25 だったケース
+    { lo: 800, hi: 950, mode: 'lower' },
+    { lo: 820, hi: 940, mode: 'center' },
+  ];
+  for (const band of bands) {
+    const tag = `[${band.lo},${band.hi}]${band.mode}`;
+    it(`N=2 上階L字 ${tag}: 入隅辺 d==0 & 違反0`, () => {
+      const res = n2(band);
+      const s = innerEdge(res, 2); const sel = s.candidates[s.selectedIndex]!;
+      expect(sel.totalMm).toBe(s.effectiveMm);
+      expect(findScaffoldViolations(allHof(res), n2Blds())).toEqual([]);
+    });
+    it(`N=3 上階L字両成長 ${tag}: 入隅辺 d==0 & 違反0`, () => {
+      const res = n3(band);
+      const s = innerEdge(res, 3); const sel = s.candidates[s.selectedIndex]!;
+      expect(sel.totalMm).toBe(s.effectiveMm);
+      expect(findScaffoldViolations(allHof(res), n3Blds())).toEqual([]);
+    });
+  }
+
+  // lower 帯は全辺 d==0（位相的余りが出ない＝入隅 fix が全周整合）を固定
+  it('lower 帯: N=2/N=3 とも全辺 rails合計==有効長（余りゼロ）', () => {
+    assertRailsMatchEffective(n2({ lo: 800, hi: 950, mode: 'lower' }), 'S-2e N=2 lower 全辺');
+    assertRailsMatchEffective(n3({ lo: 800, hi: 950, mode: 'lower' }), 'S-2e N=3 lower 全辺');
   });
 });

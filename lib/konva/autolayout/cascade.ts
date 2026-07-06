@@ -517,7 +517,14 @@ export function walkFloorUpperRole(
       desiredEndDistanceMm,
       prevCornerIsConvex,
       nextCornerIsConvex,
-      prevEdgeStartDistanceMm,
+      // S-2e-b: 入隅(concave)角から出る辺は、支柱共有ゆえ手摺が「前辺の実着地(角)」から敷き始まる。
+      //   候補生成の start 寄与を「前辺の予定start(prevEdgeStartDist)」→「自 startDistanceMm
+      //   (=前辺の実着地 actualEnd)」へ source-align し、2nd-pass cursor(concave=自 startDistanceMm)
+      //   と一致させ total==eff を構造保証（S-2b/c/d の実着地 source-align の入隅版）。
+      //   convex 角・straight-continuation・前辺対称(band無/lo==hi/対称形状)では
+      //   startDistanceMm==prevEdgeStartDistanceMm ＝完全 no-op=byte 不変。上階(walkFloorUpperRole)
+      //   限定で、candidates.ts の共有ロジックや下位ロール(S-2d)は無改変。
+      prevCornerIsConvex ? prevEdgeStartDistanceMm : startDistanceMm,
       enabledSizes,
       priorityConfig,
       adj.larger.offsetIdx,
