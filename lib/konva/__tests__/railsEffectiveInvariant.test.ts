@@ -299,3 +299,41 @@ describe('S-2d-b 回帰: 別形状 N=2 下屋分割×band×pillar', () => {
     expect(findScaffoldViolations(allHandrails, [g1, g2])).toEqual([]);
   });
 });
+
+// ============================================================
+// S-2e-a: 上階（N=2 の 2F 含む）が入隅（reentrant/凹角＝L字/U字）を持つとき、入隅から出る辺で
+//   railsTotal != effectiveMm。宿題①調査で機構確定:
+//   candidates.ts の concave startContribution(=前辺 start=prevEdgeStartDist) と
+//   walkFloorUpperRole 2nd-pass cursor(concave=自 startDistanceMm=前辺 actualEnd) が
+//   band 非対称時(前辺 start≠actualEnd)に乖離 → d = 前辺 actualEnd − 前辺 start。
+//   findScaffoldViolations は 0 件（隙間/はみ出しだが overlap/T字/超過でない）。
+//   it.fails で赤固定（S-2e-b で緑化予定）。
+// ============================================================
+describe('S-2e 上階入隅辺の非タイルeff（S-2e-aで赤固定）', () => {
+  const Lshape = (id: string, floor: number, w: number, h: number, nx: number, ny: number): BuildingShape => ({
+    id, type: 'polygon', fill: '#000', floor,
+    points: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: ny }, { x: nx, y: ny }, { x: nx, y: h }, { x: 0, y: h }],
+  });
+  const bandCe = { lo: 800, hi: 950, mode: 'center' as const };
+  // 入隅辺 = 上階 east 辺・startPoint=(495,495)
+  const innerEdge = (res: Record<number, FloorLayoutResult>, floor: number) =>
+    res[floor].edgeSegments.find(s => s.face === 'east' && Math.abs(s.startPoint.x - 495) < 0.1 && Math.abs(s.startPoint.y - 495) < 0.1)!;
+
+  // N=2: 上階(F2)が L字、F1 は覆う大きめ矩形
+  const n2 = () => computeCascadeLayout(
+    { 2: Lshape('2f', 2, 900, 900, 495, 495), 1: rect('1f', 1, 2250, 2350) },
+    { 1: fill(8, 900), 2: fill(8, 900) }, ss, M, PC, undefined, undefined, bandCe);
+  // N=3: L字両成長
+  const n3 = () => computeCascadeLayout(
+    { 3: Lshape('3f', 3, 900, 900, 495, 495), 2: Lshape('2f', 2, 1575, 1625, 832, 858), 1: Lshape('1f', 1, 2250, 2350, 1169, 1221) },
+    { 1: fill(16, 900), 2: fill(16, 900), 3: fill(16, 900) }, ss, M, PC, undefined, undefined, bandCe);
+
+  it.fails('N=2 上階L字 入隅辺 total==eff（現状 4000!=4025 で赤）', () => {
+    const s = innerEdge(n2(), 2); const sel = s.candidates[s.selectedIndex]!;
+    expect(sel.totalMm).toBe(s.effectiveMm);
+  });
+  it.fails('N=3 上階L字両成長 入隅辺 total==eff（現状 d!=0 で赤）', () => {
+    const s = innerEdge(n3(), 3); const sel = s.candidates[s.selectedIndex]!;
+    expect(sel.totalMm).toBe(s.effectiveMm);
+  });
+});
