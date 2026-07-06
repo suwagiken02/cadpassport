@@ -397,23 +397,26 @@ describe('S-2f center帯の一周整合（S-2f-b アンカー探索で緑化）'
     });
   }
 
-  it('メタ情報: 既定帯[800,950]center で閉じ解 chosen が返る', () => {
+  it('メタ情報: 既定帯[800,950]center で一周整合が成立（S-2e-c-b 案B 後は base=mid で閉じる）', () => {
     const res = n2({ lo: 800, hi: 950, mode: 'center' });
     const meta = (res as Record<number, FloorLayoutResult> & { [LOOP_FIT_META]?: LoopFitMeta })[LOOP_FIT_META];
+    // S-2e-c-b 前は mid(875)で閉じず search が chosen=900 を選んでいたが、案B(入隅 concave の
+    // scaffold線基準統一)で入隅由来の一周残差が解消し mid=base で閉じる → search 不要(searched=[])。
     expect(meta?.closed).toBe(true);
-    expect(meta?.chosen).toBe(900); // center(875) 最寄りの閉じ値
+    expect(meta?.searched).toEqual([]);
+    expect(meta?.baseResidual).toBe(0);
   });
 });
 
 // ============================================================
-// S-2e-c-a: 入隅の「角接続整合」を赤固定。実物件(2F=l_se L字/1F=矩形/band[700,950]center/自動起点)で
-//   入隅横 e2 が非対称(startD 875≠actualEnd 775)のとき、入隅縦 e3 の cursorStart が e2 の実着地(775)
-//   基準=303.5 に置かれ、e2 の scaffold線(875)=313.5 を 100mm 突き抜ける(縦runが入隅角を北へ超過)。
-//   S-2e-b は total==eff(自己完結)は満たすが角接続を検査していなかった＝既存 fixture は e2 対称で未踏。
-//   新不変条件「入隅縦 cursorStart == 入隅横 scaffoldCoord(2線交点で止まる)」を it.fails で赤固定。
-//   S-2e-c-b(案B: 前辺 scaffold線基準に統一)で緑化予定。
+// S-2e-c: 入隅の「角接続整合」（S-2e-c-b 案B: 前辺 scaffold線基準に統一で緑化）。
+//   実物件(2F=l_se L字/1F=矩形/band[700,950]center/自動起点)で入隅横 e2 が非対称(startD 875≠
+//   actualEnd 775)のとき、S-2e-b の「実着地(775)基準」だと入隅縦 e3 の cursorStart=303.5 が e2 の
+//   scaffold線(875)=313.5 を 100mm 突き抜けた。案B(candidate/cursor とも prevEdgeStartDist=前辺の
+//   scaffold線離れ基準に統一)で cursorStart=313.5＝2線交点で止まる。前辺対称は no-op=byte 不変。
+//   total==eff だけでは角接続を検査できなかったため、新不変条件で恒久固定する。
 // ============================================================
-describe('S-2e-c 入隅の角接続整合（S-2e-c-b 案Bで緑化）', () => {
+describe('S-2e-c 入隅の角接続整合（案B: 前辺 scaffold線基準）', () => {
   const b1: BuildingShape = { id: '1f', type: 'polygon', fill: '#000', floor: 1, points: [{ x: -300, y: -400 }, { x: 900, y: -400 }, { x: 900, y: 800 }, { x: -300, y: 800 }] };
   const b2: BuildingShape = { id: '2f', type: 'polygon', fill: '#000', floor: 2, points: [{ x: -159, y: -174 }, { x: 741, y: -174 }, { x: 741, y: 226 }, { x: 441, y: 226 }, { x: 441, y: 526 }, { x: -159, y: 526 }] };
   const band = { lo: 700, hi: 950, mode: 'center' as const };
@@ -431,14 +434,24 @@ describe('S-2e-c 入隅の角接続整合（S-2e-c-b 案Bで緑化）', () => {
     }
     throw new Error('入隅縦(east,prev=south)が見つからない');
   };
+  const twoF = (res: Record<number, FloorLayoutResult>) => segmentsToHandrails(res[2].edgeSegments);
 
-  it.fails('入隅縦 cursorStart == 入隅横 scaffoldCoord（現状 303.5≠313.5 で赤）', () => {
+  it('入隅縦 cursorStart == 入隅横 scaffoldCoord（突き抜け0・2線交点で止まる）', () => {
     const { s, prev } = innerVert(run());
-    expect(s.cursorStart).toBe(prev.scaffoldCoord);
+    expect(s.cursorStart).toBe(prev.scaffoldCoord); // 313.5==313.5（修正前 303.5）
   });
-  it('（現状確認）入隅縦 e3 は total==eff（自己完結・角接続とは別に成立）', () => {
+  it('入隅縦 e3 total==eff（角接続整合下でも成立）', () => {
     const { s } = innerVert(run());
     const sel = s.candidates[s.selectedIndex]!;
-    expect(sel.totalMm).toBe(s.effectiveMm); // 現状 3000==3000 で緑（＝total==eff だけでは角接続バグを捕捉できない）
+    expect(sel.totalMm).toBe(s.effectiveMm);
+  });
+  it('2F 全辺 total==eff & findScaffoldViolations===[]（実物件 band[700,950]center）', () => {
+    const res = run();
+    // 2F にスコープ（1F は実アプリ距離では閉じる。uniform-825 前提の 1F は別途）
+    for (const s of res[2].edgeSegments) {
+      const sel = s.candidates[s.selectedIndex]; if (!sel) continue;
+      expect(Math.abs(sel.totalMm - s.effectiveMm)).toBeLessThanOrEqual(0.01);
+    }
+    expect(findScaffoldViolations(twoF(res), [b2])).toEqual([]);
   });
 });

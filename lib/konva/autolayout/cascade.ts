@@ -604,14 +604,14 @@ export function walkFloorUpperRole(
       desiredEndDistanceMm,
       prevCornerIsConvex,
       nextCornerIsConvex,
-      // S-2e-b: 入隅(concave)角から出る辺は、支柱共有ゆえ手摺が「前辺の実着地(角)」から敷き始まる。
-      //   候補生成の start 寄与を「前辺の予定start(prevEdgeStartDist)」→「自 startDistanceMm
-      //   (=前辺の実着地 actualEnd)」へ source-align し、2nd-pass cursor(concave=自 startDistanceMm)
-      //   と一致させ total==eff を構造保証（S-2b/c/d の実着地 source-align の入隅版）。
-      //   convex 角・straight-continuation・前辺対称(band無/lo==hi/対称形状)では
-      //   startDistanceMm==prevEdgeStartDistanceMm ＝完全 no-op=byte 不変。上階(walkFloorUpperRole)
-      //   限定で、candidates.ts の共有ロジックや下位ロール(S-2d)は無改変。
-      prevCornerIsConvex ? prevEdgeStartDistanceMm : startDistanceMm,
+      // S-2e-c-b(案B): 入隅(concave)の角では縦runの端は横run(前辺)の scaffold線上(2線交点)で止まる
+      //   ＝前辺の「予定 start(scaffold線離れ)=prevEdgeStartDist」基準が正。S-2e-b は「前辺の実着地
+      //   (actualEnd)基準」に source-align したが、前辺が band 非対称(startD≠actualEnd)だと縦runが
+      //   横run の scaffold線を (startD−actualEnd) だけ突き抜けた(実物件 l_se で 100mm)。案B は候補の
+      //   start 寄与を prevEdgeStartDist に統一（＝2nd-pass cursor も後段で prevDistGrid に統一）、
+      //   total==eff かつ角接続整合(交点で止まる)を両立。前辺対称・convex・straight-cont は
+      //   prevEdgeStartDist==自 startDist ＝完全 no-op=byte 不変。
+      prevEdgeStartDistanceMm,
       enabledSizes,
       priorityConfig,
       adj.larger.offsetIdx,
@@ -712,9 +712,13 @@ export function walkFloorUpperRole(
       cursorStart = prevSeg.cursorEnd;
       cursorEnd = cursorStart + sign * (railsTotal / 10);
     } else {
+      // S-2e-c-b(案B): concave(入隅)も convex と同じく prevDistGrid(前辺の scaffold線離れ)基準に統一。
+      //   従来 concave は startDistGrid(自 startDistanceMm=前辺実着地)基準で、前辺が band 非対称だと
+      //   縦runが横runの scaffold線を突き抜けた。prevDistGrid なら 2線交点で止まり角接続整合。
+      //   前辺対称では prevDistGrid==startDistGrid ＝no-op(byte 不変)。
       cursorStart = s.prevCornerIsConvex
         ? wallStart - sign * prevDistGrid
-        : wallStart + sign * startDistGrid;
+        : wallStart + sign * prevDistGrid;
       cursorEnd = s.nextCornerIsConvex
         ? wallEnd + sign * endDistGrid
         : wallEnd - sign * endDistGrid;
