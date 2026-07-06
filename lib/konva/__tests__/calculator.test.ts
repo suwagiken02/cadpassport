@@ -75,6 +75,23 @@ describe('fillByLargest（割付・大物優先グリーディ＋余り）', () 
     expect(r.usedMm + r.remainderMm).toBe(4000);
     expect(r.combo[0].size).toBe(1829); // 大物優先
   });
+  it('インチ規格(枠組み/次世代=インチ)で 1829 系に割れる: 7316 → 1829×4＝7316 余り0', () => {
+    // INCH_DEFAULT_ENABLED_SIZES 相当。設定が「インチ」のとき store.enabledSizes がこれになり、
+    // 電卓の割付(fillByLargest)がそのまま追従する。
+    const inch = [1829, 1524, 1219, 914, 610, 410, 305, 200];
+    const r = fillByLargest(7316, inch);
+    expect(r.combo).toEqual([{ size: 1829, count: 4 }]);
+    expect(r.usedMm).toBe(7316);
+    expect(r.remainderMm).toBe(0);
+  });
+  it('インチ規格: 割り切れない 7000 → 1829×3＋… 余りあり（メートルとは別の組合せ）', () => {
+    const inch = [1829, 1524, 1219, 914, 610, 410, 305, 200];
+    const r = fillByLargest(7000, inch);
+    // 大物優先: 1829×3=5487, 残1513 → 1219×1=1219(残294) → 200×1(残94) → 余り94
+    expect(r.combo[0]).toEqual({ size: 1829, count: 3 });
+    expect(r.usedMm + r.remainderMm).toBe(7000);
+    expect(r.remainderMm).toBeGreaterThan(0);
+  });
 });
 
 describe('heightToFloors（高さ→段数＋スタート）', () => {
