@@ -63,11 +63,19 @@ const MAX_DIST = 2000;
 const MAX_WIDTH = 300;
 const STEP = 10;
 
-/** 帯を守れる（honored=true）最寄りの拡張帯を探索して 1 個返す。守れる帯が上限内に無ければ null。
- *  元帯中心保存・lo 固定で hi 拡大・hi 固定で lo 拡大 の3軸で幅を STEP 刻みに広げ、
- *  各候補で computeCascadeLayout を再実行して honored を確認、元帯からの距離(|Δlo|+|Δhi|)最小を採る。
- *  center 以外(lower/非band)は探索対象外＝null（lower は現状で帯内に収まる／非band は帯概念なし）。 */
-export function proposeClosingBand(
+export type ClosingBandProposals = {
+  /** 下限固定・上へ拡張（→） */
+  expandUp: { lo: number; hi: number } | null;
+  /** 上限固定・下へ拡張（←） */
+  expandDown: { lo: number; hi: number } | null;
+  /** 中心保存・両側拡張（↕） */
+  expandBoth: { lo: number; hi: number } | null;
+};
+
+/** 帯を守れる（honored=true）拡張帯を「方向別」に探索して返す。各方向はその方向だけの最小拡張。
+ *  center 以外(lower/非band)や 元帯が既に honored なら全方向 null。同一帯になった方向は重複排除。
+ *  → expandUp(lo固定でhi拡大) / ← expandDown(hi固定でlo拡大) / ↕ expandBoth(中心保存両側)。 */
+export function proposeClosingBands(
   buildingsByFloor: Record<number, BuildingShape>,
   distancesByFloor: Record<number, Record<number, number>>,
   scaffoldStartTop: ScaffoldStartConfig,
@@ -76,51 +84,42 @@ export function proposeClosingBand(
   userSelectionsByFloor: Record<number, Record<string, number>> | undefined,
   userAdjustmentsByFloor: Record<number, Record<string, EdgeAdjustment>> | undefined,
   band: BandRange,
-): { lo: number; hi: number } | null {
-  if (band.mode === 'lower') return null;
+): ClosingBandProposals {
+  const none: ClosingBandProposals = { expandUp: null, expandDown: null, expandBoth: null };
+  if (band.mode === 'lower') return none;
   const lo = Math.min(band.lo, band.hi);
   const hi = Math.max(band.lo, band.hi);
   const center = (lo + hi) / 2;
 
-  // 元帯が既に honored なら提案不要（＝null）。UI は !honored のときだけ呼ぶが、pure 関数として自足させる。
-  const baseR = computeCascadeLayout(
+  const run = (l: number, h: number) => computeCascadeLayout(
     buildingsByFloor, distancesByFloor, scaffoldStartTop, enabledSizes, priorityConfig,
-    userSelectionsByFloor, userAdjustmentsByFloor, { lo, hi, mode: 'center' },
+    userSelectionsByFloor, userAdjustmentsByFloor, { lo: l, hi: h, mode: 'center' },
   );
-  if (isBandHonored(baseR, { lo, hi }).honored) return null;
+  // 元帯が既に honored なら提案不要。UI は !honored のときだけ呼ぶが pure 関数として自足させる。
+  if (isBandHonored(run(lo, hi), { lo, hi }).honored) return none;
 
-  // 候補帯を生成（重複排除・クランプ）。幅は元帯幅〜MAX_WIDTH を STEP 刻み、3軸で拡張。
-  const seen = new Set<string>();
-  const cands: { lo: number; hi: number }[] = [];
-  const push = (l: number, h: number) => {
-    const cl = Math.round(Math.max(MIN_DIST, l));
-    const ch = Math.round(Math.min(MAX_DIST, h));
-    if (ch <= cl) return;
-    const k = `${cl},${ch}`;
-    if (seen.has(k)) return;
-    seen.add(k);
-    cands.push({ lo: cl, hi: ch });
-  };
-  const startW = Math.max(hi - lo, STEP);
-  for (let w = startW; w <= MAX_WIDTH; w += STEP) {
-    push(center - w / 2, center + w / 2); // 中心保存
-    push(lo, lo + w);                      // lo 固定・hi 拡大
-    push(hi - w, hi);                      // hi 固定・lo 拡大
-  }
-
-  let best: { lo: number; hi: number; d: number } | null = null;
-  for (const c of cands) {
-    // 元帯と同一(=既に非 honored と分かっている)はスキップ。
-    if (c.lo === lo && c.hi === hi) continue;
-    const r = computeCascadeLayout(
-      buildingsByFloor, distancesByFloor, scaffoldStartTop, enabledSizes, priorityConfig,
-      userSelectionsByFloor, userAdjustmentsByFloor, { lo: c.lo, hi: c.hi, mode: 'center' },
-    );
-    if (!isBandHonored(r, { lo: c.lo, hi: c.hi }).honored) continue;
-    const d = Math.abs(c.lo - lo) + Math.abs(c.hi - hi);
-    if (!best || d < best.d || (d === best.d && (c.hi - c.lo) < (best.hi - best.lo))) {
-      best = { lo: c.lo, hi: c.hi, d };
+  // ある方向 makeBand(w) で幅を STEP 刻みに広げ、最初に honored になった帯を返す。
+  const searchDir = (makeBand: (w: number) => { lo: number; hi: number }): { lo: number; hi: number } | null => {
+    for (let w = Math.max(hi - lo, STEP); w <= MAX_WIDTH; w += STEP) {
+      const raw = makeBand(w);
+      const cl = Math.round(Math.max(MIN_DIST, raw.lo));
+      const ch = Math.round(Math.min(MAX_DIST, raw.hi));
+      if (ch <= cl) continue;
+      if (cl === lo && ch === hi) continue; // 元帯（非 honored 確定）はスキップ
+      if (isBandHonored(run(cl, ch), { lo: cl, hi: ch }).honored) return { lo: cl, hi: ch };
     }
-  }
-  return best ? { lo: best.lo, hi: best.hi } : null;
+    return null;
+  };
+
+  const expandUp = searchDir((w) => ({ lo, hi: lo + w }));           // → 下限固定・上へ
+  let expandDown = searchDir((w) => ({ lo: hi - w, hi }));           // ← 上限固定・下へ
+  let expandBoth = searchDir((w) => ({ lo: center - w / 2, hi: center + w / 2 })); // ↕ 中心保存
+
+  // 重複排除（先勝ち: expandUp → expandDown → expandBoth）。
+  const eq = (a: { lo: number; hi: number } | null, b: { lo: number; hi: number } | null) =>
+    !!a && !!b && a.lo === b.lo && a.hi === b.hi;
+  if (eq(expandDown, expandUp)) expandDown = null;
+  if (eq(expandBoth, expandUp) || eq(expandBoth, expandDown)) expandBoth = null;
+
+  return { expandUp, expandDown, expandBoth };
 }

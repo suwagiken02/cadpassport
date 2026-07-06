@@ -25,7 +25,7 @@ import {
   splitBuilding2FAt1FVertices,
 } from '@/lib/konva/autoLayoutUtils';
 import { computeCascadeLayout, normalizeBuildingsByFloor } from '@/lib/konva/autolayout/cascade';
-import { isBandHonored, proposeClosingBand } from '@/lib/konva/autolayout/loopFit';
+import { isBandHonored, proposeClosingBands, type ClosingBandProposals } from '@/lib/konva/autolayout/loopFit';
 import type { FloorLayoutResult } from '@/lib/konva/autolayout/cascade';
 import { floorResultToAutoLayoutResult } from '@/lib/konva/autolayout/adapter';
 import { flattenFocusList, selfRelabeledEdge, computeNextFaceLabel } from '@/lib/konva/autolayout/focusList';
@@ -660,8 +660,8 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const [focusedEdgeIndex, setFocusedEdgeIndex] = useState<number | null>(null);
   const [showConflictConfirm, setShowConflictConfirm] = useState(false);
   const [showLockedAlert, setShowLockedAlert] = useState(false);
-  // S-2f-d-2: 範囲離れが帯不履行(帯外離れで割った)のとき、帯を守れる提案帯を出すダイアログ。
-  const [showBandProposal, setShowBandProposal] = useState<{ orig: { lo: number; hi: number }; prop: { lo: number; hi: number } } | null>(null);
+  // S-2f-d-2/改修: 範囲離れが帯不履行(帯外離れで割った)のとき、帯を守れる方向別の提案帯を出すダイアログ。
+  const [showBandProposal, setShowBandProposal] = useState<{ orig: { lo: number; hi: number }; props: ClosingBandProposals } | null>(null);
   // 案Y-1: 全消し方式に移行し conflict ダイアログはバイパス（setter は未使用のため destructure から除外）。
   //   dead な確認ダイアログ本体(handleConflictOk/Cancel・JSX)は撤去しすぎず残置（showConflictConfirm は常に false）。
   const [pendingHandrails] = useState<Handrail[]>([]);
@@ -776,14 +776,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       );
       setLayoutByFloor(res);
 
-      // S-2f-d-2: 帯不履行(採用離れが帯外＝この帯では割り切れない)なら、帯を守れる提案帯を出す。
-      //   center のみ・提案[再計算]からの呼び出し(bandOverride)では再提案しない。配置は継続(非後退)。
+      // S-2f-d改修: 帯不履行(採用離れが帯外＝この帯では割り切れない)なら、計算入口で1回だけ方向別の
+      //   提案帯を出す。center のみ・提案[再計算]からの呼び出し(bandOverride)では再提案しない。配置は継続(非後退)。
       if ((effBand.mode ?? 'center') === 'center' && !bandOverride && !isBandHonored(res, effBand).honored) {
-        const prop = proposeClosingBand(
+        const props = proposeClosingBands(
           cascadeInput.buildings, cascadeInput.distances, cascadeInput.topStart!,
           enabledSizes, priorityConfig, bothmodeSelectionsByFloor, bothmodeAdjustmentsByFloor, effBand,
         );
-        if (prop) setShowBandProposal({ orig: { lo: effBand.lo, hi: effBand.hi }, prop });
+        if (props.expandUp || props.expandDown || props.expandBoth) {
+          setShowBandProposal({ orig: { lo: effBand.lo, hi: effBand.hi }, props });
+        }
       }
 
       // 旧 state は混乱を避けるためクリア (Part C/D で旧 state を完全廃止予定)
@@ -2150,39 +2152,49 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         </div>
       )}
 
-      {/* S-2f-d-2: 帯不履行時の範囲提案ダイアログ */}
-      {showBandProposal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-6">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowBandProposal(null)} />
-          <div className="relative bg-dark-surface border border-dark-border rounded-2xl p-5 w-full max-w-sm shadow-2xl">
-            <p className="font-bold text-sm mb-2">指定の範囲では割り切れません</p>
-            <p className="text-xs text-dimension leading-relaxed mb-4">
-              離れ {showBandProposal.orig.lo}〜{showBandProposal.orig.hi}mm では、範囲内の離れだけで一周が割り切れません。<br />
-              <span className="text-canvas font-bold">{showBandProposal.prop.lo}〜{showBandProposal.prop.hi}mm</span> なら範囲内で収まります。変更しますか？
-            </p>
-            <div className="flex gap-2">
+      {/* S-2f-d改修: 帯不履行時の方向別・範囲提案ダイアログ（計算入口で1回だけ） */}
+      {showBandProposal && (() => {
+        const { orig, props } = showBandProposal;
+        const pick = (p: { lo: number; hi: number }) => {
+          setShowBandProposal(null);
+          setRangeDist({ lo: p.lo, hi: p.hi });
+          handleCalc({ lo: p.lo, hi: p.hi, mode: 'center' }); // 提案帯は center 前提
+        };
+        const rows: { arrow: string; label: string; band: { lo: number; hi: number } }[] = [];
+        if (props.expandUp) rows.push({ arrow: '→', label: '上へ拡張', band: props.expandUp });
+        if (props.expandDown) rows.push({ arrow: '←', label: '下へ拡張', band: props.expandDown });
+        if (props.expandBoth) rows.push({ arrow: '↕', label: '両側へ拡張', band: props.expandBoth });
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center px-6">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setShowBandProposal(null)} />
+            <div className="relative bg-dark-surface border border-dark-border rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+              <p className="font-bold text-sm mb-1">{orig.lo}〜{orig.hi}mm では割り付けできません</p>
+              <p className="text-xs text-dimension leading-relaxed mb-3">
+                この範囲内の離れだけでは一周が割り切れません。下記の範囲なら割付可能です。
+              </p>
+              <div className="flex flex-col gap-2 mb-3">
+                {rows.map((r) => (
+                  <button
+                    key={r.arrow}
+                    onClick={() => pick(r.band)}
+                    className="w-full py-2.5 px-3 bg-dark-bg border border-accent/60 text-canvas rounded-xl text-sm text-left hover:bg-accent/10 transition-colors flex items-center gap-2"
+                  >
+                    <span className="text-accent font-bold text-base w-4 text-center">{r.arrow}</span>
+                    <span className="font-mono font-bold">{r.band.lo}〜{r.band.hi}mm</span>
+                    <span className="text-[11px] text-dimension">なら割付可能です（{r.label}）</span>
+                  </button>
+                ))}
+              </div>
               <button
                 onClick={() => setShowBandProposal(null)}
-                className="flex-1 py-2.5 border border-dark-border text-dimension font-bold rounded-xl text-sm"
+                className="w-full py-2.5 border border-dark-border text-dimension font-bold rounded-xl text-sm"
               >
-                このまま配置
-              </button>
-              <button
-                onClick={() => {
-                  const p = showBandProposal.prop;
-                  setShowBandProposal(null);
-                  setRangeDist({ lo: p.lo, hi: p.hi });
-                  handleCalc({ lo: p.lo, hi: p.hi, mode: 'center' }); // 提案帯は center 前提
-
-                }}
-                className="flex-1 py-2.5 bg-accent text-white font-bold rounded-xl text-sm"
-              >
-                この範囲で再計算
+                このまま面ごとに調整する
               </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
     </div>
   );
