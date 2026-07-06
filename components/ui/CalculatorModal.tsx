@@ -12,8 +12,16 @@ type Props = { onClose: () => void };
 
 const DEFAULT_W = 264;
 const DEFAULT_H = 460;
-const MIN_W = 240; // ボタンが押せる下限
-const MIN_H = 360;
+const MIN_W = 160; // 大幅縮小可（タッチペン前提・ミニモードなし）
+const MIN_H = 200;
+
+type Corner = 'nw' | 'ne' | 'sw' | 'se';
+const HANDLES: { corner: Corner; pos: string; cursor: string }[] = [
+  { corner: 'nw', pos: 'top-0 left-0', cursor: 'cursor-nw-resize' },
+  { corner: 'ne', pos: 'top-0 right-0', cursor: 'cursor-ne-resize' },
+  { corner: 'sw', pos: 'bottom-0 left-0', cursor: 'cursor-sw-resize' },
+  { corner: 'se', pos: 'bottom-0 right-0', cursor: 'cursor-se-resize' },
+];
 
 const DIGITS: string[][] = [
   ['7', '8', '9', '÷'],
@@ -38,7 +46,7 @@ export default function CalculatorModal({ onClose }: Props) {
   });
   const [panelSize, setPanelSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
   const [panelDrag, setPanelDrag] = useState<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const [panelResize, setPanelResize] = useState<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
+  const [panelResize, setPanelResize] = useState<{ corner: Corner; startX: number; startY: number; origX: number; origY: number; origW: number; origH: number } | null>(null);
 
   // パネル移動（ヘッダードラッグ）
   useEffect(() => {
@@ -55,14 +63,33 @@ export default function CalculatorModal({ onClose }: Props) {
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
   }, [panelDrag]);
 
-  // パネルリサイズ（右下角ドラッグ）: 最小=ボタン下限・最大=viewport 内にクランプ
+  // パネルリサイズ（四隅ドラッグ）: 掴んだ角を動かし反対側の角は固定（一般的なウィンドウ挙動）。
+  //   最小 160×200、最大は viewport 内。左/上の角は panelPos も同時に更新。
   useEffect(() => {
     if (!panelResize) return;
+    const { corner, startX, startY, origX, origY, origW, origH } = panelResize;
+    const isLeft = corner === 'nw' || corner === 'sw';
+    const isTop = corner === 'nw' || corner === 'ne';
     const onMove = (e: PointerEvent) => {
-      setPanelSize({
-        w: Math.max(MIN_W, Math.min(window.innerWidth - 24, panelResize.origW + e.clientX - panelResize.startX)),
-        h: Math.max(MIN_H, Math.min(window.innerHeight - 24, panelResize.origH + e.clientY - panelResize.startY)),
-      });
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      let w: number, h: number, x = origX, y = origY;
+      if (isLeft) {
+        // 右端(origX+origW)を固定。左へ広げても x>=0（幅上限=origX+origW）
+        w = Math.max(MIN_W, Math.min(origX + origW, origW - dx));
+        x = origX + origW - w;
+      } else {
+        w = Math.max(MIN_W, Math.min(window.innerWidth - origX, origW + dx));
+      }
+      if (isTop) {
+        // 下端(origY+origH)を固定。上へ広げても y>=0（高さ上限=origY+origH）
+        h = Math.max(MIN_H, Math.min(origY + origH, origH - dy));
+        y = origY + origH - h;
+      } else {
+        h = Math.max(MIN_H, Math.min(window.innerHeight - origY, origH + dy));
+      }
+      setPanelSize({ w, h });
+      setPanelPos({ x, y });
     };
     const onUp = () => setPanelResize(null);
     window.addEventListener('pointermove', onMove);
@@ -111,8 +138,12 @@ export default function CalculatorModal({ onClose }: Props) {
   // 表示は演算子を見やすい記号へ戻す
   const shown = (expr || '0').replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−');
 
-  // 共通ボタン: グリッドセルに追従（高さはセルが伸縮＝パネルサイズに追従）
-  const btn = 'rounded-xl text-lg font-bold flex items-center justify-center active:opacity-70 transition-opacity';
+  // 幅に応じた段階的な文字サイズ（小さくすると文字も縮む・はみ出さない範囲）
+  const padText = panelSize.w < 200 ? 'text-xs' : panelSize.w < 240 ? 'text-sm' : 'text-lg';
+  const dispText = panelSize.w < 200 ? 'text-base' : panelSize.w < 240 ? 'text-xl' : 'text-2xl';
+  const resText = panelSize.w < 240 ? 'text-xs' : 'text-sm';
+  // 共通ボタン: グリッドセルに追従（高さはセルが伸縮＝パネルサイズに追従）・文字はみ出し防止
+  const btn = `rounded-xl ${padText} font-bold flex items-center justify-center overflow-hidden active:opacity-70 transition-opacity`;
 
   return (
     <div
@@ -136,7 +167,7 @@ export default function CalculatorModal({ onClose }: Props) {
           type="button"
           onClick={onClose}
           onPointerDown={(e) => e.stopPropagation()}
-          className="text-dimension hover:text-canvas text-base px-1 leading-none"
+          className="relative z-20 text-dimension hover:text-canvas text-base px-1 leading-none"
         >
           ✕
         </button>
@@ -145,20 +176,20 @@ export default function CalculatorModal({ onClose }: Props) {
       {/* 本体（flex-1・数字パッドが余白を埋めてサイズ追従） */}
       <div className="flex-1 flex flex-col gap-2 p-3 min-h-0 overflow-y-auto">
         {/* 表示エリア（div = OS キーボード抑止） */}
-        <div className="shrink-0 bg-dark-bg border border-dark-border rounded-xl px-4 py-2.5 min-h-[48px] flex items-center justify-end">
-          <span className={`font-mono text-2xl break-all ${error ? 'text-red-500' : 'text-canvas'}`}>
+        <div className="shrink-0 bg-dark-bg border border-dark-border rounded-xl px-3 py-2 min-h-[40px] flex items-center justify-end">
+          <span className={`font-mono ${dispText} break-all ${error ? 'text-red-500' : 'text-canvas'}`}>
             {error ? 'エラー' : shown}
           </span>
         </div>
 
         {/* 操作行: AC / ← */}
-        <div className="shrink-0 grid grid-cols-4 gap-2 h-[48px]">
+        <div className="shrink-0 grid grid-cols-4 gap-1.5 h-10">
           <button type="button" onClick={clearAll} className={`${btn} col-span-2 bg-red-500/15 text-red-400`}>AC</button>
           <button type="button" onClick={backspace} className={`${btn} col-span-2 bg-dark-bg border border-dark-border text-canvas`}>←</button>
         </div>
 
-        {/* 数字パッド（flex-1・grid-rows-4 でセルが伸縮＝パネル高さに追従） */}
-        <div className="flex-1 min-h-[168px] grid grid-cols-4 grid-rows-4 gap-2">
+        {/* 数字パッド（flex-1・grid-rows-4 でセルが伸縮＝パネル高さに追従。min-h-0 で縮小可） */}
+        <div className="flex-1 min-h-[96px] grid grid-cols-4 grid-rows-4 gap-1.5">
           {DIGITS.flat().map((label) => {
             const isOp = label in OP_MAP;
             const isEq = label === '=';
@@ -176,7 +207,7 @@ export default function CalculatorModal({ onClose }: Props) {
         </div>
 
         {/* 足場専用ボタン: 表示中の数値を使う */}
-        <div className="shrink-0 grid grid-cols-2 gap-2 h-[48px]">
+        <div className="shrink-0 grid grid-cols-2 gap-1.5 h-10">
           <button type="button" onClick={doAllocate} className={`${btn} bg-yellow-500/15 text-yellow-400 border border-yellow-500/30`}>
             割付
           </button>
@@ -188,23 +219,29 @@ export default function CalculatorModal({ onClose }: Props) {
         {/* 結果表示 */}
         {result !== null && (
           <div className="shrink-0 bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
-            <p className="text-sm font-mono text-canvas break-all leading-relaxed">{result}</p>
+            <p className={`${resText} font-mono text-canvas break-all leading-relaxed`}>{result}</p>
           </div>
         )}
       </div>
 
-      {/* リサイズハンドル（右下角） */}
-      <div
-        className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize flex items-end justify-end p-0.5 touch-none"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          setPanelResize({ startX: e.clientX, startY: e.clientY, origW: panelSize.w, origH: panelSize.h });
-        }}
-      >
-        <svg width="10" height="10" viewBox="0 0 10 10" className="text-dimension/40">
-          <path d="M9 1L1 9M9 4L4 9M9 7L7 9" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
-        </svg>
-      </div>
+      {/* リサイズハンドル（四隅）: stopPropagation でヘッダードラッグと干渉しない */}
+      {HANDLES.map(({ corner, pos, cursor }) => (
+        <div
+          key={corner}
+          className={`absolute ${pos} w-4 h-4 ${cursor} touch-none z-10`}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setPanelResize({ corner, startX: e.clientX, startY: e.clientY, origX: panelPos.x, origY: panelPos.y, origW: panelSize.w, origH: panelSize.h });
+          }}
+        >
+          {corner === 'se' && (
+            <svg width="10" height="10" viewBox="0 0 10 10" className="absolute bottom-0.5 right-0.5 text-dimension/40">
+              <path d="M9 1L1 9M9 4L4 9M9 7L7 9" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+            </svg>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
