@@ -205,6 +205,7 @@ export function computeFloorLayout(
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
   band?: { lo: number; hi: number; mode?: 'center' | 'lower' }, // 範囲離れ S-3: 帯受け口（中間/最下階の walk へ透過。最上階は computeBothmode2FLayout 委譲のため未配線＝S-4で対応）
+  anchorStartOverride?: number, // S-2f-b: 最上階アンカー start override（透過。未指定=no-op）
 ): FloorLayoutResult {
   if (buildingAbove === null) {
     // ── 最上階ブランチ（全周スパイン）──
@@ -235,6 +236,7 @@ export function computeFloorLayout(
       userSelections,
       userAdjustments,
       band,
+      anchorStartOverride,
     );
   }
 
@@ -339,31 +341,113 @@ export function computeCascadeLayout(
   // 前処理: 各階を他の全階の頂点で分割（純幾何の頂点挿入）。
   const normalized = normalizeBuildingsByFloor(buildingsByFloor);
 
-  const results: Record<number, FloorLayoutResult> = {};
-  let resultAbove: FloorLayoutResult | null = null;
-  for (let idx = 0; idx < floors.length; idx++) {
-    const f = floors[idx];
-    const buildingAbove = idx > 0 ? normalized[floors[idx - 1]] : null;
-    const buildingBelow = idx < floors.length - 1 ? normalized[floors[idx + 1]] : null;
-    const scaffoldStart = idx === 0 ? scaffoldStartTop : null;
-    const r = computeFloorLayout(
-      f,
-      normalized[f],
-      buildingAbove,
-      buildingBelow,
-      resultAbove,
-      distancesByFloor,
-      scaffoldStart,
-      enabledSizes,
-      priorityConfig,
-      userSelectionsByFloor?.[f],
-      userAdjustmentsByFloor?.[f],
-      band,
-    );
-    results[f] = r;
-    resultAbove = r;
+  // 一周分（全floor）を1回計算。anchorStartOverride は最上階だけに効かせる。
+  const runOnce = (anchorStartOverride?: number): Record<number, FloorLayoutResult> => {
+    const results: Record<number, FloorLayoutResult> = {};
+    let resultAbove: FloorLayoutResult | null = null;
+    for (let idx = 0; idx < floors.length; idx++) {
+      const f = floors[idx];
+      const buildingAbove = idx > 0 ? normalized[floors[idx - 1]] : null;
+      const buildingBelow = idx < floors.length - 1 ? normalized[floors[idx + 1]] : null;
+      const scaffoldStart = idx === 0 ? scaffoldStartTop : null;
+      const r = computeFloorLayout(
+        f,
+        normalized[f],
+        buildingAbove,
+        buildingBelow,
+        resultAbove,
+        distancesByFloor,
+        scaffoldStart,
+        enabledSizes,
+        priorityConfig,
+        userSelectionsByFloor?.[f],
+        userAdjustmentsByFloor?.[f],
+        band,
+        idx === 0 ? anchorStartOverride : undefined,
+      );
+      results[f] = r;
+      resultAbove = r;
+    }
+    return results;
+  };
+
+  const base = runOnce(undefined);
+  // 非band / lower は現状で全辺 d==0（一周整合）＝探索不要・byte 不変。
+  if (!band || band.mode === 'lower') return base;
+  // center: 現 mid で既に一周整合（全floor全辺 d==0）なら現状維持＝byte 不変。
+  if (loopResidual(base) === 0) { attachLoopFitMeta(base, { searched: [], chosen: null, closed: true, baseResidual: 0 }); return base; }
+
+  // 閉じていない → S-2f-b: アンカー start を band 内で探索し、全floor全辺 d==0 に閉じる解を
+  //   center 最寄り（|anchor − 帯中央| 最小、同点は総 residual 最小）で採用。
+  const center = Math.round((band.lo + band.hi) / 2);
+  const cands = anchorStartCandidates(band, center); // center 近い順（昇順 |a−center|）
+  const baseResidual = loopResidual(base);
+  // center 最寄りの閉じ解を採用。同 |a−center| の同点は Σ|actualEnd−center| 最小で決める。
+  //   候補は center 近い順なので、最初に閉じた距離 D を確定したら、D を超えた時点で打ち切り。
+  let best: { r: Record<number, FloorLayoutResult>; a: number; dist: number; sigma: number } | null = null;
+  const searched: number[] = [];
+  for (const a of cands) {
+    const dist = Math.abs(a - center);
+    if (best && dist > best.dist) break; // これ以上 center に近い閉じ解は無い
+    searched.push(a);
+    const r = runOnce(a);
+    if (loopResidual(r) !== 0) continue;
+    const sigma = sumActualEndDeviation(r, center);
+    if (!best || dist < best.dist || (dist === best.dist && sigma < best.sigma)) best = { r, a, dist, sigma };
   }
-  return results;
+  if (best) {
+    attachLoopFitMeta(best.r, { searched, chosen: best.a, closed: true, baseResidual });
+    return best.r;
+  }
+  // 閉じ解なし → 現 mid（現状挙動）で確定＝挙動後退なし。探索メタは f-d 提案UIの土台。
+  attachLoopFitMeta(base, { searched, chosen: null, closed: false, baseResidual });
+  return base;
+}
+
+/** 一周整合の残差 = 全floor全辺の |railsTotal − effectiveMm| 合計（0＝完全に閉じている）。 */
+function loopResidual(results: Record<number, FloorLayoutResult>): number {
+  let sum = 0;
+  for (const f of Object.keys(results).map(Number)) {
+    for (const s of results[f].edgeSegments) {
+      const sel = s.candidates[s.selectedIndex];
+      if (!sel) continue;
+      const d = Math.abs(sel.totalMm - s.effectiveMm);
+      if (d > 0.01) sum += d;
+    }
+  }
+  return sum;
+}
+
+/** アンカー start の探索候補。建物頂点は 10mm グリッド(mmToGrid)整列＝閉じ値の剰余も
+ *  10mm 単位のため 10mm 刻みで全オフセットを網羅。center 近い順に並べ、呼び出し側の
+ *  center 最寄り採用＋距離超過打ち切りを効かせる（実測: 閉じ解は最初の数候補で見つかる）。 */
+function anchorStartCandidates(band: { lo: number; hi: number }, center: number): number[] {
+  const lo = Math.min(band.lo, band.hi), hi = Math.max(band.lo, band.hi);
+  const set = new Set<number>([center]);
+  for (let t = Math.ceil(lo / 10) * 10; t <= hi; t += 10) set.add(t);
+  set.add(lo); set.add(hi);
+  return Array.from(set).sort((a, b) => Math.abs(a - center) - Math.abs(b - center) || a - b);
+}
+
+/** 全floor全辺の |actualEndDistanceMm − center| 合計（同 |anchor−center| の閉じ解の同点決着用）。 */
+function sumActualEndDeviation(results: Record<number, FloorLayoutResult>, center: number): number {
+  let sum = 0;
+  for (const f of Object.keys(results).map(Number)) {
+    for (const s of results[f].edgeSegments) {
+      const sel = s.candidates[s.selectedIndex];
+      if (sel) sum += Math.abs(sel.actualEndDistanceMm - center);
+    }
+  }
+  return sum;
+}
+
+// ── S-2f-b: 一周整合探索の結果メタ（f-d 提案UIの土台）──
+//   返り値の Record<number,...> を壊さないよう非列挙 symbol プロパティで付与。
+//   f-d はこの symbol 経由で「試した候補・採用アンカー・閉じたか」を読む。
+export const LOOP_FIT_META = Symbol('loopFitMeta');
+export type LoopFitMeta = { searched: number[]; chosen: number | null; closed: boolean; baseResidual: number };
+function attachLoopFitMeta(results: Record<number, FloorLayoutResult>, meta: LoopFitMeta): void {
+  Object.defineProperty(results, LOOP_FIT_META, { value: meta, enumerable: false, configurable: true, writable: true });
 }
 
 // ============================================================
@@ -394,6 +478,9 @@ export function walkFloorUpperRole(
   userSelections?: Record<string, number>,
   userAdjustments?: Record<string, EdgeAdjustment>,
   band?: { lo: number; hi: number; mode?: 'center' | 'lower' }, // 範囲離れ S-3: 帯受け口（透過。未指定=現挙動）
+  // S-2f-b: 一周整合探索用。band(center) 指定時のアンカー辺 start を mid でなくこの値に。
+  //   未指定(undefined)=従来 mid＝完全 no-op。driver(computeCascadeLayout)が閉じ値を渡す。
+  anchorStartOverride?: number,
 ): FloorLayoutResult {
   const edgesThis = getBuildingEdgesClockwise(buildingThis);
   const edgesBelow = getBuildingEdgesClockwise(buildingBelow);
@@ -494,7 +581,7 @@ export function walkFloorUpperRole(
       //   隣辺(2B)の start corner へ 900 が漏れて 100ズレ小物になっていた。band 未指定は従来の
       //   faceDist（非band順次決定モードを保護）。center(mid=900) は faceDist と一致し no-op。
       startDistanceMm = band
-        ? (band.mode === 'lower' ? band.lo : Math.round((band.lo + band.hi) / 2))
+        ? (anchorStartOverride ?? (band.mode === 'lower' ? band.lo : Math.round((band.lo + band.hi) / 2)))
         : (edge.handrailDir === 'horizontal'
           ? scaffoldStart.face1DistanceMm
           : scaffoldStart.face2DistanceMm);

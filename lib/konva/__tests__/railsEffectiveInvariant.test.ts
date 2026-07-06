@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCascadeLayout, type FloorLayoutResult } from '../autolayout/cascade';
+import { computeCascadeLayout, LOOP_FIT_META, type FloorLayoutResult, type LoopFitMeta } from '../autolayout/cascade';
 import { computeAutoLayoutSequential } from '../autoLayoutUtils';
 import { sequentialResultToFloorResult, segmentsToHandrails } from '../autolayout/adapter';
 import { findScaffoldViolations } from '../scaffoldViolations';
@@ -360,31 +360,46 @@ describe('S-2e 上階入隅辺の非タイルeff（S-2e-b source-align で緑化
 });
 
 // ============================================================
-// S-2f-a: center 帯の「一周整合」＝全floor全辺 d==0 を赤固定。
-//   S-2e-b で入隅は d==0 になったが、center[800,950] では 25mm の位相的余りが
-//   直下 floor の loop 閉じ辺へ移る（N=2:F1 / N=3:F2）。これは per-edge 逐次確定で
-//   アンカー辺 start を帯中央(mid=875)に固定し一周の帳尻を強制していないため。
-//   設計調査: アンカー start を band-clean な閉じ値(例 900)に取れば既定帯[800,950]で
-//   L字 180/180 が 0-seam（実測）。S-2f-b（driver のアンカー探索）で緑化予定。
-//   it.fails で赤固定（現状 assertRailsMatchEffective が直下 floor で失敗）。
+// S-2f: center 帯の「一周整合」＝全floor全辺 d==0（S-2f-b: driver のアンカー start 探索で緑化）。
+//   S-2e-b で入隅は d==0 になったが、center[800,950] では 25mm の位相的余りが直下 floor の
+//   loop 閉じ辺へ移った（N=2:F1 / N=3:F2）。根本は per-edge 逐次確定でアンカー辺 start を
+//   帯中央(mid=875)に固定し一周の帳尻を強制していないこと。
+//   S-2f-b: computeCascadeLayout が band(center) 時にアンカー start を band 内で探索し、
+//   全floor全辺 d==0 に閉じる解を center 最寄りで採用（現 mid で閉じるなら現状維持＝byte 不変）。
+//   実測: 既定帯[800,950]で L字 185/185 が 0-seam（chosen=900・center から 25）。
 // ============================================================
-describe('S-2f-a center帯の一周整合を赤固定（S-2f-bで緑化）', () => {
+describe('S-2f center帯の一周整合（S-2f-b アンカー探索で緑化）', () => {
   const Lshape = (id: string, floor: number, w: number, h: number, nx: number, ny: number): BuildingShape => ({
     id, type: 'polygon', fill: '#000', floor,
     points: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: ny }, { x: nx, y: ny }, { x: nx, y: h }, { x: 0, y: h }],
   });
-  const bandCe = { lo: 800, hi: 950, mode: 'center' as const };
-  const n2 = () => computeCascadeLayout(
-    { 2: Lshape('2f', 2, 900, 900, 495, 495), 1: rect('1f', 1, 2250, 2350) },
-    { 1: fill(8, 900), 2: fill(8, 900) }, ss, M, PC, undefined, undefined, bandCe);
-  const n3 = () => computeCascadeLayout(
-    { 3: Lshape('3f', 3, 900, 900, 495, 495), 2: Lshape('2f', 2, 1575, 1625, 832, 858), 1: Lshape('1f', 1, 2250, 2350, 1169, 1221) },
-    { 1: fill(16, 900), 2: fill(16, 900), 3: fill(16, 900) }, ss, M, PC, undefined, undefined, bandCe);
+  const allHof = (res: Record<number, FloorLayoutResult>) =>
+    Object.keys(res).map(Number).sort((a, b) => b - a).flatMap(f => segmentsToHandrails(res[f].edgeSegments));
+  const n2Blds = (): BuildingShape[] => [Lshape('2f', 2, 900, 900, 495, 495), rect('1f', 1, 2250, 2350)];
+  const n3Blds = (): BuildingShape[] => [Lshape('3f', 3, 900, 900, 495, 495), Lshape('2f', 2, 1575, 1625, 832, 858), Lshape('1f', 1, 2250, 2350, 1169, 1221)];
+  const n2 = (band: { lo: number; hi: number; mode: 'center' | 'lower' }) => computeCascadeLayout(
+    { 2: n2Blds()[0], 1: n2Blds()[1] }, { 1: fill(8, 900), 2: fill(8, 900) }, ss, M, PC, undefined, undefined, band);
+  const n3 = (band: { lo: number; hi: number; mode: 'center' | 'lower' }) => computeCascadeLayout(
+    { 3: n3Blds()[0], 2: n3Blds()[1], 1: n3Blds()[2] }, { 1: fill(16, 900), 2: fill(16, 900), 3: fill(16, 900) }, ss, M, PC, undefined, undefined, band);
 
-  it.fails('N=2 上階L字 center[800,950]: 全floor全辺 d==0（現状 F1閉じ辺で赤）', () => {
-    assertRailsMatchEffective(n2(), 'S-2f-a N=2 center 全辺');
-  });
-  it.fails('N=3 L字両成長 center[800,950]: 全floor全辺 d==0（現状 F2閉じ辺で赤）', () => {
-    assertRailsMatchEffective(n3(), 'S-2f-a N=3 center 全辺');
+  for (const band of [{ lo: 800, hi: 950, mode: 'center' as const }, { lo: 820, hi: 940, mode: 'center' as const }, { lo: 800, hi: 1000, mode: 'center' as const }]) {
+    const tag = `[${band.lo},${band.hi}]${band.mode}`;
+    it(`N=2 上階L字 ${tag}: 全floor全辺 d==0 & 違反0`, () => {
+      const res = n2(band);
+      assertRailsMatchEffective(res, `S-2f N=2 ${tag}`);
+      expect(findScaffoldViolations(allHof(res), n2Blds())).toEqual([]);
+    });
+    it(`N=3 L字両成長 ${tag}: 全floor全辺 d==0 & 違反0`, () => {
+      const res = n3(band);
+      assertRailsMatchEffective(res, `S-2f N=3 ${tag}`);
+      expect(findScaffoldViolations(allHof(res), n3Blds())).toEqual([]);
+    });
+  }
+
+  it('メタ情報: 既定帯[800,950]center で閉じ解 chosen が返る', () => {
+    const res = n2({ lo: 800, hi: 950, mode: 'center' });
+    const meta = (res as Record<number, FloorLayoutResult> & { [LOOP_FIT_META]?: LoopFitMeta })[LOOP_FIT_META];
+    expect(meta?.closed).toBe(true);
+    expect(meta?.chosen).toBe(900); // center(875) 最寄りの閉じ値
   });
 });
