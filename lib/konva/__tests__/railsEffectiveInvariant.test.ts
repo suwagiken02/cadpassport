@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { computeCascadeLayout, LOOP_FIT_META, type FloorLayoutResult, type LoopFitMeta } from '../autolayout/cascade';
+import { computeCascadeLayout, normalizeBuildingsByFloor, LOOP_FIT_META, type FloorLayoutResult, type LoopFitMeta } from '../autolayout/cascade';
 import { computeAutoLayoutSequential } from '../autoLayoutUtils';
+import { autoStartVertexIndex } from '../labelUtils';
 import { sequentialResultToFloorResult, segmentsToHandrails } from '../autolayout/adapter';
 import { findScaffoldViolations } from '../scaffoldViolations';
 import { mmToGrid } from '../gridUtils';
@@ -401,5 +402,43 @@ describe('S-2f center帯の一周整合（S-2f-b アンカー探索で緑化）'
     const meta = (res as Record<number, FloorLayoutResult> & { [LOOP_FIT_META]?: LoopFitMeta })[LOOP_FIT_META];
     expect(meta?.closed).toBe(true);
     expect(meta?.chosen).toBe(900); // center(875) 最寄りの閉じ値
+  });
+});
+
+// ============================================================
+// S-2e-c-a: 入隅の「角接続整合」を赤固定。実物件(2F=l_se L字/1F=矩形/band[700,950]center/自動起点)で
+//   入隅横 e2 が非対称(startD 875≠actualEnd 775)のとき、入隅縦 e3 の cursorStart が e2 の実着地(775)
+//   基準=303.5 に置かれ、e2 の scaffold線(875)=313.5 を 100mm 突き抜ける(縦runが入隅角を北へ超過)。
+//   S-2e-b は total==eff(自己完結)は満たすが角接続を検査していなかった＝既存 fixture は e2 対称で未踏。
+//   新不変条件「入隅縦 cursorStart == 入隅横 scaffoldCoord(2線交点で止まる)」を it.fails で赤固定。
+//   S-2e-c-b(案B: 前辺 scaffold線基準に統一)で緑化予定。
+// ============================================================
+describe('S-2e-c 入隅の角接続整合（S-2e-c-b 案Bで緑化）', () => {
+  const b1: BuildingShape = { id: '1f', type: 'polygon', fill: '#000', floor: 1, points: [{ x: -300, y: -400 }, { x: 900, y: -400 }, { x: 900, y: 800 }, { x: -300, y: 800 }] };
+  const b2: BuildingShape = { id: '2f', type: 'polygon', fill: '#000', floor: 2, points: [{ x: -159, y: -174 }, { x: 741, y: -174 }, { x: 741, y: 226 }, { x: 441, y: 226 }, { x: 441, y: 526 }, { x: -159, y: 526 }] };
+  const band = { lo: 700, hi: 950, mode: 'center' as const };
+  const run = () => {
+    const norm = normalizeBuildingsByFloor({ 1: b1, 2: b2 });
+    const ssR: ScaffoldStartConfig = { corner: 'nw', startVertexIndex: autoStartVertexIndex(norm[2]), face1DistanceMm: 825, face2DistanceMm: 825, face1FirstHandrail: 1800, face2FirstHandrail: 1800 };
+    return computeCascadeLayout({ 1: b1, 2: b2 }, { 1: fill(8, 825), 2: fill(10, 825) }, ssR, M, PC, undefined, undefined, band);
+  };
+  // 入隅縦 = 2F east 辺で直前(周回prev)が south。角接続: cursorStart が入隅横(prev)の scaffoldCoord に一致すべき。
+  const innerVert = (res: Record<number, FloorLayoutResult>) => {
+    const segs = res[2].edgeSegments;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i], prev = segs[(i - 1 + segs.length) % segs.length];
+      if (s.face === 'east' && prev.face === 'south') return { s, prev };
+    }
+    throw new Error('入隅縦(east,prev=south)が見つからない');
+  };
+
+  it.fails('入隅縦 cursorStart == 入隅横 scaffoldCoord（現状 303.5≠313.5 で赤）', () => {
+    const { s, prev } = innerVert(run());
+    expect(s.cursorStart).toBe(prev.scaffoldCoord);
+  });
+  it('（現状確認）入隅縦 e3 は total==eff（自己完結・角接続とは別に成立）', () => {
+    const { s } = innerVert(run());
+    const sel = s.candidates[s.selectedIndex]!;
+    expect(sel.totalMm).toBe(s.effectiveMm); // 現状 3000==3000 で緑（＝total==eff だけでは角接続バグを捕捉できない）
   });
 });
