@@ -5,12 +5,15 @@ import { evalExpr, fillByLargest, formatHeightResult } from '@/lib/konva/calcula
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 
 // 足場職人向け電卓（フローティングパネル・部材パレット PartSelector と同方式）。
-// オーバーレイなし＝開いたまま図面のズーム/パン/部材選択が可能。ヘッダーをドラッグで移動。
+// オーバーレイなし＝開いたまま図面のズーム/パン/部材選択が可能。ヘッダー=移動・右下角=リサイズ。
 // OS キーボードを出さず画面内ボタンで入力。計算ロジックは lib/konva/calculator.ts（無改変）。
 
 type Props = { onClose: () => void };
 
-const PANEL_W = 264;
+const DEFAULT_W = 264;
+const DEFAULT_H = 460;
+const MIN_W = 240; // ボタンが押せる下限
+const MIN_H = 360;
 
 const DIGITS: string[][] = [
   ['7', '8', '9', '÷'],
@@ -27,14 +30,17 @@ export default function CalculatorModal({ onClose }: Props) {
   const enabledSizes = useHandrailSettingsStore((s) => s.enabledSizes);
   const priorityConfig = useHandrailSettingsStore((s) => s.priorityConfig);
 
-  // --- フローティングパネル位置（PartSelector と同じドラッグ方式・オーバーレイなし） ---
+  // --- フローティングパネル位置・サイズ（PartSelector と同じドラッグ/リサイズ方式・オーバーレイなし） ---
   const [panelPos, setPanelPos] = useState<{ x: number; y: number }>(() => {
     if (typeof window === 'undefined') return { x: 16, y: 72 };
     // 既定は右上寄り（PartSelector 既定=下部中央・ツールバー=下部・FloorSelector=上部中央 と重ならない）
-    return { x: Math.max(8, window.innerWidth - PANEL_W - 12), y: 72 };
+    return { x: Math.max(8, window.innerWidth - DEFAULT_W - 12), y: 72 };
   });
+  const [panelSize, setPanelSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
   const [panelDrag, setPanelDrag] = useState<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const [panelResize, setPanelResize] = useState<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
 
+  // パネル移動（ヘッダードラッグ）
   useEffect(() => {
     if (!panelDrag) return;
     const onMove = (e: PointerEvent) => {
@@ -48,6 +54,21 @@ export default function CalculatorModal({ onClose }: Props) {
     window.addEventListener('pointerup', onUp);
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
   }, [panelDrag]);
+
+  // パネルリサイズ（右下角ドラッグ）: 最小=ボタン下限・最大=viewport 内にクランプ
+  useEffect(() => {
+    if (!panelResize) return;
+    const onMove = (e: PointerEvent) => {
+      setPanelSize({
+        w: Math.max(MIN_W, Math.min(window.innerWidth - 24, panelResize.origW + e.clientX - panelResize.startX)),
+        h: Math.max(MIN_H, Math.min(window.innerHeight - 24, panelResize.origH + e.clientY - panelResize.startY)),
+      });
+    };
+    const onUp = () => setPanelResize(null);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+  }, [panelResize]);
 
   const append = (ch: string) => { setError(false); setResult(null); setExpr((e) => e + ch); };
   const clearAll = () => { setError(false); setResult(null); setExpr(''); };
@@ -90,13 +111,14 @@ export default function CalculatorModal({ onClose }: Props) {
   // 表示は演算子を見やすい記号へ戻す
   const shown = (expr || '0').replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−');
 
-  const btn = 'min-h-[52px] rounded-xl text-lg font-bold flex items-center justify-center active:opacity-70 transition-opacity';
+  // 共通ボタン: グリッドセルに追従（高さはセルが伸縮＝パネルサイズに追従）
+  const btn = 'rounded-xl text-lg font-bold flex items-center justify-center active:opacity-70 transition-opacity';
 
   return (
     <div
       data-calc-panel
-      style={{ left: panelPos.x, top: panelPos.y, width: PANEL_W }}
-      className="fixed z-50 flex flex-col rounded-xl shadow-2xl border bg-dark-surface border-dark-border max-h-[85vh]"
+      style={{ left: panelPos.x, top: panelPos.y, width: panelSize.w, height: panelSize.h }}
+      className="fixed z-50 flex flex-col rounded-xl shadow-2xl border bg-dark-surface border-dark-border"
     >
       {/* ヘッダー（ドラッグハンドル） */}
       <div
@@ -120,23 +142,23 @@ export default function CalculatorModal({ onClose }: Props) {
         </button>
       </div>
 
-      {/* 本体 */}
-      <div className="p-3 space-y-3 overflow-y-auto">
+      {/* 本体（flex-1・数字パッドが余白を埋めてサイズ追従） */}
+      <div className="flex-1 flex flex-col gap-2 p-3 min-h-0 overflow-y-auto">
         {/* 表示エリア（div = OS キーボード抑止） */}
-        <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3 min-h-[52px] text-right">
+        <div className="shrink-0 bg-dark-bg border border-dark-border rounded-xl px-4 py-2.5 min-h-[48px] flex items-center justify-end">
           <span className={`font-mono text-2xl break-all ${error ? 'text-red-500' : 'text-canvas'}`}>
             {error ? 'エラー' : shown}
           </span>
         </div>
 
         {/* 操作行: AC / ← */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="shrink-0 grid grid-cols-4 gap-2 h-[48px]">
           <button type="button" onClick={clearAll} className={`${btn} col-span-2 bg-red-500/15 text-red-400`}>AC</button>
           <button type="button" onClick={backspace} className={`${btn} col-span-2 bg-dark-bg border border-dark-border text-canvas`}>←</button>
         </div>
 
-        {/* 数字パッド */}
-        <div className="grid grid-cols-4 gap-2">
+        {/* 数字パッド（flex-1・grid-rows-4 でセルが伸縮＝パネル高さに追従） */}
+        <div className="flex-1 min-h-[168px] grid grid-cols-4 grid-rows-4 gap-2">
           {DIGITS.flat().map((label) => {
             const isOp = label in OP_MAP;
             const isEq = label === '=';
@@ -154,7 +176,7 @@ export default function CalculatorModal({ onClose }: Props) {
         </div>
 
         {/* 足場専用ボタン: 表示中の数値を使う */}
-        <div className="grid grid-cols-2 gap-2 pt-1">
+        <div className="shrink-0 grid grid-cols-2 gap-2 h-[48px]">
           <button type="button" onClick={doAllocate} className={`${btn} bg-yellow-500/15 text-yellow-400 border border-yellow-500/30`}>
             割付
           </button>
@@ -165,10 +187,23 @@ export default function CalculatorModal({ onClose }: Props) {
 
         {/* 結果表示 */}
         {result !== null && (
-          <div className="bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
+          <div className="shrink-0 bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
             <p className="text-sm font-mono text-canvas break-all leading-relaxed">{result}</p>
           </div>
         )}
+      </div>
+
+      {/* リサイズハンドル（右下角） */}
+      <div
+        className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize flex items-end justify-end p-0.5 touch-none"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setPanelResize({ startX: e.clientX, startY: e.clientY, origW: panelSize.w, origH: panelSize.h });
+        }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" className="text-dimension/40">
+          <path d="M9 1L1 9M9 4L4 9M9 7L7 9" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+        </svg>
       </div>
     </div>
   );
