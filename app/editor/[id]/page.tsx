@@ -24,6 +24,7 @@ import CalculatorModal from '@/components/ui/CalculatorModal';
 import { isNoticeDismissed, dismissNotice } from '@/lib/notice';
 import HeightInputModal from '@/components/canvas/HeightInputModal';
 import AreaCalculationModal from '@/components/canvas/AreaCalculationModal';
+import ElevationModal from '@/components/elevation/ElevationModal';
 import AreaDesignationModeBar from '@/components/scaffold/AreaDesignationModeBar';
 import HandrailReorderModal from '@/components/scaffold/HandrailReorderModal';
 import MoveSelectCategoryModal from '@/components/scaffold/MoveSelectCategoryModal';
@@ -769,6 +770,7 @@ export default function EditorPage() {
       )}
       <HeightInputModal />
       <AreaCalculationModal siteName={siteName} />
+      <ElevationModal />
       <AreaDesignationModeBar />
       {showBackConfirm && (
         <ConfirmDialog
