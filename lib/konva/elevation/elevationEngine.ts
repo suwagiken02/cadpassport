@@ -33,6 +33,9 @@ export const KOMA_PITCH_MM = 450;
  */
 export const DEFAULT_JACK_MM = 150;
 
+/** 作業床から上方に手が届く範囲(mm)。これを超える屋根面はコマ嵩上げが必要（現場ルール・鮎澤氏確認）。 */
+export const REACH_MM = 1900;
+
 // ============================================================
 // 1. 縦方向の段構成
 // ============================================================
@@ -275,6 +278,19 @@ export type ElevationRail = {
   x1: number;
 };
 
+/** 妻面のコマ嵩上げ（段違い作業床）。屋根まで届かないスパンにコマを追加して床を上げる。 */
+export type SpanRaise = {
+  /** スパン番号（postXs[spanIndex]〜postXs[spanIndex+1]）。 */
+  spanIndex: number;
+  /** スパンの変軸区間（グリッド、ElevationSpan と同じ座標系）。 */
+  x0: number;
+  x1: number;
+  /** 追加コマ数（必要最小・450×addKoma だけ床を上げる）。 */
+  addKoma: number;
+  /** 嵩上げした作業床の高さ(mm, GL 基準)＝最上段床 + 450×addKoma。 */
+  raisedFloorMm: number;
+};
+
 export type ElevationScaffold = {
   /** 元の列（E-1）。 */
   column: FaceSpanColumn;
@@ -286,6 +302,8 @@ export type ElevationScaffold = {
   boards: ElevationBoard[];
   /** 横線: コマ位置 × 区間。 */
   rails: ElevationRail[];
+  /** 妻面のコマ嵩上げ（届かないスパンのみ・フラット面や届く面では空）。 */
+  spanRaises: SpanRaise[];
 };
 
 export type FaceElevation = {
@@ -334,6 +352,58 @@ function sampleColumnBaseHeightMm(
   return Math.max(...outline.segments.map(s => Math.max(s.heightStartMm, s.heightEndMm)));
 }
 
+/** セグメント上の変軸座標 x(グリッド)における高さ(mm)を線形補間。 */
+function heightAtSeg(seg: BuildingOutlineSegment, x: number): number {
+  const span = seg.xEnd - seg.xStart;
+  if (Math.abs(span) < 1e-6) return seg.heightStartMm;
+  const f = (x - seg.xStart) / span;
+  return seg.heightStartMm + f * (seg.heightEndMm - seg.heightStartMm);
+}
+
+/** スパン区間[aG,bG](グリッド)と重なる全セグメントの最高高さ(mm)。重なり無しは null。
+ *  各セグメントは線形なので区間端(クリップ後)で最大になる。 */
+function roofMaxOverSpan(segments: BuildingOutlineSegment[], aG: number, bG: number): number | null {
+  let mx = -Infinity;
+  for (const s of segments) {
+    const lo = Math.max(aG, s.xStart);
+    const hi = Math.min(bG, s.xEnd);
+    if (hi < lo - 1e-6) continue;
+    mx = Math.max(mx, heightAtSeg(s, lo), heightAtSeg(s, hi));
+  }
+  return mx === -Infinity ? null : mx;
+}
+
+/** 妻面のコマ嵩上げを計算。各スパンで屋根最高点まで届かない(gap>REACH)分だけ 450 コマを
+ *  必要最小数追加し、床を上げる。届く/フラットなスパンは対象外。 */
+function computeSpanRaises(
+  column: FaceSpanColumn,
+  postXs: number[],
+  levels: ElevationLevels,
+  buildingOutlines: BuildingOutline[],
+  opts?: ElevationLevelsOpts,
+): SpanRaise[] {
+  const komaMm = opts?.komaMm ?? KOMA_PITCH_MM;
+  if (levels.floors === 0) return [];
+  const topFloorMm = levels.levels[levels.floors - 1]; // 最上段作業床
+  const outline = buildingOutlines.find(o => o.floor === column.floor);
+  if (!outline) return [];
+
+  const raises: SpanRaise[] = [];
+  for (let si = 0; si < postXs.length - 1; si++) {
+    const x0 = postXs[si];
+    const x1 = postXs[si + 1];
+    if (x1 - x0 < 1e-6) continue;
+    const roofMax = roofMaxOverSpan(outline.segments, x0, x1);
+    if (roofMax == null) continue;
+    const gap = roofMax - topFloorMm;
+    if (gap <= REACH_MM) continue; // 届く → 嵩上げ不要
+    const addKoma = Math.ceil((gap - REACH_MM) / komaMm);
+    if (addKoma <= 0) continue;
+    raises.push({ spanIndex: si, x0, x1, addKoma, raisedFloorMm: topFloorMm + komaMm * addKoma });
+  }
+  return raises;
+}
+
 /**
  * 同一面・同一 floor の列群 → 1 面の立面モデル。
  * @param faceColumns 同 face・同 floor の FaceSpanColumn 群（E-1 出力を絞ったもの）。
@@ -366,7 +436,10 @@ export function buildFaceElevation(
     const boards: ElevationBoard[] = levels.levels.map(levelMm => ({ levelMm, x0, x1 }));
     const rails: ElevationRail[] = levels.komaGridMm.map(heightMmK => ({ heightMm: heightMmK, x0, x1 }));
 
-    return { column, postXs, levels, boards, rails };
+    // 妻面のコマ嵩上げ: 各スパンで屋根最高点まで届かない分だけ 450 コマを追加。
+    const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, opts);
+
+    return { column, postXs, levels, boards, rails, spanRaises };
   });
 
   return { face, floor, buildingOutlines, scaffolds };

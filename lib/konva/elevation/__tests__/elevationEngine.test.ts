@@ -180,6 +180,58 @@ describe('E-3.5-2b: 段数・天端は水下(樋面)基準', () => {
   });
 });
 
+describe('E-3.5-2c: 妻面のコマ嵩上げ(段違い作業床)', () => {
+  const building = bld('W1', RECT, 1); // 北辺=edge0, x[0,360]
+  const northCol = scol({}); // 北面 x[-90,450], postXs=[-90,90,270,450]
+
+  // 屋根の線形補間から roofMax を再計算（テスト内検証用）。
+  const roofMaxOverSpan = (fe: ReturnType<typeof buildFaceElevation>, x0: number, x1: number): number => {
+    const segs = fe.buildingOutlines[0].segments;
+    let mx = -Infinity;
+    for (const s of segs) {
+      const lo = Math.max(x0, s.xStart), hi = Math.min(x1, s.xEnd);
+      if (hi < lo) continue;
+      const at = (x: number) => s.heightStartMm + ((x - s.xStart) / (s.xEnd - s.xStart)) * (s.heightEndMm - s.heightStartMm);
+      mx = Math.max(mx, at(lo), at(hi));
+    }
+    return mx;
+  };
+
+  it('妻(両端軒5000・棟7000): 棟に近いスパンほど addKoma が増える階段状', () => {
+    const markers: HeightMarker[] = [
+      { id: 'w0', buildingId: 'W1', edgeIndex: 0, t: 0, heightMm: 5000 },
+      { id: 'wm', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 7000 },
+      { id: 'w1', buildingId: 'W1', edgeIndex: 0, t: 1, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([northCol], [building], { markers });
+    const sr = fe.scaffolds[0].spanRaises;
+    // 水下5000基準 → 最上段床3200。各スパンの屋根最高点まで届かない分だけコマ追加。
+    expect(sr.map(r => r.spanIndex)).toEqual([0, 1, 2]);
+    expect(sr.map(r => r.addKoma)).toEqual([2, 5, 2]);      // 中央(棟)スパンが最大
+    expect(sr.map(r => r.raisedFloorMm)).toEqual([4100, 5450, 4100]);
+
+    // 必要最小の検証: raisedFloor+1900 ≥ roofMax かつ (raisedFloor−450)+1900 < roofMax
+    for (const r of sr) {
+      const roofMax = roofMaxOverSpan(fe, r.x0, r.x1);
+      expect(r.raisedFloorMm + 1900).toBeGreaterThanOrEqual(roofMax);
+      expect(r.raisedFloorMm - 450 + 1900).toBeLessThan(roofMax);
+    }
+  });
+
+  it('gap≤1900 のスパンは嵩上げなし（フラット面 → spanRaises 空）', () => {
+    const markers: HeightMarker[] = [
+      { id: 'f1', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([northCol], [building], { markers });
+    expect(fe.scaffolds[0].spanRaises).toEqual([]);
+  });
+
+  it('マーカー無し(既定高さ)でも spanRaises は空', () => {
+    const fe = buildFaceElevation([northCol], [building], { defaultHeightMm: 6500 });
+    expect(fe.scaffolds[0].spanRaises).toEqual([]);
+  });
+});
+
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {
   const building = bld('B1', RECT, 1);
   const northCol = scol({}); // 北面 floor1, rails[1800×3], x[-90,450]

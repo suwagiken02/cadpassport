@@ -220,6 +220,14 @@ function ElevationSVG({
       {scaffolds.map((sc, si) => {
         const jackTop = sc.levels.jackTopMm;
         const topRail = sc.levels.topRailMm;
+        // 妻嵩上げ: 各支柱の延長上端(mm)＝隣接スパンの要求の高い方(raisedFloor+900)。
+        const postExtendTop = new Map<number, number>();
+        for (const r of sc.spanRaises) {
+          const top = r.raisedFloorMm + 900;
+          for (const px of [r.x0, r.x1]) {
+            postExtendTop.set(px, Math.max(postExtendTop.get(px) ?? topRail, top));
+          }
+        }
         return (
           <g key={`sc-${si}`} opacity={0.95}>
             {/* 踏板（薄い帯） */}
@@ -273,6 +281,25 @@ function ElevationSVG({
                 />
               );
             })}
+            {/* 妻嵩上げ: 段違い作業床＋手摺(+450/+900) */}
+            {sc.spanRaises.map((r, i) => (
+              <g key={`sr-${i}`}>
+                <rect
+                  x={sxg(r.x0)}
+                  y={sy(r.raisedFloorMm) - 2}
+                  width={Math.max(0, sxg(r.x1) - sxg(r.x0))}
+                  height={4}
+                  fill="#4ECDC4"
+                  fillOpacity={0.6}
+                />
+                <line x1={sxg(r.x0)} y1={sy(r.raisedFloorMm + 450)} x2={sxg(r.x1)} y2={sy(r.raisedFloorMm + 450)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
+                <line x1={sxg(r.x0)} y1={sy(r.raisedFloorMm + 900)} x2={sxg(r.x1)} y2={sy(r.raisedFloorMm + 900)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
+              </g>
+            ))}
+            {/* 妻嵩上げの支柱延長（天端→要求上端） */}
+            {Array.from(postExtendTop.entries()).map(([px, top], i) => (
+              <line key={`pe-${i}`} x1={sxg(px)} y1={sy(topRail)} x2={sxg(px)} y2={sy(top)} stroke="#FFD700" strokeWidth={1.6} />
+            ))}
           </g>
         );
       })}
