@@ -304,8 +304,14 @@ export type FaceElevationOpts = ElevationLevelsOpts & {
   defaultHeightMm?: number;
 };
 
-/** 列の代表建物高さ(mm)を求める。列 mid が乗るセグメント優先、無ければ最大、無ければ既定。 */
-function sampleColumnHeightMm(
+/** 列の基準建物高さ(mm)＝水下(樋面)。現場ルール(鮎澤氏確認): 段数・天端(建物高さ−1800)は
+ *  「水下＝その範囲の最低高さ」を基準にする(1800下がりが最高の作業性。棟に合わせると妻中央
+ *  1スパンのために他スパンの作業性が犠牲になる)。妻面では両端の軒高が基準となり、棟部分は
+ *  建物外形が足場天端より上へ突き出て見えるのが正しい。
+ *
+ *  列区間[xStart,xEnd]と重なる全セグメントの端点高さの最小値(=水下)を返す。
+ *  重なるセグメントが無い場合のフォールバックは従来挙動を維持(全セグメント最大端点高さ)。 */
+function sampleColumnBaseHeightMm(
   column: FaceSpanColumn,
   buildings: BuildingShape[],
   opts?: FaceElevationOpts,
@@ -317,9 +323,14 @@ function sampleColumnHeightMm(
     defaultHeightMm: opts?.defaultHeightMm,
   });
   if (outline.segments.length === 0) return def;
-  const mid = (column.xStart + column.xEnd) / 2;
-  const hit = outline.segments.find(s => mid >= s.xStart - 1e-6 && mid <= s.xEnd + 1e-6);
-  if (hit) return Math.round((hit.heightStartMm + hit.heightEndMm) / 2);
+  // 列の変軸区間と重なるセグメント → その端点高さの最小値(水下)。
+  const overlapping = outline.segments.filter(
+    s => s.xEnd >= column.xStart - 1e-6 && s.xStart <= column.xEnd + 1e-6,
+  );
+  if (overlapping.length > 0) {
+    return Math.round(Math.min(...overlapping.map(s => Math.min(s.heightStartMm, s.heightEndMm))));
+  }
+  // 重なり無し → 従来フォールバック維持。
   return Math.max(...outline.segments.map(s => Math.max(s.heightStartMm, s.heightEndMm)));
 }
 
@@ -347,7 +358,7 @@ export function buildFaceElevation(
   // 足場（列ごとに別 scaffold）
   const scaffolds: ElevationScaffold[] = faceColumns.map(column => {
     const { postXs } = buildElevationColumns(column);
-    const heightMm = sampleColumnHeightMm(column, buildings, opts);
+    const heightMm = sampleColumnBaseHeightMm(column, buildings, opts);
     const levels = buildElevationLevels(heightMm ?? 0, opts);
 
     const x0 = column.xStart;

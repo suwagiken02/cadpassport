@@ -151,6 +151,35 @@ describe('buildBuildingOutline: 辺内部マーカーで妻(折れ線)化', () =
   });
 });
 
+describe('E-3.5-2b: 段数・天端は水下(樋面)基準', () => {
+  const building = bld('W1', RECT, 1); // 北辺=edge0, x[0,360]
+  const northCol = scol({}); // 北面 x[-90,450], rails[1800×3]
+
+  it('妻(両端軒5000・棟7000) → 基準は水下5000（棟7000ではない）', () => {
+    const markers: HeightMarker[] = [
+      { id: 'w0', buildingId: 'W1', edgeIndex: 0, t: 0, heightMm: 5000 },
+      { id: 'wm', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 7000 },
+      { id: 'w1', buildingId: 'W1', edgeIndex: 0, t: 1, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([northCol], [building], { markers });
+    // 段数・天端は水下5000基準（heightToFloors(5000)）
+    expect(fe.scaffolds[0].levels.topRailMm).toBe(5000);
+    expect(fe.scaffolds[0].levels.levels).toEqual([1400, 3200]);
+    // 建物外形は棟7000を保持（天端5000より上に突き出る）
+    const apex = Math.max(...fe.buildingOutlines[0].segments.flatMap(s => [s.heightStartMm, s.heightEndMm]));
+    expect(apex).toBe(7000);
+  });
+
+  it('フラット面(一定5000)は従来どおり', () => {
+    const markers: HeightMarker[] = [
+      { id: 'f1', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([northCol], [building], { markers });
+    expect(fe.scaffolds[0].levels.topRailMm).toBe(5000);
+    expect(fe.scaffolds[0].levels.levels).toEqual([1400, 3200]);
+  });
+});
+
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {
   const building = bld('B1', RECT, 1);
   const northCol = scol({}); // 北面 floor1, rails[1800×3], x[-90,450]
