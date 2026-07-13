@@ -15,7 +15,7 @@
 // ============================================================
 import type { BuildingShape, HeightMarker, Point } from '@/types';
 import { getFloor } from '@/types';
-import { heightToFloors, LAYER_HEIGHT_MM } from '../calculator';
+import { heightToFloors, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM, type PillarType } from '../calculator';
 import { mmToGrid } from '../gridUtils';
 import { getOutlinePolygon } from '../heightMarkerUtils';
 import { getHeightAtPosition } from '../heightInterpolation';
@@ -62,6 +62,8 @@ export type ElevationLevelsOpts = {
   jackMm?: number;
   /** コマピッチ(mm)。既定 KOMA_PITCH_MM。 */
   komaMm?: number;
+  /** 支柱種別。既定 'normal'（スタート下限 330 の正ルールが効く）。 */
+  pillarType?: PillarType;
 };
 
 /** 建物高さ(mm) → 立面の段構成。heightToFloors と整合。 */
@@ -72,9 +74,10 @@ export function buildElevationLevels(
   const layerMm = opts?.layerMm ?? LAYER_HEIGHT_MM;
   const jackTopMm = opts?.jackMm ?? DEFAULT_JACK_MM;
   const komaMm = opts?.komaMm ?? KOMA_PITCH_MM;
+  const pillarType = opts?.pillarType ?? 'normal';
 
   const H = Math.round(buildingHeightMm);
-  const { startMm, floors } = heightToFloors(H, layerMm);
+  const { startMm, floors } = heightToFloors(H, layerMm, PILLAR_START_MIN_MM[pillarType]);
 
   const levels: number[] = [];
   for (let i = 0; i < floors; i++) levels.push(startMm + layerMm * i);

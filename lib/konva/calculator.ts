@@ -116,23 +116,55 @@ export function fillByLargest(
 // ---- c-2: 高さ（高さ→段数＋スタート端数） ----
 export type HeightResult = { startMm: number; floors: number };
 
+/** 支柱種別。通常支柱 / 根がらみ支柱。 */
+export type PillarType = 'normal' | 'negarami';
+
+/** スタート下限(mm): 通常支柱 330 / 根がらみ支柱 140（定数は 1 箇所に集約）。 */
+export const PILLAR_START_MIN_MM: Record<PillarType, number> = { normal: 330, negarami: 140 };
+
 /** 高さ(mm)を段数とスタート端数に分解。
  *  floors = 高さから layerMm(=1800) を引いて >0 を保てる回数 = floor((H-1)/layerMm)（H<=0 は 0）。
- *  startMm = H − layerMm×floors（残った端数＝スタート）。例: 5000 → {startMm:1400, floors:2}。 */
-export function heightToFloors(heightMm: number, layerMm: number = LAYER_HEIGHT_MM): HeightResult {
+ *  startMm = H − layerMm×floors（残った端数＝スタート）。例: 5000 → {startMm:1400, floors:2}。
+ *  minStartMm: スタート下限。startMm がこれ未満の間 +layerMm 繰り上げて段を 1 減らす
+ *  （不変条件 H = startMm + layerMm×floors を保存）。既定 0＝現挙動（byte 互換）。
+ *  繰り上げで floors=0 になる場合は {startMm:H, floors:0} をそのまま返す。
+ *  例: H=3800, minStart=330 → {2000,1}／minStart=140 → {200,2}。 */
+export function heightToFloors(
+  heightMm: number,
+  layerMm: number = LAYER_HEIGHT_MM,
+  minStartMm: number = 0,
+): HeightResult {
   const H = Math.round(heightMm);
   if (!Number.isFinite(H) || H <= 0 || layerMm <= 0) return { startMm: Math.max(0, H || 0), floors: 0 };
-  const floors = Math.max(0, Math.floor((H - 1) / layerMm));
-  return { startMm: H - layerMm * floors, floors };
+  let floors = Math.max(0, Math.floor((H - 1) / layerMm));
+  let startMm = H - layerMm * floors;
+  // スタート下限ルール: startMm < minStartMm の間、+layerMm 繰り上げて段を 1 減らす。
+  while (startMm < minStartMm && floors > 0) {
+    startMm += layerMm;
+    floors -= 1;
+  }
+  return { startMm, floors };
 }
 
-/** 高さの結果表示文言。floors>=1 は「NスタートのM段でK下がりになります」、
- *  floors=0（1800 未満で段が立たない）は「足場不要の高さです」。
- *  K(下がり) = H − (startMm + 1800×(floors−1))（現行式では常に 1800 だが計算で出す）。 */
-export function formatHeightResult(heightMm: number): string {
+/** 高さの結果表示文言（スタート下限ルール適用）。
+ *  pillarType 指定時はその 1 種のみ 1 行で返す。未指定時は通常/根がらみを比較し、
+ *  結果が分かれる場合のみ「通常:…／根がらみ:…」の 2 行、同じなら従来どおり 1 行。
+ *  floors=0 は H<=1800 なら「足場不要の高さです」、繰り上げで 0 段化した場合は
+ *  「Nスタートでは段が組めません」。 */
+export function formatHeightResult(heightMm: number, pillarType?: PillarType): string {
   const H = Math.round(heightMm);
-  const { startMm, floors } = heightToFloors(H);
-  if (floors === 0) return '足場不要の高さです';
-  const sagari = H - (startMm + LAYER_HEIGHT_MM * (floors - 1));
-  return `${startMm}スタートの${floors}段で${sagari}下がりになります`;
+  const line = (r: HeightResult): string => {
+    if (r.floors === 0) {
+      return H <= LAYER_HEIGHT_MM ? '足場不要の高さです' : `${r.startMm}スタートでは段が組めません`;
+    }
+    const sagari = H - (r.startMm + LAYER_HEIGHT_MM * (r.floors - 1));
+    return `${r.startMm}スタートの${r.floors}段で${sagari}下がりになります`;
+  };
+  if (pillarType) {
+    return line(heightToFloors(H, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM[pillarType]));
+  }
+  const normal = heightToFloors(H, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM.normal);
+  const negarami = heightToFloors(H, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM.negarami);
+  if (normal.startMm === negarami.startMm && normal.floors === negarami.floors) return line(normal);
+  return `通常: ${line(normal)}\n根がらみ: ${line(negarami)}`;
 }

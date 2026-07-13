@@ -219,7 +219,7 @@ export default function CalculatorModal({ onClose }: Props) {
         {/* 結果表示 */}
         {result !== null && (
           <div className="shrink-0 bg-dark-bg border border-dark-border rounded-xl px-4 py-3">
-            <p className={`${resText} font-mono text-canvas break-all leading-relaxed`}>{result}</p>
+            <p className={`${resText} font-mono text-canvas break-all leading-relaxed whitespace-pre-line`}>{result}</p>
           </div>
         )}
       </div>

@@ -58,6 +58,15 @@ describe('buildElevationLevels: 電卓 heightToFloors との整合', () => {
     expect(lv.komaGridMm).toEqual([]);
   });
 
+  it('pillarType 透過: H=3800 は既定(通常330)で {2000,1}・根がらみ140 で {200,2}', () => {
+    const normal = buildElevationLevels(3800);
+    expect(normal.startMm).toBe(2000);
+    expect(normal.floors).toBe(1);
+    const negarami = buildElevationLevels(3800, { pillarType: 'negarami' });
+    expect(negarami.startMm).toBe(200);
+    expect(negarami.floors).toBe(2);
+  });
+
   it('コマ格子: ジャッキ上端(150)起点・450刻み・天端以下', () => {
     const lv = buildElevationLevels(5000);
     expect(lv.jackTopMm).toBe(DEFAULT_JACK_MM);

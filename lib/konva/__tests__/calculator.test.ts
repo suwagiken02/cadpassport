@@ -122,3 +122,52 @@ describe('formatHeightResult（高さ結果の表示文言）', () => {
     expect(formatHeightResult(1800)).toBe('足場不要の高さです');
   });
 });
+
+describe('heightToFloors: スタート下限ルール（通常330/根がらみ140）', () => {
+  // raw start は floors=2 を保つ H=3600+raw で作る（繰り上げ後 floors=1）。
+  it('通常330: 境界ちょうど 330 は繰り上げない', () => {
+    expect(heightToFloors(3930, 1800, 330)).toEqual({ startMm: 330, floors: 2 });
+  });
+  it('通常330: 329 は +1800 繰り上げ・段-1（2129/1段）', () => {
+    expect(heightToFloors(3929, 1800, 330)).toEqual({ startMm: 2129, floors: 1 });
+  });
+  it('通常330: 200→2000 / 100→1900', () => {
+    expect(heightToFloors(3800, 1800, 330)).toEqual({ startMm: 2000, floors: 1 });
+    expect(heightToFloors(3700, 1800, 330)).toEqual({ startMm: 1900, floors: 1 });
+  });
+  it('根がらみ140: 140 はそのまま / 139→1939 / 100→1900', () => {
+    expect(heightToFloors(3740, 1800, 140)).toEqual({ startMm: 140, floors: 2 });
+    expect(heightToFloors(3739, 1800, 140)).toEqual({ startMm: 1939, floors: 1 });
+    expect(heightToFloors(3700, 1800, 140)).toEqual({ startMm: 1900, floors: 1 });
+  });
+  it('H=3800 で通常/根がらみが分かれる（{2000,1} vs {200,2}）', () => {
+    expect(heightToFloors(3800, 1800, 330)).toEqual({ startMm: 2000, floors: 1 });
+    expect(heightToFloors(3800, 1800, 140)).toEqual({ startMm: 200, floors: 2 });
+  });
+  it('不変条件 H = start + 1800×floors を繰り上げ後も保存', () => {
+    for (const H of [3700, 3800, 3929, 5000, 6500]) {
+      for (const min of [0, 140, 330]) {
+        const r = heightToFloors(H, 1800, min);
+        expect(r.startMm + 1800 * r.floors).toBe(H);
+      }
+    }
+  });
+  it('既定 minStart=0 は現挙動（byte 互換）', () => {
+    expect(heightToFloors(3800)).toEqual({ startMm: 200, floors: 2 });
+  });
+});
+
+describe('formatHeightResult: 通常/根がらみの 2 行/1 行分岐', () => {
+  it('分かれる場合は 2 行（H=3800）', () => {
+    expect(formatHeightResult(3800)).toBe(
+      '通常: 2000スタートの1段で1800下がりになります\n根がらみ: 200スタートの2段で1800下がりになります',
+    );
+  });
+  it('分かれない場合は 1 行（H=5000・pillarType 表記なし）', () => {
+    expect(formatHeightResult(5000)).toBe('1400スタートの2段で1800下がりになります');
+  });
+  it('pillarType 指定時はその 1 種のみ 1 行', () => {
+    expect(formatHeightResult(3800, 'normal')).toBe('2000スタートの1段で1800下がりになります');
+    expect(formatHeightResult(3800, 'negarami')).toBe('200スタートの2段で1800下がりになります');
+  });
+});

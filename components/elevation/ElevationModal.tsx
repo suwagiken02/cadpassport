@@ -15,6 +15,7 @@ import React, { useMemo, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstruction';
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
+import type { PillarType } from '@/lib/konva/calculator';
 
 const FACES: { id: Face; label: string }[] = [
   { id: 'north', label: '北面' },
@@ -34,6 +35,7 @@ const PAD = 48;
 export default function ElevationModal() {
   const { showElevation, setShowElevation, canvasData } = useCanvasStore();
   const [face, setFace] = useState<Face>('north');
+  const [pillarType, setPillarType] = useState<PillarType>('normal');
 
   const hasMarkers = (canvasData.heightMarkers ?? []).length > 0;
 
@@ -44,8 +46,14 @@ export default function ElevationModal() {
       markers: canvasData.heightMarkers ?? [],
       // マーカーが 1 つも無ければ仮の高さで描く（バナーで案内）。
       defaultHeightMm: hasMarkers ? undefined : FALLBACK_HEIGHT_MM,
+      pillarType,
     });
-  }, [face, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, hasMarkers]);
+  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, hasMarkers]);
+
+  // この支柱種で全列が 0 段（段が組めない）→ 根がらみへの切替を案内。
+  const noStage = !!faceElevation
+    && faceElevation.scaffolds.length > 0
+    && faceElevation.scaffolds.every((s) => s.levels.floors === 0);
 
   if (!showElevation) return null;
 
@@ -75,6 +83,31 @@ export default function ElevationModal() {
             </button>
           ))}
         </div>
+
+        {/* 支柱種トグル（通常⇔根がらみ）＝スタート下限 330/140 の切替 */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs text-dimension">支柱:</span>
+          {(([['normal', '通常(330)'], ['negarami', '根がらみ(140)']]) as [PillarType, string][]).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setPillarType(id)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold border-2 transition-colors ${
+                pillarType === id
+                  ? 'bg-accent/20 border-accent text-accent'
+                  : 'bg-dark-bg border-dark-border text-dimension hover:text-canvas'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* この高さでは段が組めない案内 */}
+        {noStage && (
+          <div className="mb-3 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-300">
+            この高さでは通常支柱で段が組めません。「根がらみ」に切り替えてください。
+          </div>
+        )}
 
         {/* 高さマーカー未設定の案内 */}
         {!hasMarkers && (
