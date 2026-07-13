@@ -184,8 +184,10 @@ function outlineEdgeFace(pts: Point[], i: number, ws: number): Face {
  *   マーカー 0 個（getHeightAtPosition が null）→ opts.defaultHeightMm を使用。
  *   それも無指定 → その辺はスキップ（segments に含めない）。
  *
- * Phase 1 は上辺フラット（軒線まで）。屋根勾配は heightStart/heightEnd を
- * 別値にすることで表現可能（拡張点）。斜め壁・円形は非対応（軸並行前提）。
+ * 辺の内部にある高さマーカー（0<t<1、建物マーカー 2 個以上時）で辺を分割し、
+ * 各分割点の高さ（getHeightAtPosition）で折れ線化する＝妻（面中央が高い形）に対応。
+ * マーカー 0/1 個は 1 辺 1 セグメント（従来どおり）。屋根勾配は heightStart/heightEnd の
+ * 別値で表現（拡張点）。斜め壁・円形は非対応（軸並行前提）。
  */
 export function buildBuildingOutline(
   building: BuildingShape,
@@ -203,6 +205,9 @@ export function buildBuildingOutline(
   const ms = markers ?? [];
   const isHorizontal = face === 'north' || face === 'south';
 
+  // 建物マーカー 2 個以上のときのみ辺内部で分割（1 個＝全周一定、0 個＝既定で従来どおり）。
+  const buildingMarkerCount = ms.filter(m => m.buildingId === building.id).length;
+
   for (let i = 0; i < n; i++) {
     if (outlineEdgeFace(outline, i, ws) !== face) continue;
     const p1 = outline[i];
@@ -211,22 +216,43 @@ export function buildBuildingOutline(
     const b = isHorizontal ? p2.x : p2.y;
     if (Math.abs(a - b) < 1e-6) continue; // 退化辺
 
-    // t=0/1 の高さを読み、変軸昇順（xStart 側）に合わせて割り当てる
-    let hAt0 = getHeightAtPosition(building, ms, i, 0);
-    let hAt1 = getHeightAtPosition(building, ms, i, 1);
-    if (hAt0 == null || hAt1 == null) {
-      const def = opts?.defaultHeightMm;
-      if (def == null) continue; // 高さ不明かつ既定無し → スキップ
-      hAt0 = hAt0 ?? def;
-      hAt1 = hAt1 ?? def;
+    // この辺の内部マーカー t（0<t<1）を分割点にする（妻＝辺中央の高マーカー対応）。
+    const innerTs = buildingMarkerCount >= 2
+      ? ms
+          .filter(m => m.buildingId === building.id && m.edgeIndex === i && m.t > 1e-6 && m.t < 1 - 1e-6)
+          .map(m => m.t)
+          .sort((x, y) => x - y)
+      : [];
+    const ts = [0, ...innerTs, 1];
+
+    // 各分割点の高さを t で読む。null（＝マーカー 0 個）は既定へ、無ければ辺スキップ。
+    const posAt = (t: number) => a + t * (b - a);
+    const heights: number[] = [];
+    let skip = false;
+    for (const t of ts) {
+      let h = getHeightAtPosition(building, ms, i, t);
+      if (h == null) {
+        const def = opts?.defaultHeightMm;
+        if (def == null) { skip = true; break; }
+        h = def;
+      }
+      heights.push(h);
     }
-    const startIs0 = a <= b;
-    result.segments.push({
-      xStart: Math.min(a, b),
-      xEnd: Math.max(a, b),
-      heightStartMm: startIs0 ? hAt0 : hAt1,
-      heightEndMm: startIs0 ? hAt1 : hAt0,
-    });
+    if (skip) continue;
+
+    // 連続する分割点ごとにサブセグメント（変軸昇順で xStart/xEnd と高さを対応付け）。
+    for (let k = 0; k < ts.length - 1; k++) {
+      const c0 = posAt(ts[k]);
+      const c1 = posAt(ts[k + 1]);
+      if (Math.abs(c0 - c1) < 1e-6) continue;
+      const startIs0 = c0 <= c1;
+      result.segments.push({
+        xStart: Math.min(c0, c1),
+        xEnd: Math.max(c0, c1),
+        heightStartMm: startIs0 ? heights[k] : heights[k + 1],
+        heightEndMm: startIs0 ? heights[k + 1] : heights[k],
+      });
+    }
   }
   result.segments.sort((s1, s2) => s1.xStart - s2.xStart);
   return result;

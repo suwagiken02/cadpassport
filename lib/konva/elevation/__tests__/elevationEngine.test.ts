@@ -125,6 +125,32 @@ describe('buildBuildingOutline: 高さマーカーあり/なしフォールバ�
   });
 });
 
+describe('buildBuildingOutline: 辺内部マーカーで妻(折れ線)化', () => {
+  const building = bld('G1', RECT, 1); // 北辺=edge0, x[0,360]
+
+  it('中央 t=0.5 高マーカー＋両端低 → サブセグメント2本(三角の妻)', () => {
+    const markers: HeightMarker[] = [
+      { id: 'g0', buildingId: 'G1', edgeIndex: 0, t: 0, heightMm: 3000 },
+      { id: 'gm', buildingId: 'G1', edgeIndex: 0, t: 0.5, heightMm: 5000 },
+      { id: 'g1', buildingId: 'G1', edgeIndex: 0, t: 1, heightMm: 3000 },
+    ];
+    const o = buildBuildingOutline(building, 'north', markers);
+    expect(o.segments.length).toBe(2);
+    // 左: x[0,180] 3000→5000、右: x[180,360] 5000→3000（頂点は中央 x=180・5000）
+    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 180, heightStartMm: 3000, heightEndMm: 5000 });
+    expect(o.segments[1]).toEqual({ xStart: 180, xEnd: 360, heightStartMm: 5000, heightEndMm: 3000 });
+  });
+
+  it('マーカー1個(全周一定) → 従来どおり1辺1セグメント不変', () => {
+    const markers: HeightMarker[] = [
+      { id: 'm1', buildingId: 'G1', edgeIndex: 0, t: 0.5, heightMm: 4000 },
+    ];
+    const o = buildBuildingOutline(building, 'north', markers);
+    expect(o.segments.length).toBe(1);
+    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 360, heightStartMm: 4000, heightEndMm: 4000 });
+  });
+});
+
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {
   const building = bld('B1', RECT, 1);
   const northCol = scol({}); // 北面 floor1, rails[1800×3], x[-90,450]
