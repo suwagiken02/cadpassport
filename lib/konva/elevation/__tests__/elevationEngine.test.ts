@@ -376,6 +376,28 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
     expect(fe.roofBands[0].xStart).toBe(-60);
     expect(fe.roofBands[0].xEnd).toBe(420);
   });
+
+  // 実機不具合: 棟マーカー無し(建物高さ1点)＋出幅ありで軒バンドが出ず張り出さなかった問題の回帰固定。
+  it('棟マーカー無し(建物高さ1点)でも軒の出は壁より張り出す(フラット軒バンド)', () => {
+    const roofBuilding: BuildingShape = {
+      ...bld('SF1', RECT, 1),
+      roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null },
+    };
+    const markers: HeightMarker[] = [
+      { id: 'h1', buildingId: 'SF1', edgeIndex: 0, t: 0.5, heightMm: 6000 }, // 単一=建物高さ(軒)のみ
+    ];
+    const fe = buildFaceElevation([], [roofBuilding], { markers, face: 'north' });
+    expect(fe.roofBands.length).toBe(1);
+    expect(fe.roofBands[0].xStart).toBe(-60);      // 壁[0,360] より左右へ張り出す
+    expect(fe.roofBands[0].xEnd).toBe(420);
+    expect(fe.roofBands[0].ridgeMm).toBe(6000);    // 軒高でフラット
+    expect(fe.buildingOutlines[0].segments[0].xStart).toBe(0); // 壁シルエットは壁位置
+  });
+
+  it('出幅なし・棟マーカー無しなら軒バンドは出ない', () => {
+    const fe = buildFaceElevation([], [bld('NF1', RECT, 1)], { defaultHeightMm: 5000, face: 'north' });
+    expect(fe.roofBands).toEqual([]);
+  });
 });
 
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {

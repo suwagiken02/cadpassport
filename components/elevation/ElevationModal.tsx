@@ -260,12 +260,20 @@ function ElevationSVG({
           `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
           `${sxg(band.xStart).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
         ].join(' ');
+        // 棟マーカーが無い(軒の出のみ)のフラットバンドは ridge≈軒。この場合「棟」ラベルは出さず、
+        // 軒線が壁より張り出すのみ（勾配は棟マーカー設定時に表示）。
+        const eaveTop = Math.max(...o.segments.map((s) => Math.max(s.heightStartMm, s.heightEndMm)));
+        const isFlatEave = band.ridgeMm <= eaveTop + 1;
         return (
           <g key={`rb-${band.buildingId}`}>
             <polygon points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
-            {/* 棟（水平実線） */}
-            <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
-            <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
+            {/* 棟（水平実線）＋ラベル: 棟マーカーがある時のみ */}
+            {!isFlatEave && (
+              <>
+                <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
+                <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
+              </>
+            )}
           </g>
         );
       })}

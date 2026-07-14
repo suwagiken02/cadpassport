@@ -503,25 +503,37 @@ export function buildFaceElevation(
   for (const o of buildingOutlines) {
     let markerMax = -Infinity;
     for (const m of ms) if (m.buildingId === o.buildingId) markerMax = Math.max(markerMax, m.heightMm);
-    if (!Number.isFinite(markerMax)) continue;
-    let outlineMax = -Infinity, xMin = Infinity, xMax = -Infinity;
+    let outlineMax = -Infinity, outlineMin = Infinity, xMin = Infinity, xMax = -Infinity;
     for (const s of o.segments) {
       outlineMax = Math.max(outlineMax, s.heightStartMm, s.heightEndMm);
+      outlineMin = Math.min(outlineMin, s.heightStartMm, s.heightEndMm);
       xMin = Math.min(xMin, s.xStart);
       xMax = Math.max(xMax, s.xEnd);
     }
-    if (markerMax > outlineMax + 1e-6) {
-      // 軒の出: 出幅ぶん左右へ拡張した屋根 x 範囲（出幅なしなら壁範囲と一致）。
-      let xStart = xMin, xEnd = xMax;
-      const b = buildings.find(bb => bb.id === o.buildingId);
-      if (b) {
-        const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? []);
-        if (ohs.some(v => v > 0)) {
-          const range = faceXRange(computeOffsetPolygon(b.points, ohs), o.face);
-          if (range) { xStart = range.xStart; xEnd = range.xEnd; }
-        }
+    if (!Number.isFinite(outlineMax)) continue;
+
+    // 軒の出: 出幅ぶん左右へ拡張した屋根 x 範囲（出幅なしなら壁範囲と一致）。
+    let xStart = xMin, xEnd = xMax;
+    const b = buildings.find(bb => bb.id === o.buildingId);
+    if (b) {
+      const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? []);
+      if (ohs.some(v => v > 0)) {
+        const range = faceXRange(computeOffsetPolygon(b.points, ohs), o.face);
+        if (range) { xStart = range.xStart; xEnd = range.xEnd; }
       }
+    }
+    const hasOverhang = xStart < xMin - 1e-6 || xEnd > xMax + 1e-6;
+    const outlineFlat = outlineMax - outlineMin < 1e-6;
+    const hasRidge = Number.isFinite(markerMax) && markerMax > outlineMax + 1e-6;
+
+    // バンドを出す条件:
+    //  (1) 棟マーカーが軒より高い → 棟まで塗る（樋面の妻あり形）。
+    //  (2) 棟マーカーが無くても、軒の出があり外形がフラット(樋面)なら軒の出を軒線として
+    //      壁より張り出して表示（建物高さを1点しか入れない一般ケースでも軒の出が見える）。
+    if (hasRidge) {
       roofBands.push({ buildingId: o.buildingId, xStart, xEnd, ridgeMm: Math.round(markerMax) });
+    } else if (hasOverhang && outlineFlat) {
+      roofBands.push({ buildingId: o.buildingId, xStart, xEnd, ridgeMm: Math.round(outlineMax) });
     }
   }
   const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;
