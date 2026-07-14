@@ -12,6 +12,8 @@ export default function ModeToolbar() {
   const [dismissedStage, setDismissedStage] = useState<string | null>(null);
   // 平米計算: 足場 0 個時の確認 dialog (= 平米計算 Phase D-1、 局所性高いため store 経由でなく useState)
   const [showNoScaffoldConfirm, setShowNoScaffoldConfirm] = useState(false);
+  // 足場一括削除の確認 dialog
+  const [showClearScaffoldConfirm, setShowClearScaffoldConfirm] = useState(false);
 
   // 躯体グループ（建物・障害物・高さマーカー）
   const isKutaiMode = mode === 'building' || mode === 'obstacle' || mode === 'roof' || isHeightMarkerMode;
@@ -314,6 +316,22 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">🏢</span>
               <span className="text-xs font-bold">立面図</span>
             </button>
+            {/* 足場を一括削除（手摺・支柱・アンチを全削除・建物等は残す・undo可） */}
+            <button
+              onClick={() => {
+                setShowAshibaMenu(false);
+                const s = useCanvasStore.getState();
+                if (s.canvasData.handrails.length === 0 && s.canvasData.posts.length === 0 && s.canvasData.antis.length === 0) {
+                  s.setAlertMessage('削除する足場がありません');
+                  return;
+                }
+                setShowClearScaffoldConfirm(true);
+              }}
+              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-red-500/10 border-2 border-red-500 text-red-400 hover:bg-red-500/20 transition-colors"
+            >
+              <span className="text-3xl mb-1">🗑</span>
+              <span className="text-xs font-bold">足場を一括削除</span>
+            </button>
           </div>
         </>
       )}
@@ -330,6 +348,21 @@ export default function ModeToolbar() {
             useCanvasStore.getState().setShowAreaCalcModal(true);
           }}
           onSecondary={() => setShowNoScaffoldConfirm(false)}
+        />
+      )}
+
+      {/* 足場一括削除の確認 dialog */}
+      {showClearScaffoldConfirm && (
+        <ConfirmDialog
+          title="足場を一括削除"
+          message="配置済みの足場（手摺・支柱・アンチ）をすべて削除しますか？建物・障害物・メモ・高さは残ります。"
+          primaryLabel="削除する"
+          secondaryLabel="キャンセル"
+          onPrimary={() => {
+            setShowClearScaffoldConfirm(false);
+            useCanvasStore.getState().clearScaffold();
+          }}
+          onSecondary={() => setShowClearScaffoldConfirm(false)}
         />
       )}
 

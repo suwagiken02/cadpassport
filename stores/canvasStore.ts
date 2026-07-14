@@ -344,6 +344,8 @@ type CanvasStore = {
   addHandrails: (hs: Handrail[]) => void;
   addPost: (p: Post) => void;
   addAnti: (a: Anti) => void;
+  /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
+  clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
   addMemo: (m: Memo) => void;
   addMagnetPin: (pin: MagnetPin) => void;
@@ -1032,6 +1034,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({
       canvasData: { ...canvasData, antis: [...canvasData.antis, a] },
       isDirty: true,
+    });
+  },
+  clearScaffold: () => {
+    const { canvasData, pushHistory } = get();
+    if (canvasData.handrails.length === 0 && canvasData.posts.length === 0 && canvasData.antis.length === 0) return;
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, handrails: [], posts: [], antis: [] },
+      isDirty: true,
+      selectedIds: [],
     });
   },
   addObstacle: (o) => {
