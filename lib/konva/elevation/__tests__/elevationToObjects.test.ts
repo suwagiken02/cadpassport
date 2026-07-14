@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { BuildingShape, Point } from '@/types';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
-import { faceElevationToPrimitives } from '../elevationToObjects';
+import { faceElevationToPrimitives, initialPlacementOrigin } from '../elevationToObjects';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 const bld = (id: string): BuildingShape => ({ id, type: 'polygon', points: RECT, fill: '#3d3d3a', floor: 1 });
@@ -43,5 +43,15 @@ describe('faceElevationToPrimitives: FaceElevation → プリミティブ(E-4a)'
   it('高さ情報が無ければ空配列', () => {
     const empty = buildFaceElevation([], [bld('B')], { face: 'north' }); // マーカー無し・既定無し
     expect(faceElevationToPrimitives(empty)).toEqual([]);
+  });
+});
+
+describe('initialPlacementOrigin: 立面の初期配置位置(E-4b)', () => {
+  it('建物 bbox の右側 +30、GL を下端 y に', () => {
+    // RECT max x=360, max y=540 → { x: 390, y: 540 }
+    expect(initialPlacementOrigin([bld('B')])).toEqual({ x: 390, y: 540 });
+  });
+  it('建物なしは既定', () => {
+    expect(initialPlacementOrigin([])).toEqual({ x: 100, y: 200 });
   });
 });

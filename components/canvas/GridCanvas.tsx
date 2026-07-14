@@ -24,6 +24,7 @@ import PinDirectionPad from './PinDirectionPad';
 import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
+import ElevationViewLayer from './ElevationViewLayer';
 import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
 import CompassWidget from './CompassWidget';
@@ -592,6 +593,9 @@ export default function GridCanvas({ width, height }: Props) {
 
       {/* 寸法線レイヤー（方位別スパン寸法） */}
       <DimensionLineLayer visible={showDimensionLines} />
+
+      {/* 立面ビューレイヤー (= E-4b、 キャンバスに配置した立面。ドラッグ移動・選択・消去) */}
+      <ElevationViewLayer />
 
       {/* メモレイヤー */}
       <MemoLayer />

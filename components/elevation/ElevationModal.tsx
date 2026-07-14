@@ -12,9 +12,11 @@
 //   viewBox にフィットさせる（GL を下端に、y 反転）。
 // ============================================================
 import React, { useMemo, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstruction';
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
+import { faceElevationToPrimitives, initialPlacementOrigin } from '@/lib/konva/elevation/elevationToObjects';
 import type { PillarType } from '@/lib/konva/calculator';
 import { useAuthStore } from '@/stores/authStore';
 import { isElevationPreviewUser } from '@/lib/auth/elevationAccess';
@@ -35,7 +37,7 @@ const VBH = 440;
 const PAD = 48;
 
 export default function ElevationModal() {
-  const { showElevation, setShowElevation, canvasData } = useCanvasStore();
+  const { showElevation, setShowElevation, canvasData, addElevationView } = useCanvasStore();
   const canElevation = isElevationPreviewUser(useAuthStore((s) => s.user)); // 管理者限定(E-3.15)
   const [face, setFace] = useState<Face>('north');
   const [pillarType, setPillarType] = useState<PillarType>('normal');
@@ -67,6 +69,16 @@ export default function ElevationModal() {
   if (!showElevation || !canElevation) return null;
 
   const fillOf = (id: string) => canvasData.buildings.find((b) => b.id === id)?.fill ?? '#3d3d3a';
+
+  // 📍 キャンバスに配置: 立面をプリミティブ化して面グループ単位で配置（E-4b）。
+  // 初期位置は平面建物 bbox の右側に固定オフセット（GL を建物下端 y に合わせる）。同一面は置換。
+  const handlePlaceOnCanvas = () => {
+    const primitives = faceElevationToPrimitives(faceElevation, fillOf);
+    if (primitives.length === 0) return;
+    const originGrid = initialPlacementOrigin(canvasData.buildings);
+    addElevationView({ id: uuidv4(), face, originGrid, scale: 1, primitives });
+    setShowElevation(false);
+  };
 
   return (
     <div className="fixed inset-0 modal-overlay z-50 flex items-center justify-center">
@@ -142,9 +154,18 @@ export default function ElevationModal() {
           </p>
         )}
 
+        {hasContent && (
+          <button
+            onClick={handlePlaceOnCanvas}
+            className="mt-4 w-full py-2 bg-accent/20 border-2 border-accent text-accent rounded-xl text-sm font-bold hover:bg-accent/30 transition-colors"
+          >
+            📍 キャンバスに配置
+          </button>
+        )}
+
         <button
           onClick={() => setShowElevation(false)}
-          className="mt-4 w-full py-2 bg-dark-bg border border-dark-border text-dimension rounded-xl text-sm font-bold hover:text-canvas transition-colors"
+          className="mt-2 w-full py-2 bg-dark-bg border border-dark-border text-dimension rounded-xl text-sm font-bold hover:text-canvas transition-colors"
         >
           閉じる
         </button>

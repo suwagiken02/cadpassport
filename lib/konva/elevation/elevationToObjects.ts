@@ -7,8 +7,16 @@
 //   ・線幅/文字サイズは px（縮尺に依らず一定）。
 // ※ ElevationModal(プレビュー) とは二重実装だが許容（将来統合は E-8）。
 // ============================================================
-import type { ElevationPrimitive } from '@/types';
+import type { BuildingShape, ElevationPrimitive, Point } from '@/types';
 import type { FaceElevation } from './elevationEngine';
+
+/** 立面ビューの初期配置位置（グループローカル原点 = 左下=GL・左端）。
+ *  平面建物 bbox の右側に固定オフセット、GL(ローカル0)を建物下端 y に合わせる。建物無しは既定。 */
+export function initialPlacementOrigin(buildings: BuildingShape[]): Point {
+  const pts = buildings.flatMap((b) => b.points);
+  if (pts.length === 0) return { x: 100, y: 200 };
+  return { x: Math.max(...pts.map((p) => p.x)) + 30, y: Math.max(...pts.map((p) => p.y)) };
+}
 
 const C_OUTLINE = '#8a8a86';
 const C_RIDGE = '#6b6b67';
