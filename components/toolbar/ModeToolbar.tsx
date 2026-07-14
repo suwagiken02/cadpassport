@@ -1,12 +1,15 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useAuthStore } from '@/stores/authStore';
 import { ModeType, getScaffoldStartByFloor } from '@/types';
 import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
+import { isElevationPreviewUser } from '@/lib/auth/elevationAccess';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function ModeToolbar() {
   const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode, isRidgeLineMode, setRidgeLineMode, selectActive, setSelectActive, selectLock, setSelectLock } = useCanvasStore();
+  const canElevation = isElevationPreviewUser(useAuthStore((s) => s.user)); // 立面プレビューは管理者限定(E-3.15)
   const [showKutaiMenu, setShowKutaiMenu] = useState(false);
   const [showAshibaMenu, setShowAshibaMenu] = useState(false);
   const [dismissedStage, setDismissedStage] = useState<string | null>(null);
@@ -320,17 +323,19 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">㎡</span>
               <span className="text-xs font-bold">平米計算</span>
             </button>
-            {/* 立面図（E-3: 面ごとの立面プレビュー） */}
-            <button
-              onClick={() => {
-                useCanvasStore.getState().setShowElevation(true);
-                setShowAshibaMenu(false);
-              }}
-              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
-            >
-              <span className="text-3xl mb-1">🏢</span>
-              <span className="text-xs font-bold">立面図</span>
-            </button>
+            {/* 立面図（E-3: 面ごとの立面プレビュー・管理者限定 E-3.15） */}
+            {canElevation && (
+              <button
+                onClick={() => {
+                  useCanvasStore.getState().setShowElevation(true);
+                  setShowAshibaMenu(false);
+                }}
+                className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
+              >
+                <span className="text-3xl mb-1">🏢</span>
+                <span className="text-xs font-bold">立面図</span>
+              </button>
+            )}
           </div>
         </>
       )}

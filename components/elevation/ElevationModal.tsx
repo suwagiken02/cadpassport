@@ -16,6 +16,8 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstruction';
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import type { PillarType } from '@/lib/konva/calculator';
+import { useAuthStore } from '@/stores/authStore';
+import { isElevationPreviewUser } from '@/lib/auth/elevationAccess';
 
 const FACES: { id: Face; label: string }[] = [
   { id: 'north', label: '北面' },
@@ -34,6 +36,7 @@ const PAD = 48;
 
 export default function ElevationModal() {
   const { showElevation, setShowElevation, canvasData } = useCanvasStore();
+  const canElevation = isElevationPreviewUser(useAuthStore((s) => s.user)); // 管理者限定(E-3.15)
   const [face, setFace] = useState<Face>('north');
   const [pillarType, setPillarType] = useState<PillarType>('normal');
 
@@ -60,7 +63,8 @@ export default function ElevationModal() {
   const noStage = faceElevation.scaffolds.length > 0
     && faceElevation.scaffolds.every((s) => s.levels.floors === 0);
 
-  if (!showElevation) return null;
+  // 直接 state 操作対策: 管理者以外は開かない（ボタン非表示に加えた二重ガード）。
+  if (!showElevation || !canElevation) return null;
 
   const fillOf = (id: string) => canvasData.buildings.find((b) => b.id === id)?.fill ?? '#3d3d3a';
 
