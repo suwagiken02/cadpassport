@@ -13,8 +13,9 @@
 //   floors = 段数 = floor((H-1)/1800)、startMm = H − 1800×floors（スタート端数）。
 //   整合をテストで固定（5000 → スタート1400・2段・1800下がり）。
 // ============================================================
-import type { BuildingShape, HeightMarker, Point, RoofOverhang } from '@/types';
+import type { BuildingShape, HeightMarker, Point, RoofOverhang, RidgeLine } from '@/types';
 import { getFloor } from '@/types';
+import { projectRidgeLinesToFace, type ProjectedRidge } from './ridgeProjection';
 import { heightToFloors, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM, type PillarType } from '../calculator';
 import { mmToGrid } from '../gridUtils';
 import { getEdgeOverhangs, computeOffsetPolygon } from '../roofUtils';
@@ -324,10 +325,12 @@ export type RoofBand = {
   xEnd: number;
   /** 台形上端の棟高(mm)。filledToRidge=false のときは軒高(プロファイル最高)＝ラベル/viewBox 用。 */
   ridgeMm: number;
-  /** 延長込みの上辺(軒/けらば)プロファイル点列（grid x, mm h・GL 下限）。左端延長→壁→右端延長。 */
+  /** 上辺プロファイル点列（grid x, mm h・GL 下限）。マーカー方式=延長軒、棟ライン方式=上側包絡線。 */
   profile: { x: number; mm: number }[];
-  /** 棟まで塗る台形か（樋面切妻投影）。false は延長プロファイルの線のみ。 */
+  /** 塗るか。true: マーカー方式は軒→棟の台形、棟ライン方式(baseMm あり)は包絡線→軒。false: 線のみ。 */
   filledToRidge: boolean;
+  /** 棟ライン方式のとき、包絡線(profile=上端)を塗り下げる軒基準高(mm)。マーカー方式は undefined。 */
+  baseMm?: number;
 };
 
 export type FaceElevation = {
@@ -355,6 +358,8 @@ export type FaceElevationOpts = ElevationLevelsOpts & {
   floor?: number;
   /** 旧式 roofOverhangs[]（軒の出）。RoofConfig(building.roof) 優先で補完的に読む。 */
   roofOverhangs?: RoofOverhang[];
+  /** 棟ライン（E-3.8）。ある建物は屋根バンド上端を上側包絡線で生成。既定 undefined=従来挙動。 */
+  ridgeLines?: RidgeLine[];
 };
 
 /** 建物の辺ごと出幅(グリッド)を、RoofConfig(building.roof・優先)＋旧式 roofOverhangs[] から統合。 */
@@ -418,6 +423,64 @@ function extendedTopProfile(
     out.push({ x: extXEnd, mm: Math.max(0, Math.round(last.mm + slope * (extXEnd - last.x))) });
   }
   return out;
+}
+
+/** 延長軒プロファイルと棟ライン投影（棟＋隅棟）の上側包絡線を、全ブレークポイントで標本化した
+ *  折れ線で返す（pure）。各棟 {a,b,h}: 隅棟=軒端(extX,軒高)→棟端(a/b,h)、棟=水平(a→b)。
+ *  寄棟(a≠b)→台形、妻側(a==b)→三角。複数棟は max 合成。座標は grid x / mm。 */
+function composeUpperEnvelope(
+  eaveProfile: { x: number; mm: number }[],
+  ridges: ProjectedRidge[],
+  extXStart: number,
+  extXEnd: number,
+): { x: number; mm: number }[] {
+  if (ridges.length === 0 || eaveProfile.length < 2) return eaveProfile;
+  const eaveLeft = eaveProfile[0];
+  const eaveRight = eaveProfile[eaveProfile.length - 1];
+
+  type Seg = { x0: number; h0: number; x1: number; h1: number };
+  const segs: Seg[] = [];
+  for (let i = 0; i < eaveProfile.length - 1; i++) {
+    segs.push({ x0: eaveProfile[i].x, h0: eaveProfile[i].mm, x1: eaveProfile[i + 1].x, h1: eaveProfile[i + 1].mm });
+  }
+  const bps = new Set<number>([extXStart, extXEnd]);
+  for (const p of eaveProfile) bps.add(p.x);
+  for (const r of ridges) {
+    segs.push({ x0: eaveLeft.x, h0: eaveLeft.mm, x1: r.a, h1: r.heightMm }); // 隅棟(左)
+    if (r.b > r.a + 1e-6) segs.push({ x0: r.a, h0: r.heightMm, x1: r.b, h1: r.heightMm }); // 水平棟
+    segs.push({ x0: r.b, h0: r.heightMm, x1: eaveRight.x, h1: eaveRight.mm }); // 隅棟(右)
+    bps.add(r.a); bps.add(r.b);
+  }
+
+  // 谷/山: 2 セグメントの交点 x もブレークポイントに加える（複数棟の谷が線で潰れないように）。
+  const crossX = (s1: Seg, s2: Seg): number | null => {
+    const m1 = (s1.h1 - s1.h0) / ((s1.x1 - s1.x0) || 1e-9);
+    const m2 = (s2.h1 - s2.h0) / ((s2.x1 - s2.x0) || 1e-9);
+    if (Math.abs(m1 - m2) < 1e-9) return null;
+    const x = (s2.h0 - m2 * s2.x0 - s1.h0 + m1 * s1.x0) / (m1 - m2);
+    const inRange = (s: Seg) => x >= Math.min(s.x0, s.x1) - 1e-6 && x <= Math.max(s.x0, s.x1) + 1e-6;
+    return inRange(s1) && inRange(s2) ? x : null;
+  };
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      const x = crossX(segs[i], segs[j]);
+      if (x != null && x > extXStart + 1e-6 && x < extXEnd - 1e-6) bps.add(Math.round(x));
+    }
+  }
+
+  const heightAt = (s: Seg, x: number): number | null => {
+    const lo = Math.min(s.x0, s.x1), hi = Math.max(s.x0, s.x1);
+    if (x < lo - 1e-6 || x > hi + 1e-6) return null;
+    if (Math.abs(s.x1 - s.x0) < 1e-9) return Math.max(s.h0, s.h1);
+    return s.h0 + ((x - s.x0) / (s.x1 - s.x0)) * (s.h1 - s.h0);
+  };
+
+  const xs = Array.from(bps).filter(x => x >= extXStart - 1e-6 && x <= extXEnd + 1e-6).sort((p, q) => p - q);
+  return xs.map(x => {
+    let mx = -Infinity;
+    for (const s of segs) { const h = heightAt(s, x); if (h != null) mx = Math.max(mx, h); }
+    return { x, mm: Math.round(mx) };
+  });
 }
 
 /** 列の基準建物高さ(mm)＝水下(樋面)。現場ルール(鮎澤氏確認): 段数・天端(建物高さ−1800)は
@@ -558,21 +621,33 @@ export function buildFaceElevation(
     }
     const hasOverhang = extXStart < xMin - 1e-6 || extXEnd > xMax + 1e-6;
     const hasRidge = Number.isFinite(markerMax) && markerMax > outlineMax + 1e-6;
+    const eaveProfile = extendedTopProfile(o.segments, extXStart, extXEnd);
+    const ridges = (b && opts?.ridgeLines) ? projectRidgeLinesToFace(opts.ridgeLines, b, o.face) : [];
 
-    // バンドを出す条件:
+    // バンドを出す条件（優先度順）:
+    //  ・棟ラインがある → 上端を上側包絡線（軒＋棟/隅棟の max）で生成し、軒まで塗る。
     //  ・棟マーカーが軒より高い（樋面の切妻投影）→ 軒→棟の台形を塗る。
-    //  ・軒の出がある → 外形上辺を傾き保存で延長（樋面=水平／妻面=けらば斜辺）。
-    // どちらも無ければバンドなし。
-    if (!hasRidge && !hasOverhang) continue;
-
-    roofBands.push({
-      buildingId: o.buildingId,
-      xStart: extXStart,
-      xEnd: extXEnd,
-      ridgeMm: hasRidge ? Math.round(markerMax) : Math.round(outlineMax),
-      profile: extendedTopProfile(o.segments, extXStart, extXEnd),
-      filledToRidge: hasRidge,
-    });
+    //  ・軒の出がある → 外形上辺を傾き保存で延長（樋面=水平／妻面=けらば斜辺）の線。
+    // いずれも無ければバンドなし。
+    if (ridges.length > 0) {
+      const profile = composeUpperEnvelope(eaveProfile, ridges, extXStart, extXEnd);
+      const envMax = profile.reduce((m, p) => Math.max(m, p.mm), -Infinity);
+      const baseMm = Math.min(profile[0].mm, profile[profile.length - 1].mm);
+      roofBands.push({
+        buildingId: o.buildingId, xStart: extXStart, xEnd: extXEnd,
+        ridgeMm: Math.round(envMax), profile, filledToRidge: true, baseMm,
+      });
+    } else if (hasRidge) {
+      roofBands.push({
+        buildingId: o.buildingId, xStart: extXStart, xEnd: extXEnd,
+        ridgeMm: Math.round(markerMax), profile: eaveProfile, filledToRidge: true,
+      });
+    } else if (hasOverhang) {
+      roofBands.push({
+        buildingId: o.buildingId, xStart: extXStart, xEnd: extXEnd,
+        ridgeMm: Math.round(outlineMax), profile: eaveProfile, filledToRidge: false,
+      });
+    }
   }
   const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;
 

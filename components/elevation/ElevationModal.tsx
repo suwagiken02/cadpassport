@@ -244,7 +244,18 @@ function ElevationSVG({
       {roofBands.map((band) => {
         const profPts = band.profile.map((p) => `${sxg(p.x).toFixed(1)},${sy(p.mm).toFixed(1)}`);
         if (band.filledToRidge) {
-          // 樋面の切妻投影: 延長込み軒プロファイル(下端) + 棟の水平線(上端) の台形を塗る。
+          if (band.baseMm != null) {
+            // 棟ライン方式: 上側包絡線(上端) を軒基準(baseMm)まで塗る。棟の水平線は出さない(包絡線が棟を示す)。
+            const pts = [
+              ...profPts,
+              `${sxg(band.xEnd).toFixed(1)},${sy(band.baseMm).toFixed(1)}`,
+              `${sxg(band.xStart).toFixed(1)},${sy(band.baseMm).toFixed(1)}`,
+            ].join(' ');
+            return (
+              <polygon key={`rb-${band.buildingId}`} points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
+            );
+          }
+          // マーカー方式(樋面切妻投影): 延長込み軒プロファイル(下端) + 棟の水平線(上端) の台形を塗る。
           const pts = [
             ...profPts,
             `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,

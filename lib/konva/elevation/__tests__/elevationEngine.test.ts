@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { BuildingShape, HeightMarker, Point, RoofOverhang } from '@/types';
+import type { BuildingShape, HeightMarker, Point, RoofOverhang, RidgeLine } from '@/types';
 import { heightToFloors } from '../../calculator';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import {
@@ -497,5 +497,80 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
     expect(fe.roofBands[0].xStart).toBe(-60);
     expect(fe.roofBands[0].xEnd).toBe(420);
+    expect(fe.roofBands[0].baseMm).toBeUndefined(); // マーカー方式
+  });
+});
+
+describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線に一般化', () => {
+  const roofBld = (id: string): BuildingShape => ({
+    ...bld(id, RECT, 1),
+    roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null },
+  });
+  // 単一の軒マーカー(建物高さ=軒5000・外形フラット)。棟は棟ラインで与える。
+  const eaveMarker = (bid: string): HeightMarker[] => [{ id: 'e', buildingId: bid, edgeIndex: 0, t: 0.5, heightMm: 5000 }];
+  const rline = (id: string, bid: string, p1: Point, p2: Point, h: number): RidgeLine =>
+    ({ id, buildingId: bid, p1, p2, heightMm: h });
+
+  it('寄棟(面平行の棟ライン・出幅600): 台形の上側包絡線', () => {
+    const ridge = rline('r', 'W', { x: 90, y: 270 }, { x: 270, y: 270 }, 7000); // 北面(x軸)に平行
+    const fe = buildFaceElevation([], [roofBld('W')], { markers: eaveMarker('W'), face: 'north', ridgeLines: [ridge] });
+    expect(fe.roofBands.length).toBe(1);
+    const band = fe.roofBands[0];
+    expect(band.filledToRidge).toBe(true);
+    expect(band.baseMm).toBe(5000);
+    expect(band.ridgeMm).toBe(7000);
+    expect(band.xStart).toBe(-60);
+    expect(band.xEnd).toBe(420);
+    expect(band.profile).toEqual([
+      { x: -60, mm: 5000 }, { x: 0, mm: 5800 }, { x: 90, mm: 7000 },
+      { x: 270, mm: 7000 }, { x: 360, mm: 5800 }, { x: 420, mm: 5000 },
+    ]);
+  });
+
+  it('妻側(面直交の棟ライン): 三角の包絡線(棟が1点に潰れる)', () => {
+    const ridge = rline('r', 'G', { x: 180, y: 90 }, { x: 180, y: 450 }, 7000); // 北面(x軸)に直交
+    const fe = buildFaceElevation([], [roofBld('G')], { markers: eaveMarker('G'), face: 'north', ridgeLines: [ridge] });
+    const band = fe.roofBands[0];
+    expect(band.filledToRidge).toBe(true);
+    expect(band.profile).toEqual([
+      { x: -60, mm: 5000 }, { x: 0, mm: 5500 }, { x: 180, mm: 7000 },
+      { x: 360, mm: 5500 }, { x: 420, mm: 5000 },
+    ]);
+  });
+
+  it('出幅なし+棟ライン: 拡張なしで包絡線(x=壁範囲)', () => {
+    const ridge = rline('r', 'N', { x: 90, y: 270 }, { x: 270, y: 270 }, 7000);
+    const fe = buildFaceElevation([], [bld('N', RECT, 1)], { markers: eaveMarker('N'), face: 'north', ridgeLines: [ridge] });
+    const band = fe.roofBands[0];
+    expect(band.xStart).toBe(0);
+    expect(band.xEnd).toBe(360);
+    expect(band.profile).toEqual([
+      { x: 0, mm: 5000 }, { x: 90, mm: 7000 }, { x: 270, mm: 7000 }, { x: 360, mm: 5000 },
+    ]);
+  });
+
+  it('複数棟ライン: 全ラインの max で合成(間の谷も交点で標本化)', () => {
+    const r1 = rline('r1', 'M', { x: 60, y: 270 }, { x: 120, y: 270 }, 7000);
+    const r2 = rline('r2', 'M', { x: 240, y: 270 }, { x: 300, y: 270 }, 7000);
+    const fe = buildFaceElevation([], [bld('M', RECT, 1)], { markers: eaveMarker('M'), face: 'north', ridgeLines: [r1, r2] });
+    const band = fe.roofBands[0];
+    expect(band.profile).toEqual([
+      { x: 0, mm: 5000 }, { x: 60, mm: 7000 }, { x: 120, mm: 7000 },
+      { x: 180, mm: 6500 }, // 2 棟の谷
+      { x: 240, mm: 7000 }, { x: 300, mm: 7000 }, { x: 360, mm: 5000 },
+    ]);
+  });
+
+  it('棟ラインなし建物は従来挙動(マーカー方式・baseMm undefined)', () => {
+    // 棟マーカー付き(南7000)＋棟ラインなし → 従来の台形。
+    const markers: HeightMarker[] = [
+      { id: 'n0', buildingId: 'K', edgeIndex: 0, t: 0, heightMm: 5000 },
+      { id: 'n1', buildingId: 'K', edgeIndex: 0, t: 1, heightMm: 5000 },
+      { id: 'sm', buildingId: 'K', edgeIndex: 2, t: 0.5, heightMm: 7000 },
+    ];
+    const fe = buildFaceElevation([], [bld('K', RECT, 1)], { markers, face: 'north' });
+    expect(fe.roofBands[0].filledToRidge).toBe(true);
+    expect(fe.roofBands[0].baseMm).toBeUndefined();
+    expect(fe.roofBands[0].ridgeMm).toBe(7000);
   });
 });
