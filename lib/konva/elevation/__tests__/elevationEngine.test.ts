@@ -573,4 +573,16 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     expect(fe.roofBands[0].baseMm).toBeUndefined();
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
   });
+
+  // E-3.8e 結線: CanvasData 相当(建物＋軒マーカー＋棟ライン)を渡すと包絡線バンドになる。
+  it('結線: CanvasData の ridgeLines を渡すと包絡線バンド(baseMm あり)になる', () => {
+    const buildings = [roofBld('X')];
+    const heightMarkers = eaveMarker('X');
+    const ridgeLines: RidgeLine[] = [{ id: 'r', buildingId: 'X', p1: { x: 90, y: 270 }, p2: { x: 270, y: 270 }, heightMm: 7000 }];
+    const fe = buildFaceElevation([], buildings, { markers: heightMarkers, face: 'north', ridgeLines });
+    expect(fe.roofBands.length).toBe(1);
+    expect(fe.roofBands[0].baseMm).toBe(5000);
+    expect(fe.roofBands[0].ridgeMm).toBe(7000);
+    expect(fe.roofBands[0].profile.some((p) => p.mm === 7000)).toBe(true);
+  });
 });

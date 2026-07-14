@@ -49,8 +49,9 @@ export default function ElevationModal() {
       pillarType,
       face,
       roofOverhangs: canvasData.roofOverhangs,
+      ridgeLines: canvasData.ridgeLines ?? [],
     });
-  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, canvasData.roofOverhangs, hasMarkers]);
+  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, canvasData.roofOverhangs, canvasData.ridgeLines, hasMarkers]);
 
   const noScaffold = faceElevation.scaffolds.length === 0;
   const hasContent = faceElevation.buildingOutlines.length > 0 || faceElevation.scaffolds.length > 0;
