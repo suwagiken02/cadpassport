@@ -287,6 +287,8 @@ export type CanvasData = {
   magnetPins?: MagnetPin[];
   /** 高さマーカー (= undefined は既存プロジェクト互換、 normalize で [] に正規化) */
   heightMarkers?: HeightMarker[];
+  /** 棟ライン (= E-3.8、 undefined は既存プロジェクト互換、 normalize で [] に正規化) */
+  ridgeLines?: RidgeLine[];
   /** 寸法線オフセット mm (= 既存 hardcoded からの delta、 ドラッグで更新、 normalize で default 補完) */
   dimensionOffsetsMm?: DimensionOffsetsMm;
 };

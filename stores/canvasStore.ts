@@ -19,6 +19,7 @@ import {
   MemoShape,
   MagnetPin,
   HeightMarker,
+  RidgeLine,
   DimensionLineKey,
   DEFAULT_DIMENSION_OFFSETS_MM,
 } from '@/types';
@@ -38,6 +39,7 @@ const createEmptyCanvasData = (): CanvasData => ({
   compass: { angle: 0 },
   magnetPins: [],
   heightMarkers: [],
+  ridgeLines: [],
 });
 
 /** 互換: 旧プロジェクトで欠落しているフィールドを補完する */
@@ -46,6 +48,7 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
     ...data,
     magnetPins: data.magnetPins ?? [],
     heightMarkers: data.heightMarkers ?? [],
+    ridgeLines: data.ridgeLines ?? [],
     dimensionOffsetsMm: data.dimensionOffsetsMm ?? { ...DEFAULT_DIMENSION_OFFSETS_MM },
   };
   // 旧 scaffoldStart → scaffoldStart1F / scaffoldStart2F への移行。
@@ -371,6 +374,17 @@ type CanvasStore = {
   updateHeightMarker: (id: string, patch: Partial<HeightMarker>) => void;
   removeHeightMarker: (id: string) => void;
   moveHeightMarker: (id: string, edgeIndex: number, t: number) => void;
+  // 棟ライン (= E-3.8)
+  isRidgeLineMode: boolean;
+  setRidgeLineMode: (v: boolean) => void;
+  ridgeInputLineId: string | null;
+  setRidgeInputLineId: (id: string | null) => void;
+  /** 直前に入力した棟高 (mm) (= 次回棟ライン配置時の初期値、 セッション内のみ) */
+  lastRidgeInputMm: number;
+  addRidgeLine: (r: RidgeLine) => void;
+  updateRidgeLine: (id: string, patch: Partial<RidgeLine>) => void;
+  removeRidgeLine: (id: string) => void;
+  moveRidgeLine: (id: string, p1: import('@/types').Point, p2: import('@/types').Point) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
   setShowAreaCalcModal: (v: boolean) => void;
@@ -466,6 +480,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     floorDesignation: {},
     isHeightMarkerMode: false,
     heightInputMarkerId: null,
+    isRidgeLineMode: false,
+    ridgeInputLineId: null,
     pinAnchor: null,
     pinDraftOffset: null,
     pinDirectionInput: null,
@@ -1183,6 +1199,55 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
+  // === 棟ライン (= E-3.8) ===
+  isRidgeLineMode: false,
+  setRidgeLineMode: (v) => set({ isRidgeLineMode: v }),
+  ridgeInputLineId: null,
+  setRidgeInputLineId: (id) => set({ ridgeInputLineId: id }),
+  lastRidgeInputMm: 5000,
+  addRidgeLine: (r) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, ridgeLines: [...(canvasData.ridgeLines ?? []), r] },
+      isDirty: true,
+    });
+  },
+  updateRidgeLine: (id, patch) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    // patch に heightMm があれば lastRidgeInputMm を更新 (= 次回配置時の初期値)
+    const next: Partial<{ lastRidgeInputMm: number }> = {};
+    if (typeof patch.heightMm === 'number' && patch.heightMm > 0) next.lastRidgeInputMm = patch.heightMm;
+    set({
+      canvasData: {
+        ...canvasData,
+        ridgeLines: (canvasData.ridgeLines ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      },
+      isDirty: true,
+      ...next,
+    });
+  },
+  removeRidgeLine: (id) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id) },
+      isDirty: true,
+    });
+  },
+  moveRidgeLine: (id, p1, p2) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        ridgeLines: (canvasData.ridgeLines ?? []).map((r) => (r.id === id ? { ...r, p1, p2 } : r)),
+      },
+      isDirty: true,
+    });
+  },
+
   // === 平米計算 modal (= 平米計算 Phase C) ===
   showAreaCalcModal: false,
   setShowAreaCalcModal: (v) => set({ showAreaCalcModal: v }),
@@ -1229,6 +1294,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         obstacles: canvasData.obstacles.filter((o) => o.id !== id),
         memos: canvasData.memos.filter((m) => m.id !== id),
         magnetPins: (canvasData.magnetPins ?? []).filter((p) => p.id !== id),
+        ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id),
       },
       isDirty: true,
     });
@@ -1248,6 +1314,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         obstacles: canvasData.obstacles.filter((o) => !idSet.has(o.id)),
         memos: canvasData.memos.filter((m) => !idSet.has(m.id)),
         magnetPins: (canvasData.magnetPins ?? []).filter((p) => !idSet.has(p.id)),
+        ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => !idSet.has(r.id)),
       },
       selectedIds: [],
       isDirty: true,
