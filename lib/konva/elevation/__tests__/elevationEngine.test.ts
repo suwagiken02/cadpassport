@@ -307,6 +307,37 @@ describe('E-3.6-3: 棟(建物最高点)破線 ridgeMaxMm', () => {
   });
 });
 
+describe('E-3.7: 屋根投影バンド roofBands', () => {
+  const building = bld('R1', RECT, 1);
+  // 北辺=edge0(軒5000)、南辺=edge2 の中央に棟7000。
+  const markers: HeightMarker[] = [
+    { id: 'n0', buildingId: 'R1', edgeIndex: 0, t: 0, heightMm: 5000 },
+    { id: 'n1', buildingId: 'R1', edgeIndex: 0, t: 1, heightMm: 5000 },
+    { id: 'sm', buildingId: 'R1', edgeIndex: 2, t: 0.5, heightMm: 7000 },
+  ];
+
+  it('軒面(北): roofBands 1件・x は外形範囲[0,360]・ridge=7000', () => {
+    const fe = buildFaceElevation([], [building], { markers, face: 'north' });
+    expect(fe.roofBands.length).toBe(1);
+    expect(fe.roofBands[0].buildingId).toBe('R1');
+    expect(fe.roofBands[0].ridgeMm).toBe(7000);
+    expect(fe.roofBands[0].xStart).toBe(0);
+    expect(fe.roofBands[0].xEnd).toBe(360);
+    expect(fe.ridgeMaxMm).toBe(7000);
+  });
+
+  it('妻面(南・外形が棟7000に達する): roofBands 空', () => {
+    const fe = buildFaceElevation([], [building], { markers, face: 'south' });
+    expect(fe.roofBands).toEqual([]);
+    expect(fe.ridgeMaxMm).toBeNull();
+  });
+
+  it('マーカー無し: roofBands 空', () => {
+    const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
+    expect(fe.roofBands).toEqual([]);
+  });
+});
+
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {
   const building = bld('B1', RECT, 1);
   const northCol = scol({}); // 北面 floor1, rails[1800×3], x[-90,450]

@@ -155,7 +155,7 @@ function ElevationSVG({
   faceElevation: FaceElevation;
   fillOf: (buildingId: string) => string;
 }) {
-  const { buildingOutlines, scaffolds, ridgeMaxMm } = faceElevation;
+  const { buildingOutlines, scaffolds, roofBands, ridgeMaxMm } = faceElevation;
 
   // ---- world 範囲（水平 mm・高さ mm）→ SVG px マッピング ----
   let minGX = Infinity, maxGX = -Infinity, maxH = 0, buildingTopMm = 0;
@@ -238,6 +238,30 @@ function ElevationSVG({
         }),
       )}
 
+      {/* 屋根投影バンド（樋面: 軒プロファイル〜棟の帯・実線＋薄塗り。妻面では空） */}
+      {roofBands.map((band) => {
+        const o = buildingOutlines.find((bo) => bo.buildingId === band.buildingId);
+        if (!o || o.segments.length === 0) return null;
+        const profile: string[] = [];
+        o.segments.forEach((s, k) => {
+          if (k === 0) profile.push(`${sxg(s.xStart).toFixed(1)},${sy(s.heightStartMm).toFixed(1)}`);
+          profile.push(`${sxg(s.xEnd).toFixed(1)},${sy(s.heightEndMm).toFixed(1)}`);
+        });
+        const pts = [
+          ...profile,
+          `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
+          `${sxg(band.xStart).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
+        ].join(' ');
+        return (
+          <g key={`rb-${band.buildingId}`}>
+            <polygon points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
+            {/* 棟（水平実線） */}
+            <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
+            <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
+          </g>
+        );
+      })}
+
       {/* 足場（列ごと） */}
       {scaffolds.map((sc, si) => {
         const jackTop = sc.levels.jackTopMm;
@@ -317,16 +341,6 @@ function ElevationSVG({
           </g>
         );
       })}
-
-      {/* 棟(建物最高点)の破線＋ラベル（樋面で外形より高いときのみ・妻面では出ない） */}
-      {ridgeMaxMm != null && (
-        <g>
-          <line x1={PAD * 0.5} y1={sy(ridgeMaxMm)} x2={VBW - PAD * 0.5} y2={sy(ridgeMaxMm)} stroke="#c9c9c6" strokeWidth={0.9} strokeDasharray="6 4" />
-          <text x={VBW - PAD * 0.5} y={sy(ridgeMaxMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">
-            棟 {ridgeMaxMm}
-          </text>
-        </g>
-      )}
 
       {/* GL 線 */}
       <line x1={PAD * 0.5} y1={glY} x2={VBW - PAD * 0.5} y2={glY} stroke="#6b6b67" strokeWidth={1} strokeDasharray="4 3" />

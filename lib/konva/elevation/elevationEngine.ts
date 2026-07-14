@@ -313,6 +313,18 @@ export type ElevationScaffold = {
   spanRaises: SpanRaise[];
 };
 
+/** 屋根投影バンド（樋面から見た屋根: 軒プロファイル〜棟の帯）。建物ごと。
+ *  対象は「その建物のマーカー最高値 > その建物のこの面外形の最高値」の建物のみ
+ *  （妻面など外形が棟に達する面では出ない）。実線＋薄塗りで描く（隠れ線ではない）。 */
+export type RoofBand = {
+  buildingId: string;
+  /** その建物の外形の変軸範囲（グリッド）。左右の縦線位置。 */
+  xStart: number;
+  xEnd: number;
+  /** 棟＝その建物の最高点(mm, GL 基準)。帯の上端。 */
+  ridgeMm: number;
+};
+
 export type FaceElevation = {
   face: Face;
   floor: number;
@@ -320,8 +332,10 @@ export type FaceElevation = {
   buildingOutlines: BuildingOutline[];
   /** 足場（同一面の複数列 = L 字は列ごとに別 scaffold）。 */
   scaffolds: ElevationScaffold[];
-  /** 棟(建物最高点)の高さ(mm)。表示面の外形最高より高いときのみ値、そうでなければ null
-   *  （妻面など外形が棟に達する面では null＝破線を出さない）。 */
+  /** 屋根投影バンド（樋面のみ・建物ごと・妻面では空）。 */
+  roofBands: RoofBand[];
+  /** 棟(建物最高点)の最大高さ(mm)。roofBands があるとき最大 ridge、無ければ null。
+   *  主に viewBox スケール算入用。 */
   ridgeMaxMm: number | null;
 };
 
@@ -448,16 +462,24 @@ export function buildFaceElevation(
     if (o.segments.length > 0) buildingOutlines.push(o);
   }
 
-  // 棟(建物最高点)破線用: 建物マーカーの最高値が表示面の外形最高より高いときのみ値を持つ。
+  // 屋根投影バンド: 建物ごとに、マーカー最高値がこの面外形の最高値を超える建物のみ帯を出す。
   const ms = opts?.markers ?? [];
-  const buildingIds = new Set(buildings.map(b => b.id));
-  let buildingMaxMm = -Infinity;
-  for (const m of ms) if (buildingIds.has(m.buildingId)) buildingMaxMm = Math.max(buildingMaxMm, m.heightMm);
-  let faceOutlineMax = -Infinity;
-  for (const o of buildingOutlines) for (const s of o.segments) faceOutlineMax = Math.max(faceOutlineMax, s.heightStartMm, s.heightEndMm);
-  const ridgeMaxMm = (Number.isFinite(buildingMaxMm) && Number.isFinite(faceOutlineMax) && buildingMaxMm > faceOutlineMax + 1e-6)
-    ? Math.round(buildingMaxMm)
-    : null;
+  const roofBands: RoofBand[] = [];
+  for (const o of buildingOutlines) {
+    let markerMax = -Infinity;
+    for (const m of ms) if (m.buildingId === o.buildingId) markerMax = Math.max(markerMax, m.heightMm);
+    if (!Number.isFinite(markerMax)) continue;
+    let outlineMax = -Infinity, xMin = Infinity, xMax = -Infinity;
+    for (const s of o.segments) {
+      outlineMax = Math.max(outlineMax, s.heightStartMm, s.heightEndMm);
+      xMin = Math.min(xMin, s.xStart);
+      xMax = Math.max(xMax, s.xEnd);
+    }
+    if (markerMax > outlineMax + 1e-6) {
+      roofBands.push({ buildingId: o.buildingId, xStart: xMin, xEnd: xMax, ridgeMm: Math.round(markerMax) });
+    }
+  }
+  const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;
 
   // 足場（列ごとに別 scaffold）
   const scaffolds: ElevationScaffold[] = faceColumns.map(column => {
@@ -476,5 +498,5 @@ export function buildFaceElevation(
     return { column, postXs, levels, boards, rails, spanRaises };
   });
 
-  return { face, floor, buildingOutlines, scaffolds, ridgeMaxMm };
+  return { face, floor, buildingOutlines, scaffolds, roofBands, ridgeMaxMm };
 }
