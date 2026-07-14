@@ -1,11 +1,11 @@
 'use client';
 
 // ============================================================
-// 立面図 E-3: 立面プレビューモーダル（最初の描画）
+// 立面図 E-3 / E-3.6: 立面プレビューモーダル
 //
 // E-1(reconstructFaces) / E-2(buildFaceElevation) の pure 関数を使い、
-// 選んだ 1 面の立面（建物輪郭＋足場）をインライン SVG で描く最初のビュー。
-// まず「絵が出る」こと優先。PDF は E-4、複数列の手摺切断は E-5。
+// 選んだ 1 面の立面（建物輪郭＋足場）をインライン SVG で描く。
+// E-3.6: 嵩上げ 4+1 分解の中間段描画・足場なしでも建物のみ表示・棟破線。
 //
 // 座標: E-2 の出力は 水平=グリッド(1grid=10mm)・高さ=mm(GL基準)。
 //   ここで両軸を mm に揃え（水平は ×10）、mm→SVG px にスケールして
@@ -39,20 +39,23 @@ export default function ElevationModal() {
 
   const hasMarkers = (canvasData.heightMarkers ?? []).length > 0;
 
-  const faceElevation = useMemo<FaceElevation | null>(() => {
+  // 足場が無い面でも建物のみ描けるよう、常に buildFaceElevation を呼ぶ（face を明示）。
+  const faceElevation = useMemo<FaceElevation>(() => {
     const cols = reconstructFaces(canvasData.handrails).filter((c) => c.face === face);
-    if (cols.length === 0) return null;
     return buildFaceElevation(cols, canvasData.buildings, {
       markers: canvasData.heightMarkers ?? [],
       // マーカーが 1 つも無ければ仮の高さで描く（バナーで案内）。
       defaultHeightMm: hasMarkers ? undefined : FALLBACK_HEIGHT_MM,
       pillarType,
+      face,
     });
   }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, hasMarkers]);
 
+  const noScaffold = faceElevation.scaffolds.length === 0;
+  const hasContent = faceElevation.buildingOutlines.length > 0 || faceElevation.scaffolds.length > 0;
+
   // この支柱種で全列が 0 段（段が組めない）→ 根がらみへの切替を案内。
-  const noStage = !!faceElevation
-    && faceElevation.scaffolds.length > 0
+  const noStage = faceElevation.scaffolds.length > 0
     && faceElevation.scaffolds.every((s) => s.levels.floors === 0);
 
   if (!showElevation) return null;
@@ -64,7 +67,7 @@ export default function ElevationModal() {
       <div className="bg-dark-surface border border-dark-border rounded-2xl p-5 max-w-3xl mx-4 w-full max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base text-canvas font-bold">立面図（プレビュー）</h2>
-          <span className="text-[10px] text-dimension">E-3: 最初の描画・調整中</span>
+          <span className="text-[10px] text-dimension">E-3.6</span>
         </div>
 
         {/* 面セレクタ */}
@@ -110,7 +113,7 @@ export default function ElevationModal() {
         )}
 
         {/* 高さマーカー未設定の案内 */}
-        {!hasMarkers && (
+        {!hasMarkers && hasContent && (
           <div className="mb-3 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-300">
             高さマーカーが未設定です。仮の高さ {FALLBACK_HEIGHT_MM / 1000}m で表示しています。
             <span className="text-dimension">（躯体メニュー → 高さ で設定できます）</span>
@@ -119,14 +122,19 @@ export default function ElevationModal() {
 
         {/* 描画エリア（モバイルは横スクロール可） */}
         <div className="overflow-x-auto rounded-lg border border-dark-border bg-dark-bg">
-          {faceElevation ? (
+          {hasContent ? (
             <ElevationSVG faceElevation={faceElevation} fillOf={fillOf} />
           ) : (
             <div className="p-10 text-center text-sm text-dimension">
-              この面には足場がありません。
+              この面には表示できる建物・足場がありません。
             </div>
           )}
         </div>
+        {hasContent && noScaffold && (
+          <p className="mt-2 text-xs text-dimension text-center">
+            この面には足場がありません（建物のみ表示）
+          </p>
+        )}
 
         <button
           onClick={() => setShowElevation(false)}
@@ -147,18 +155,23 @@ function ElevationSVG({
   faceElevation: FaceElevation;
   fillOf: (buildingId: string) => string;
 }) {
-  const { buildingOutlines, scaffolds } = faceElevation;
+  const { buildingOutlines, scaffolds, ridgeMaxMm } = faceElevation;
 
   // ---- world 範囲（水平 mm・高さ mm）→ SVG px マッピング ----
-  let minGX = Infinity, maxGX = -Infinity, maxH = 0;
+  let minGX = Infinity, maxGX = -Infinity, maxH = 0, buildingTopMm = 0;
   const seeX = (gx: number) => { minGX = Math.min(minGX, gx); maxGX = Math.max(maxGX, gx); };
   for (const o of buildingOutlines) {
-    for (const s of o.segments) { seeX(s.xStart); seeX(s.xEnd); maxH = Math.max(maxH, s.heightStartMm, s.heightEndMm); }
+    for (const s of o.segments) {
+      seeX(s.xStart); seeX(s.xEnd);
+      maxH = Math.max(maxH, s.heightStartMm, s.heightEndMm);
+      buildingTopMm = Math.max(buildingTopMm, s.heightStartMm, s.heightEndMm);
+    }
   }
   for (const sc of scaffolds) {
     for (const px of sc.postXs) seeX(px);
     maxH = Math.max(maxH, sc.levels.topRailMm);
   }
+  if (ridgeMaxMm != null) maxH = Math.max(maxH, ridgeMaxMm); // 棟破線が viewBox 内に収まるように
 
   const heightAvailable = maxH >= 1 && Number.isFinite(minGX);
   if (!heightAvailable) {
@@ -184,6 +197,15 @@ function ElevationSVG({
   const repScaffold = scaffolds.reduce<typeof scaffolds[number] | null>(
     (best, s) => (!best || s.levels.floors > best.levels.floors ? s : best),
     null,
+  );
+
+  // 段違い作業床 1 セット（床帯＋手摺 +450/+900）を描く helper。
+  const floorGroup = (key: string, floorMm: number, x0: number, x1: number) => (
+    <g key={key}>
+      <rect x={sxg(x0)} y={sy(floorMm) - 2} width={Math.max(0, sxg(x1) - sxg(x0))} height={4} fill="#4ECDC4" fillOpacity={0.6} />
+      <line x1={sxg(x0)} y1={sy(floorMm + 450)} x2={sxg(x1)} y2={sy(floorMm + 450)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
+      <line x1={sxg(x0)} y1={sy(floorMm + 900)} x2={sxg(x1)} y2={sy(floorMm + 900)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
+    </g>
   );
 
   // 奥→手前で重ね描き（depthCoord 昇順のまま。E-5 で前後判定・切断）。
@@ -281,19 +303,11 @@ function ElevationSVG({
                 />
               );
             })}
-            {/* 妻嵩上げ: 段違い作業床＋手摺(+450/+900) */}
+            {/* 妻嵩上げ: 4+1 分解の中間フル段＋最終床（各段に床帯＋手摺 +450/+900） */}
             {sc.spanRaises.map((r, i) => (
               <g key={`sr-${i}`}>
-                <rect
-                  x={sxg(r.x0)}
-                  y={sy(r.raisedFloorMm) - 2}
-                  width={Math.max(0, sxg(r.x1) - sxg(r.x0))}
-                  height={4}
-                  fill="#4ECDC4"
-                  fillOpacity={0.6}
-                />
-                <line x1={sxg(r.x0)} y1={sy(r.raisedFloorMm + 450)} x2={sxg(r.x1)} y2={sy(r.raisedFloorMm + 450)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
-                <line x1={sxg(r.x0)} y1={sy(r.raisedFloorMm + 900)} x2={sxg(r.x1)} y2={sy(r.raisedFloorMm + 900)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
+                {r.intermediateFloorsMm.map((fmm, j) => floorGroup(`im-${i}-${j}`, fmm, r.x0, r.x1))}
+                {floorGroup(`rf-${i}`, r.raisedFloorMm, r.x0, r.x1)}
               </g>
             ))}
             {/* 妻嵩上げの支柱延長（天端→要求上端） */}
@@ -303,6 +317,16 @@ function ElevationSVG({
           </g>
         );
       })}
+
+      {/* 棟(建物最高点)の破線＋ラベル（樋面で外形より高いときのみ・妻面では出ない） */}
+      {ridgeMaxMm != null && (
+        <g>
+          <line x1={PAD * 0.5} y1={sy(ridgeMaxMm)} x2={VBW - PAD * 0.5} y2={sy(ridgeMaxMm)} stroke="#c9c9c6" strokeWidth={0.9} strokeDasharray="6 4" />
+          <text x={VBW - PAD * 0.5} y={sy(ridgeMaxMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">
+            棟 {ridgeMaxMm}
+          </text>
+        </g>
+      )}
 
       {/* GL 線 */}
       <line x1={PAD * 0.5} y1={glY} x2={VBW - PAD * 0.5} y2={glY} stroke="#6b6b67" strokeWidth={1} strokeDasharray="4 3" />
@@ -323,6 +347,17 @@ function ElevationSVG({
           <line x1={14} y1={sy(repScaffold.levels.topRailMm)} x2={22} y2={sy(repScaffold.levels.topRailMm)} stroke="#8a8a86" strokeWidth={0.8} />
           <text x={24} y={sy(repScaffold.levels.topRailMm) - 3} fill="#c9c9c6" fontSize={9} fontWeight="bold" fontFamily="monospace">
             天端 {repScaffold.levels.topRailMm}
+          </text>
+        </g>
+      )}
+
+      {/* 縦寸法（足場なし・建物のみ表示時: 建物高さ） */}
+      {!repScaffold && buildingTopMm > 0 && (
+        <g>
+          <line x1={18} y1={glY} x2={18} y2={sy(buildingTopMm)} stroke="#8a8a86" strokeWidth={0.8} />
+          <line x1={14} y1={sy(buildingTopMm)} x2={22} y2={sy(buildingTopMm)} stroke="#8a8a86" strokeWidth={0.8} />
+          <text x={24} y={sy(buildingTopMm) - 3} fill="#c9c9c6" fontSize={9} fontWeight="bold" fontFamily="monospace">
+            建物 {buildingTopMm}
           </text>
         </g>
       )}

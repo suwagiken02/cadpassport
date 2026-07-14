@@ -232,6 +232,81 @@ describe('E-3.5-2c: 妻面のコマ嵩上げ(段違い作業床)', () => {
   });
 });
 
+describe('E-3.6-1: 嵩上げコマの 4+1 分解', () => {
+  const building = bld('K1', RECT, 1);
+  const northCol = scol({}); // 水下5000基準 → 最上段床 topFloor=3200
+  const gable = (ridge: number): HeightMarker[] => [
+    { id: 'e0', buildingId: 'K1', edgeIndex: 0, t: 0, heightMm: 5000 },
+    { id: 'em', buildingId: 'K1', edgeIndex: 0, t: 0.5, heightMm: ridge },
+    { id: 'e1', buildingId: 'K1', edgeIndex: 0, t: 1, heightMm: 5000 },
+  ];
+
+  it('addKoma=5 → fullLayers=1・remKoma=1・中間床[5000]・最終床5450', () => {
+    const fe = buildFaceElevation([northCol], [building], { markers: gable(7000) });
+    const mid = fe.scaffolds[0].spanRaises.find(r => r.spanIndex === 1)!;
+    expect(mid.addKoma).toBe(5);
+    expect(mid.fullLayers).toBe(1);
+    expect(mid.remKoma).toBe(1);
+    expect(mid.intermediateFloorsMm).toEqual([5000]); // topFloor3200 + 1800
+    expect(mid.raisedFloorMm).toBe(5450);
+  });
+
+  it('addKoma=2 → fullLayers=0・中間床なし(従来どおり)', () => {
+    const fe = buildFaceElevation([northCol], [building], { markers: gable(7000) });
+    const edge = fe.scaffolds[0].spanRaises.find(r => r.spanIndex === 0)!;
+    expect(edge.addKoma).toBe(2);
+    expect(edge.fullLayers).toBe(0);
+    expect(edge.remKoma).toBe(2);
+    expect(edge.intermediateFloorsMm).toEqual([]);
+    expect(edge.raisedFloorMm).toBe(4100);
+  });
+
+  it('addKoma=4 → fullLayers=1・remKoma=0・中間床なし・最終床=最上フル段', () => {
+    const fe = buildFaceElevation([northCol], [building], { markers: gable(6800) });
+    const mid = fe.scaffolds[0].spanRaises.find(r => r.spanIndex === 1)!;
+    expect(mid.addKoma).toBe(4);
+    expect(mid.fullLayers).toBe(1);
+    expect(mid.remKoma).toBe(0);
+    expect(mid.intermediateFloorsMm).toEqual([]);
+    expect(mid.raisedFloorMm).toBe(5000); // topFloor3200 + 1800
+  });
+});
+
+describe('E-3.6-2: 足場なしでも建物のみ表示', () => {
+  const building = bld('N1', RECT, 1);
+  it('列0でも buildingOutlines は生成され scaffolds は空・face は opts.face', () => {
+    const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
+    expect(fe.scaffolds).toEqual([]);
+    expect(fe.buildingOutlines.length).toBe(1);
+    expect(fe.face).toBe('north');
+  });
+});
+
+describe('E-3.6-3: 棟(建物最高点)破線 ridgeMaxMm', () => {
+  const building = bld('R1', RECT, 1);
+  // 北辺=edge0(軒5000)、南辺=edge2 の中央に棟7000。
+  const markers: HeightMarker[] = [
+    { id: 'n0', buildingId: 'R1', edgeIndex: 0, t: 0, heightMm: 5000 },
+    { id: 'n1', buildingId: 'R1', edgeIndex: 0, t: 1, heightMm: 5000 },
+    { id: 'sm', buildingId: 'R1', edgeIndex: 2, t: 0.5, heightMm: 7000 },
+  ];
+
+  it('外形が棟に達しない面(北・軒5000) → ridgeMaxMm=7000', () => {
+    const fe = buildFaceElevation([], [building], { markers, face: 'north' });
+    expect(fe.ridgeMaxMm).toBe(7000);
+  });
+
+  it('妻面(南・外形が棟7000に達する) → ridgeMaxMm=null', () => {
+    const fe = buildFaceElevation([], [building], { markers, face: 'south' });
+    expect(fe.ridgeMaxMm).toBeNull();
+  });
+
+  it('マーカー無しは ridgeMaxMm=null', () => {
+    const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
+    expect(fe.ridgeMaxMm).toBeNull();
+  });
+});
+
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {
   const building = bld('B1', RECT, 1);
   const northCol = scol({}); // 北面 floor1, rails[1800×3], x[-90,450]

@@ -278,7 +278,8 @@ export type ElevationRail = {
   x1: number;
 };
 
-/** 妻面のコマ嵩上げ（段違い作業床）。屋根まで届かないスパンにコマを追加して床を上げる。 */
+/** 妻面のコマ嵩上げ（段違い作業床）。屋根まで届かないスパンにコマを追加して床を上げる。
+ *  現場ルール(4+1分解): 基準階層は 4 コマ=1800 ピッチ。addKoma>=4 は通常段(1800)＋端数コマに分解。 */
 export type SpanRaise = {
   /** スパン番号（postXs[spanIndex]〜postXs[spanIndex+1]）。 */
   spanIndex: number;
@@ -287,7 +288,13 @@ export type SpanRaise = {
   x1: number;
   /** 追加コマ数（必要最小・450×addKoma だけ床を上げる）。 */
   addKoma: number;
-  /** 嵩上げした作業床の高さ(mm, GL 基準)＝最上段床 + 450×addKoma。 */
+  /** フル段(1800)分解数 = floor(addKoma/4)。 */
+  fullLayers: number;
+  /** 端数コマ数 = addKoma % 4。 */
+  remKoma: number;
+  /** 最終床より下の中間フル段の高さ[]（mm, GL 基準・昇順）。remKoma=0 なら最上フル段が最終床。 */
+  intermediateFloorsMm: number[];
+  /** 嵩上げした最終作業床の高さ(mm, GL 基準)＝最上段床 + 450×addKoma。 */
   raisedFloorMm: number;
 };
 
@@ -313,6 +320,9 @@ export type FaceElevation = {
   buildingOutlines: BuildingOutline[];
   /** 足場（同一面の複数列 = L 字は列ごとに別 scaffold）。 */
   scaffolds: ElevationScaffold[];
+  /** 棟(建物最高点)の高さ(mm)。表示面の外形最高より高いときのみ値、そうでなければ null
+   *  （妻面など外形が棟に達する面では null＝破線を出さない）。 */
+  ridgeMaxMm: number | null;
 };
 
 export type FaceElevationOpts = ElevationLevelsOpts & {
@@ -320,6 +330,10 @@ export type FaceElevationOpts = ElevationLevelsOpts & {
   markers?: HeightMarker[];
   /** マーカー無し時のフォールバック高さ(mm)。 */
   defaultHeightMm?: number;
+  /** faceColumns が空のとき（足場なし・建物のみ表示）に使う対象面。 */
+  face?: Face;
+  /** faceColumns が空のときに使う階（既定 1）。 */
+  floor?: number;
 };
 
 /** 列の基準建物高さ(mm)＝水下(樋面)。現場ルール(鮎澤氏確認): 段数・天端(建物高さ−1800)は
@@ -399,7 +413,15 @@ function computeSpanRaises(
     if (gap <= REACH_MM) continue; // 届く → 嵩上げ不要
     const addKoma = Math.ceil((gap - REACH_MM) / komaMm);
     if (addKoma <= 0) continue;
-    raises.push({ spanIndex: si, x0, x1, addKoma, raisedFloorMm: topFloorMm + komaMm * addKoma });
+    // 4+1 分解: 4 コマ=1800 の通常段と端数コマに分ける。
+    const fullLayers = Math.floor(addKoma / 4);
+    const remKoma = addKoma % 4;
+    const raisedFloorMm = topFloorMm + komaMm * addKoma;
+    // 中間フル段（最終床より下）。remKoma=0 のときは最上フル段が最終床なので 1 つ少ない。
+    const layersBelow = remKoma > 0 ? fullLayers : fullLayers - 1;
+    const intermediateFloorsMm: number[] = [];
+    for (let k = 1; k <= layersBelow; k++) intermediateFloorsMm.push(topFloorMm + LAYER_HEIGHT_MM * k);
+    raises.push({ spanIndex: si, x0, x1, addKoma, fullLayers, remKoma, intermediateFloorsMm, raisedFloorMm });
   }
   return raises;
 }
@@ -415,8 +437,9 @@ export function buildFaceElevation(
   buildings: BuildingShape[],
   opts?: FaceElevationOpts,
 ): FaceElevation {
-  const face: Face = faceColumns[0]?.face ?? 'north';
-  const floor = faceColumns[0]?.floor ?? 1;
+  // faceColumns 空（足場なし・建物のみ表示）でも対象面を描けるよう opts.face をフォールバックに。
+  const face: Face = faceColumns[0]?.face ?? opts?.face ?? 'north';
+  const floor = faceColumns[0]?.floor ?? opts?.floor ?? 1;
 
   // 建物輪郭（該当面のセグメントを持つ建物のみ、多階は重ね）
   const buildingOutlines: BuildingOutline[] = [];
@@ -424,6 +447,17 @@ export function buildFaceElevation(
     const o = buildBuildingOutline(b, face, opts?.markers, { defaultHeightMm: opts?.defaultHeightMm });
     if (o.segments.length > 0) buildingOutlines.push(o);
   }
+
+  // 棟(建物最高点)破線用: 建物マーカーの最高値が表示面の外形最高より高いときのみ値を持つ。
+  const ms = opts?.markers ?? [];
+  const buildingIds = new Set(buildings.map(b => b.id));
+  let buildingMaxMm = -Infinity;
+  for (const m of ms) if (buildingIds.has(m.buildingId)) buildingMaxMm = Math.max(buildingMaxMm, m.heightMm);
+  let faceOutlineMax = -Infinity;
+  for (const o of buildingOutlines) for (const s of o.segments) faceOutlineMax = Math.max(faceOutlineMax, s.heightStartMm, s.heightEndMm);
+  const ridgeMaxMm = (Number.isFinite(buildingMaxMm) && Number.isFinite(faceOutlineMax) && buildingMaxMm > faceOutlineMax + 1e-6)
+    ? Math.round(buildingMaxMm)
+    : null;
 
   // 足場（列ごとに別 scaffold）
   const scaffolds: ElevationScaffold[] = faceColumns.map(column => {
@@ -442,5 +476,5 @@ export function buildFaceElevation(
     return { column, postXs, levels, boards, rails, spanRaises };
   });
 
-  return { face, floor, buildingOutlines, scaffolds };
+  return { face, floor, buildingOutlines, scaffolds, ridgeMaxMm };
 }
