@@ -1,11 +1,11 @@
 'use client';
 
 // ============================================================
-// 棟ラインツール（E-3.8d）: 平面図で建物内部に棟(むね)の線分を引く・編集・移動。
-//  ・配置: isRidgeLineMode 時、全面キャプチャ Rect で2点クリック（建物内部のみ・頂点/中点スナップ）。
-//    1点目→ドラフト線プレビュー→2点目で addRidgeLine + 高さ入力モーダル。ESC/モード解除で破棄。
-//  ・既存線: 破線＋中点に「棟 N」ラベル。タップで編集モーダル、ドラッグで平行移動（建物外は拒否）。
-//    ドラッグ/タップ判定は react-konva の native draggable に委譲（E-3.9 の手動判定不具合を回避）。
+// 棟ラインツール（E-3.8d / ガイド・スナップ E-3.13）: 平面図で建物内部に棟の線分を引く・編集・移動。
+//  ・配置: isRidgeLineMode 時、全面キャプチャ Rect で2点クリック（建物内部のみ）。
+//    中心ガイド（中央棟線＋短辺中央線の十字＋隅棟目安線）を薄く表示し、ガイド線/端点/交点＋
+//    頂点/辺中点へスナップ（吸着時はカーソル色を変える）。1点目→ドラフト線→2点目で addRidgeLine。
+//  ・既存線: 破線＋中点に「棟N」ラベル。タップで編集モーダル、native draggable で平行移動。
 // ============================================================
 import React, { useEffect, useRef, useState } from 'react';
 import { Layer, Line, Text, Rect, Circle } from 'react-konva';
@@ -14,9 +14,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
+import { computeRidgeGuides, snapRidgeInput } from '@/lib/konva/elevation/ridgeProjection';
 import type { Point, BuildingShape } from '@/types';
 
 const RIDGE_COLOR = '#E07B39';
+const SNAP_COLOR = '#22C55E';
 const SNAP_PX = 15;
 
 export default function RidgeLineLayer() {
@@ -30,30 +32,16 @@ export default function RidgeLineLayer() {
   const layerRef = useRef<Konva.Layer>(null);
   const [draft, setDraft] = useState<{ buildingId: string; p1: Point } | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [cursorSnapped, setCursorSnapped] = useState(false);
 
-  const toGrid = (sx: number, sy: number): Point => ({ x: (sx - panX) / gridPx, y: (sy - panY) / gridPx });
+  const toGrid = (px: number, py: number): Point => ({ x: (px - panX) / gridPx, y: (py - panY) / gridPx });
   const sx = (gx: number) => gx * gridPx + panX;
   const sy = (gy: number) => gy * gridPx + panY;
 
   const buildingAt = (pt: Point): BuildingShape | undefined =>
     canvasData.buildings.find((b) => isPointInPolygon(pt.x, pt.y, b.points));
 
-  /** 頂点・辺中点スナップ（閾値内）。無ければグリッド丸め。 */
-  const snapPoint = (pt: Point, b: BuildingShape): Point => {
-    const thr = SNAP_PX / gridPx;
-    let best: Point = { x: Math.round(pt.x), y: Math.round(pt.y) };
-    let bd = Infinity;
-    const cands: Point[] = [...b.points];
-    for (let i = 0; i < b.points.length; i++) {
-      const p1 = b.points[i], p2 = b.points[(i + 1) % b.points.length];
-      cands.push({ x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 });
-    }
-    for (const c of cands) {
-      const d = Math.hypot(c.x - pt.x, c.y - pt.y);
-      if (d < thr && d < bd) { bd = d; best = { x: c.x, y: c.y }; }
-    }
-    return best;
-  };
+  const snapIn = (pt: Point, b: BuildingShape) => snapRidgeInput(pt, b.points, SNAP_PX / gridPx);
 
   // モード解除 / ESC でドラフト破棄
   useEffect(() => { if (!isRidgeLineMode) { setDraft(null); setCursor(null); } }, [isRidgeLineMode]);
@@ -74,7 +62,7 @@ export default function RidgeLineLayer() {
     if (!g) return;
     const b = buildingAt(g);
     if (!b) { setCursor(null); return; } // 建物外は無視
-    const snapped = snapPoint(g, b);
+    const snapped = snapIn(g, b).point;
     if (!draft) {
       setDraft({ buildingId: b.id, p1: snapped });
       setCursor(snapped);
@@ -92,7 +80,10 @@ export default function RidgeLineLayer() {
     const g = pointerGrid(e);
     if (!g) return;
     const b = buildingAt(g);
-    setCursor(b ? snapPoint(g, b) : g);
+    if (!b) { setCursor(g); setCursorSnapped(false); return; }
+    const s = snapIn(g, b);
+    setCursor(s.point);
+    setCursorSnapped(s.snapped);
   };
 
   const commitDrag = (lineId: string, node: Konva.Line) => {
@@ -112,6 +103,7 @@ export default function RidgeLineLayer() {
 
   const r = Math.max(4, 5 * zoom);
   const fs = Math.max(11, 13 * zoom);
+  const segPts = (s: { p1: Point; p2: Point }) => [sx(s.p1.x), sy(s.p1.y), sx(s.p2.x), sy(s.p2.y)];
 
   return (
     <Layer ref={layerRef}>
@@ -127,15 +119,30 @@ export default function RidgeLineLayer() {
         />
       )}
 
-      {/* ドラフト線プレビュー */}
+      {/* 中心ガイド（棟モード時・建物ごと）: 隅棟→短辺中央線→中央棟線 の順で重ねる */}
+      {isRidgeLineMode && canvasData.buildings.map((b) => {
+        if (b.points.length < 3) return null;
+        const g = computeRidgeGuides(b.points);
+        return (
+          <React.Fragment key={`guide-${b.id}`}>
+            {g.hipLines.map((hl, i) => (
+              <Line key={`hip-${i}`} points={segPts(hl)} stroke={RIDGE_COLOR} strokeWidth={0.8} dash={[3, 5]} opacity={0.22} listening={false} />
+            ))}
+            <Line points={segPts(g.crossLine)} stroke={RIDGE_COLOR} strokeWidth={1} dash={[6, 6]} opacity={0.35} listening={false} />
+            <Line points={segPts(g.centerLine)} stroke={RIDGE_COLOR} strokeWidth={1.2} dash={[6, 6]} opacity={0.5} listening={false} />
+          </React.Fragment>
+        );
+      })}
+
+      {/* ドラフト線プレビュー＋カーソルマーカー（スナップ時は色変更） */}
       {isRidgeLineMode && draft && cursor && (
-        <>
-          <Line
-            points={[sx(draft.p1.x), sy(draft.p1.y), sx(cursor.x), sy(cursor.y)]}
-            stroke={RIDGE_COLOR} strokeWidth={2} dash={[8, 4]} listening={false}
-          />
-          <Circle x={sx(draft.p1.x)} y={sy(draft.p1.y)} radius={r} fill={RIDGE_COLOR} listening={false} />
-        </>
+        <Line points={[sx(draft.p1.x), sy(draft.p1.y), sx(cursor.x), sy(cursor.y)]} stroke={RIDGE_COLOR} strokeWidth={2} dash={[8, 4]} listening={false} />
+      )}
+      {isRidgeLineMode && draft && (
+        <Circle x={sx(draft.p1.x)} y={sy(draft.p1.y)} radius={r} fill={RIDGE_COLOR} listening={false} />
+      )}
+      {isRidgeLineMode && cursor && (
+        <Circle x={sx(cursor.x)} y={sy(cursor.y)} radius={r} fill={cursorSnapped ? SNAP_COLOR : RIDGE_COLOR} opacity={0.9} listening={false} />
       )}
 
       {/* 既存の棟ライン */}
