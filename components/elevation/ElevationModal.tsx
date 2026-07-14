@@ -240,41 +240,27 @@ function ElevationSVG({
         }),
       )}
 
-      {/* 屋根投影バンド（樋面: 軒プロファイル〜棟の帯・実線＋薄塗り。妻面では空） */}
+      {/* 屋根投影バンド（延長込み上辺プロファイル。樋面=水平/妻面=けらば斜辺、壁より張り出す） */}
       {roofBands.map((band) => {
-        const o = buildingOutlines.find((bo) => bo.buildingId === band.buildingId);
-        if (!o || o.segments.length === 0) return null;
-        // 下端(軒プロファイル)を band の x 範囲（軒の出ぶん拡張）まで水平に延長。
-        // ※勾配による軒先の下がりは棟ライン実装後の課題。今回は水平近似。
-        const first = o.segments[0];
-        const last = o.segments[o.segments.length - 1];
-        const profile: string[] = [];
-        profile.push(`${sxg(band.xStart).toFixed(1)},${sy(first.heightStartMm).toFixed(1)}`);
-        o.segments.forEach((s, k) => {
-          if (k === 0) profile.push(`${sxg(s.xStart).toFixed(1)},${sy(s.heightStartMm).toFixed(1)}`);
-          profile.push(`${sxg(s.xEnd).toFixed(1)},${sy(s.heightEndMm).toFixed(1)}`);
-        });
-        profile.push(`${sxg(band.xEnd).toFixed(1)},${sy(last.heightEndMm).toFixed(1)}`);
-        const pts = [
-          ...profile,
-          `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
-          `${sxg(band.xStart).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
-        ].join(' ');
-        // 棟マーカーが無い(軒の出のみ)のフラットバンドは ridge≈軒。この場合「棟」ラベルは出さず、
-        // 軒線が壁より張り出すのみ（勾配は棟マーカー設定時に表示）。
-        const eaveTop = Math.max(...o.segments.map((s) => Math.max(s.heightStartMm, s.heightEndMm)));
-        const isFlatEave = band.ridgeMm <= eaveTop + 1;
+        const profPts = band.profile.map((p) => `${sxg(p.x).toFixed(1)},${sy(p.mm).toFixed(1)}`);
+        if (band.filledToRidge) {
+          // 樋面の切妻投影: 延長込み軒プロファイル(下端) + 棟の水平線(上端) の台形を塗る。
+          const pts = [
+            ...profPts,
+            `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
+            `${sxg(band.xStart).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
+          ].join(' ');
+          return (
+            <g key={`rb-${band.buildingId}`}>
+              <polygon points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
+              <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
+              <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
+            </g>
+          );
+        }
+        // 妻面のけらば / 棟マーカー無しのフラット軒: 延長込みプロファイルを線で描く（壁より張り出す）。
         return (
-          <g key={`rb-${band.buildingId}`}>
-            <polygon points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
-            {/* 棟（水平実線）＋ラベル: 棟マーカーがある時のみ */}
-            {!isFlatEave && (
-              <>
-                <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
-                <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
-              </>
-            )}
-          </g>
+          <polyline key={`rb-${band.buildingId}`} points={profPts.join(' ')} fill="none" stroke="#8a8a86" strokeWidth={1.3} />
         );
       })}
 

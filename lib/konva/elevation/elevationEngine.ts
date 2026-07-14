@@ -313,16 +313,21 @@ export type ElevationScaffold = {
   spanRaises: SpanRaise[];
 };
 
-/** 屋根投影バンド（樋面から見た屋根: 軒プロファイル〜棟の帯）。建物ごと。
- *  対象は「その建物のマーカー最高値 > その建物のこの面外形の最高値」の建物のみ
- *  （妻面など外形が棟に達する面では出ない）。実線＋薄塗りで描く（隠れ線ではない）。 */
+/** 屋根投影バンド（建物ごと）。外形上辺プロファイルを出幅ぶん傾き保存で延長したもの。
+ *  樋面(フラット)は水平延長、妻面(三角)は斜辺(けらば)延長で軒先が勾配なり下がる。
+ *  filledToRidge=true は樋面の切妻投影（軒→棟の台形を塗る）、false は延長プロファイルの
+ *  線のみ（妻のけらば／棟マーカー無しのフラット軒）。 */
 export type RoofBand = {
   buildingId: string;
-  /** その建物の外形の変軸範囲（グリッド）。左右の縦線位置。 */
+  /** 延長込みの変軸範囲（グリッド）。壁 ± 出幅。 */
   xStart: number;
   xEnd: number;
-  /** 棟＝その建物の最高点(mm, GL 基準)。帯の上端。 */
+  /** 台形上端の棟高(mm)。filledToRidge=false のときは軒高(プロファイル最高)＝ラベル/viewBox 用。 */
   ridgeMm: number;
+  /** 延長込みの上辺(軒/けらば)プロファイル点列（grid x, mm h・GL 下限）。左端延長→壁→右端延長。 */
+  profile: { x: number; mm: number }[];
+  /** 棟まで塗る台形か（樋面切妻投影）。false は延長プロファイルの線のみ。 */
+  filledToRidge: boolean;
 };
 
 export type FaceElevation = {
@@ -383,6 +388,36 @@ function faceXRange(pts: Point[], face: Face): { xStart: number; xEnd: number } 
     mn = Math.min(mn, a, b); mx = Math.max(mx, a, b);
   }
   return Number.isFinite(mn) ? { xStart: mn, xEnd: mx } : null;
+}
+
+/** 外形上辺プロファイル（セグメント上辺の折れ線）を、両端セグメントの傾きを保存して
+ *  延長 x 範囲 [extXStart, extXEnd] まで伸ばす。延長点高さ = 端点高さ − 傾き×出幅。GL(0) 下限。
+ *  フラット(傾き0)→水平延長、妻の三角→斜辺(けらば)延長で軒先が勾配なり下がる。 */
+function extendedTopProfile(
+  segments: BuildingOutlineSegment[],
+  extXStart: number,
+  extXEnd: number,
+): { x: number; mm: number }[] {
+  const wall: { x: number; mm: number }[] = [];
+  segments.forEach((s, k) => {
+    if (k === 0) wall.push({ x: s.xStart, mm: s.heightStartMm });
+    wall.push({ x: s.xEnd, mm: s.heightEndMm });
+  });
+  if (wall.length < 2) return wall;
+
+  const out: { x: number; mm: number }[] = [];
+  const first = wall[0], firstNext = wall[1];
+  if (extXStart < first.x - 1e-6) {
+    const slope = (firstNext.mm - first.mm) / ((firstNext.x - first.x) || 1);
+    out.push({ x: extXStart, mm: Math.max(0, Math.round(first.mm - slope * (first.x - extXStart))) });
+  }
+  out.push(...wall);
+  const last = wall[wall.length - 1], lastPrev = wall[wall.length - 2];
+  if (extXEnd > last.x + 1e-6) {
+    const slope = (last.mm - lastPrev.mm) / ((last.x - lastPrev.x) || 1);
+    out.push({ x: extXEnd, mm: Math.max(0, Math.round(last.mm + slope * (extXEnd - last.x))) });
+  }
+  return out;
 }
 
 /** 列の基準建物高さ(mm)＝水下(樋面)。現場ルール(鮎澤氏確認): 段数・天端(建物高さ−1800)は
@@ -503,38 +538,41 @@ export function buildFaceElevation(
   for (const o of buildingOutlines) {
     let markerMax = -Infinity;
     for (const m of ms) if (m.buildingId === o.buildingId) markerMax = Math.max(markerMax, m.heightMm);
-    let outlineMax = -Infinity, outlineMin = Infinity, xMin = Infinity, xMax = -Infinity;
+    let outlineMax = -Infinity, xMin = Infinity, xMax = -Infinity;
     for (const s of o.segments) {
       outlineMax = Math.max(outlineMax, s.heightStartMm, s.heightEndMm);
-      outlineMin = Math.min(outlineMin, s.heightStartMm, s.heightEndMm);
       xMin = Math.min(xMin, s.xStart);
       xMax = Math.max(xMax, s.xEnd);
     }
     if (!Number.isFinite(outlineMax)) continue;
 
     // 軒の出: 出幅ぶん左右へ拡張した屋根 x 範囲（出幅なしなら壁範囲と一致）。
-    let xStart = xMin, xEnd = xMax;
+    let extXStart = xMin, extXEnd = xMax;
     const b = buildings.find(bb => bb.id === o.buildingId);
     if (b) {
       const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? []);
       if (ohs.some(v => v > 0)) {
         const range = faceXRange(computeOffsetPolygon(b.points, ohs), o.face);
-        if (range) { xStart = range.xStart; xEnd = range.xEnd; }
+        if (range) { extXStart = range.xStart; extXEnd = range.xEnd; }
       }
     }
-    const hasOverhang = xStart < xMin - 1e-6 || xEnd > xMax + 1e-6;
-    const outlineFlat = outlineMax - outlineMin < 1e-6;
+    const hasOverhang = extXStart < xMin - 1e-6 || extXEnd > xMax + 1e-6;
     const hasRidge = Number.isFinite(markerMax) && markerMax > outlineMax + 1e-6;
 
     // バンドを出す条件:
-    //  (1) 棟マーカーが軒より高い → 棟まで塗る（樋面の妻あり形）。
-    //  (2) 棟マーカーが無くても、軒の出があり外形がフラット(樋面)なら軒の出を軒線として
-    //      壁より張り出して表示（建物高さを1点しか入れない一般ケースでも軒の出が見える）。
-    if (hasRidge) {
-      roofBands.push({ buildingId: o.buildingId, xStart, xEnd, ridgeMm: Math.round(markerMax) });
-    } else if (hasOverhang && outlineFlat) {
-      roofBands.push({ buildingId: o.buildingId, xStart, xEnd, ridgeMm: Math.round(outlineMax) });
-    }
+    //  ・棟マーカーが軒より高い（樋面の切妻投影）→ 軒→棟の台形を塗る。
+    //  ・軒の出がある → 外形上辺を傾き保存で延長（樋面=水平／妻面=けらば斜辺）。
+    // どちらも無ければバンドなし。
+    if (!hasRidge && !hasOverhang) continue;
+
+    roofBands.push({
+      buildingId: o.buildingId,
+      xStart: extXStart,
+      xEnd: extXEnd,
+      ridgeMm: hasRidge ? Math.round(markerMax) : Math.round(outlineMax),
+      profile: extendedTopProfile(o.segments, extXStart, extXEnd),
+      filledToRidge: hasRidge,
+    });
   }
   const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;
 

@@ -446,3 +446,56 @@ describe('buildFaceElevation: L字上階の2列が別 scaffold', () => {
     expect(fe.scaffolds[0].levels.levels).toEqual([1400, 3200]); // H=5000
   });
 });
+
+describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
+  const gableMarkers = (bid: string, eave: number, ridge: number): HeightMarker[] => [
+    { id: 'c0', buildingId: bid, edgeIndex: 0, t: 0, heightMm: eave },
+    { id: 'cm', buildingId: bid, edgeIndex: 0, t: 0.5, heightMm: ridge },
+    { id: 'c1', buildingId: bid, edgeIndex: 0, t: 1, heightMm: eave },
+  ];
+  const roofBld = (id: string): BuildingShape => ({
+    ...bld(id, RECT, 1),
+    roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null },
+  });
+
+  it('妻面・出幅600: x=壁±出幅・けらば軒先=軒高−勾配×出幅・棟まで塗らない', () => {
+    const fe = buildFaceElevation([], [roofBld('G')], { markers: gableMarkers('G', 5000, 7000), face: 'north' });
+    expect(fe.roofBands.length).toBe(1);
+    const band = fe.roofBands[0];
+    expect(band.filledToRidge).toBe(false);
+    expect(band.xStart).toBe(-60);
+    expect(band.xEnd).toBe(420);
+    // 傾き=(7000-5000)/180 mm/grid、出幅60grid → けらば軒先 = 5000 − 2000/180×60 = 4333
+    expect(band.profile[0]).toEqual({ x: -60, mm: 4333 });
+    expect(band.profile[band.profile.length - 1]).toEqual({ x: 420, mm: 4333 });
+    // 中央の壁プロファイル(棟)を保持
+    expect(band.profile.some((p) => p.x === 180 && p.mm === 7000)).toBe(true);
+  });
+
+  it('けらば軒先の高さは GL(0) 下限', () => {
+    const fe = buildFaceElevation([], [roofBld('G2')], { markers: gableMarkers('G2', 400, 7000), face: 'north' });
+    const band = fe.roofBands[0];
+    // 傾き=(7000-400)/180≈36.7、60grid で 400−2200<0 → 0
+    expect(band.profile[0].mm).toBe(0);
+    expect(band.profile[band.profile.length - 1].mm).toBe(0);
+  });
+
+  it('妻面・出幅なし: バンドなし(従来どおり)', () => {
+    const fe = buildFaceElevation([], [bld('GN', RECT, 1)], { markers: gableMarkers('GN', 5000, 7000), face: 'north' });
+    expect(fe.roofBands).toEqual([]);
+  });
+
+  it('樋面(棟マーカー付き)は従来どおり棟まで塗る台形(filledToRidge=true)', () => {
+    // 北=軒(角5000)・南=棟7000 → 北面は樋面の切妻投影。
+    const markers: HeightMarker[] = [
+      { id: 'n0', buildingId: 'E', edgeIndex: 0, t: 0, heightMm: 5000 },
+      { id: 'n1', buildingId: 'E', edgeIndex: 0, t: 1, heightMm: 5000 },
+      { id: 'sm', buildingId: 'E', edgeIndex: 2, t: 0.5, heightMm: 7000 },
+    ];
+    const fe = buildFaceElevation([], [roofBld('E')], { markers, face: 'north' });
+    expect(fe.roofBands[0].filledToRidge).toBe(true);
+    expect(fe.roofBands[0].ridgeMm).toBe(7000);
+    expect(fe.roofBands[0].xStart).toBe(-60);
+    expect(fe.roofBands[0].xEnd).toBe(420);
+  });
+});
