@@ -225,6 +225,25 @@ export type HeightMarker = {
   floor?: number;
 };
 
+// === 棟ライン (= 寄棟対応・E-3.8) ===
+/**
+ * 棟ライン: 建物内部に引く水平な棟(むね)の線分。立面の屋根バンド上端(隅棟・寄棟)生成に使う。
+ * p1/p2 はグリッド座標 (= 1グリッド=10mm)。heightMm は棟高 (= GL 基準)。
+ * CanvasData への追加は E-3.8c で行う (= ここでは型定義のみ)。
+ */
+export type RidgeLine = {
+  id: string;
+  /** 紐づく建物 ID (= 内部にある建物) */
+  buildingId: string;
+  /** 棟線の端点 (= グリッド座標) */
+  p1: Point;
+  p2: Point;
+  /** 棟高 (= mm 単位・GL 基準) */
+  heightMm: number;
+  /** 階指定 (= undefined は全階共通、 既存 HeightMarker/MagnetPin と同パターン) */
+  floor?: number;
+};
+
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===
 /** 寸法線の種別キー。S-4 で N 階へ template literal 拡張 (`${cat}${floor}F`)。
  *  {1,2} では従来 6 key と一致。DEFAULT_DIMENSION_OFFSETS_MM は 6 key のまま維持し、
