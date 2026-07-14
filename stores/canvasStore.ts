@@ -384,6 +384,8 @@ type CanvasStore = {
   addRidgeLine: (r: RidgeLine) => void;
   updateRidgeLine: (id: string, patch: Partial<RidgeLine>) => void;
   removeRidgeLine: (id: string) => void;
+  /** 指定建物の棟ラインを全削除（屋根形状変更時の置換/削除・1 history）。 */
+  removeRidgeLinesForBuilding: (buildingId: string) => void;
   moveRidgeLine: (id: string, p1: import('@/types').Point, p2: import('@/types').Point) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
@@ -1233,6 +1235,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     pushHistory();
     set({
       canvasData: { ...canvasData, ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id) },
+      isDirty: true,
+    });
+  },
+  removeRidgeLinesForBuilding: (buildingId) => {
+    const { canvasData, pushHistory } = get();
+    if (!(canvasData.ridgeLines ?? []).some((r) => r.buildingId === buildingId)) return;
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.buildingId !== buildingId) },
       isDirty: true,
     });
   },

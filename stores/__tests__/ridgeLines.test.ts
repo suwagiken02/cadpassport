@@ -63,6 +63,28 @@ describe('canvasStore: ridgeLines (E-3.8c)', () => {
     expect(lines()).toHaveLength(0);
   });
 
+  it('removeRidgeLinesForBuilding: 指定建物の棟線のみ削除・undo で戻る(E-3.13)', () => {
+    reset();
+    const rlFor = (id: string, bid: string): RidgeLine =>
+      ({ id, buildingId: bid, p1: { x: 0, y: 0 }, p2: { x: 10, y: 0 }, heightMm: 7000 });
+    useCanvasStore.getState().addRidgeLine(rlFor('a', 'B'));
+    useCanvasStore.getState().addRidgeLine(rlFor('b', 'B'));
+    useCanvasStore.getState().addRidgeLine(rlFor('c', 'C'));
+    useCanvasStore.getState().removeRidgeLinesForBuilding('B');
+    expect(lines().map((r) => r.id)).toEqual(['c']); // B の棟線だけ消える
+    useCanvasStore.getState().undo();
+    expect(lines().map((r) => r.id).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('removeRidgeLinesForBuilding: 対象なしは no-op(history を汚さない)', () => {
+    reset();
+    useCanvasStore.getState().addRidgeLine({ id: 'x', buildingId: 'B', p1: { x: 0, y: 0 }, p2: { x: 5, y: 0 }, heightMm: 7000 });
+    useCanvasStore.setState({ history: { past: [], future: [] } });
+    useCanvasStore.getState().removeRidgeLinesForBuilding('OTHER'); // 対象なし
+    expect(lines()).toHaveLength(1);
+    expect(useCanvasStore.getState().history.past).toHaveLength(0); // pushHistory していない
+  });
+
   it('roofShape 互換: 旧データ(roofShape なし)の roof は normalize 後も保持(E-3.12)', () => {
     const data = emptyData();
     const b: BuildingShape = {

@@ -88,6 +88,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
         edgeOverhangsMm: isMultiEdge ? zeroEdges : undefined,
       };
       updateBuildingRoof(buildingId, config);
+      useCanvasStore.getState().removeRidgeLinesForBuilding(buildingId); // 屋根なし → 棟線も削除
       onClose();
       return;
     }
@@ -103,21 +104,22 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
     };
     updateBuildingRoof(buildingId, config);
 
-    // 寄棟: 棟線を用意（中央自動 or 手動）。既存棟線があれば置換（undo で戻せる）。
+    const s = useCanvasStore.getState();
     if (roofShape === 'hip') {
-      const s = useCanvasStore.getState();
-      const existing = (s.canvasData.ridgeLines ?? [])
-        .filter((r) => r.buildingId === buildingId)
-        .map((r) => r.id);
-      if (existing.length > 0) s.removeElements(existing);
       if (hipMode === 'auto') {
+        // 中央に自動: 既存棟線を置換して中央棟線を生成
+        s.removeRidgeLinesForBuilding(buildingId);
         const { p1, p2 } = generateCenterRidgeLine(buildingPoints ?? []);
         const id = uuidv4();
         s.addRidgeLine({ id, buildingId, p1, p2, heightMm: s.lastRidgeInputMm });
         s.setRidgeInputLineId(id); // 直後に高さ入力モーダル
       } else {
-        s.setRidgeLineMode(true); // 手動で棟ツール起動
+        // 手動: 既存棟線は維持し、棟ツールを起動
+        s.setRidgeLineMode(true);
       }
+    } else {
+      // 寄棟以外(切妻/水平/片流れ) → 棟線を削除
+      s.removeRidgeLinesForBuilding(buildingId);
     }
     onClose();
   };
