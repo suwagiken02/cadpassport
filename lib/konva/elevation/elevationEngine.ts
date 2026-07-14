@@ -13,11 +13,11 @@
 //   floors = 段数 = floor((H-1)/1800)、startMm = H − 1800×floors（スタート端数）。
 //   整合をテストで固定（5000 → スタート1400・2段・1800下がり）。
 // ============================================================
-import type { BuildingShape, HeightMarker, Point } from '@/types';
+import type { BuildingShape, HeightMarker, Point, RoofOverhang } from '@/types';
 import { getFloor } from '@/types';
 import { heightToFloors, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM, type PillarType } from '../calculator';
 import { mmToGrid } from '../gridUtils';
-import { getOutlinePolygon } from '../heightMarkerUtils';
+import { getEdgeOverhangs, computeOffsetPolygon } from '../roofUtils';
 import { getHeightAtPosition } from '../heightInterpolation';
 import type { Face, FaceSpanColumn } from './faceReconstruction';
 
@@ -179,9 +179,9 @@ function outlineEdgeFace(pts: Point[], i: number, ws: number): Face {
 /**
  * 建物を指定面から見た輪郭を作る（矩形ベース: 幅=変軸範囲、高さ=高さマーカー or 既定）。
  *
- * 高さは既存機能の getHeightAtPosition（getOutlinePolygon の辺 index 空間）で読む。
- * このため辺は getOutlinePolygon を直接走査し index を一致させる（時計回り並べ替え版の
- * getBuildingEdgesClockwise とは index 空間が異なる点に注意）。
+ * シルエットは building.points（壁）を走査する。軒の出は屋根バンド(roofBands)側で
+ * 壁より外へ張り出して表現するため、建物本体は壁位置で描く（建築立面図の標準）。
+ * 高さは getHeightAtPosition（辺 index は building.points と同順）で読む。
  *
  * フォールバック:
  *   マーカー 0 個（getHeightAtPosition が null）→ opts.defaultHeightMm を使用。
@@ -198,7 +198,7 @@ export function buildBuildingOutline(
   markers?: HeightMarker[],
   opts?: BuildingOutlineOpts,
 ): BuildingOutline {
-  const outline = getOutlinePolygon(building);
+  const outline = building.points; // 壁シルエット（軒の出は roofBands で表現）
   const floor = getFloor(building);
   const result: BuildingOutline = { buildingId: building.id, floor, face, segments: [] };
   const n = outline.length;
@@ -348,7 +348,42 @@ export type FaceElevationOpts = ElevationLevelsOpts & {
   face?: Face;
   /** faceColumns が空のときに使う階（既定 1）。 */
   floor?: number;
+  /** 旧式 roofOverhangs[]（軒の出）。RoofConfig(building.roof) 優先で補完的に読む。 */
+  roofOverhangs?: RoofOverhang[];
 };
+
+/** 建物の辺ごと出幅(グリッド)を、RoofConfig(building.roof・優先)＋旧式 roofOverhangs[] から統合。 */
+function mergedRoofOverhangsGrid(building: BuildingShape, roofOverhangs: RoofOverhang[]): number[] {
+  const n = building.points.length;
+  const base = (building.roof && building.roof.roofType !== 'none')
+    ? getEdgeOverhangs(building, building.roof)
+    : new Array(n).fill(0);
+  const result = base.slice(0, n);
+  while (result.length < n) result.push(0);
+  // RoofConfig が 0 の辺のみ旧式 roofOverhangs[] で補完（RoofConfig 優先）。
+  for (const ro of roofOverhangs) {
+    if (ro.buildingId !== building.id) continue;
+    if (ro.faceIndex < 0 || ro.faceIndex >= n) continue;
+    if (result[ro.faceIndex] === 0 && ro.overhangMm > 0) result[ro.faceIndex] = mmToGrid(ro.overhangMm);
+  }
+  return result;
+}
+
+/** ポリゴンの、指定 face の辺の変軸範囲(グリッド)。該当辺なしは null。 */
+function faceXRange(pts: Point[], face: Face): { xStart: number; xEnd: number } | null {
+  if (pts.length < 3) return null;
+  const ws = windingSign(pts);
+  const isHorizontal = face === 'north' || face === 'south';
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    if (outlineEdgeFace(pts, i, ws) !== face) continue;
+    const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+    const a = isHorizontal ? p1.x : p1.y;
+    const b = isHorizontal ? p2.x : p2.y;
+    mn = Math.min(mn, a, b); mx = Math.max(mx, a, b);
+  }
+  return Number.isFinite(mn) ? { xStart: mn, xEnd: mx } : null;
+}
 
 /** 列の基準建物高さ(mm)＝水下(樋面)。現場ルール(鮎澤氏確認): 段数・天端(建物高さ−1800)は
  *  「水下＝その範囲の最低高さ」を基準にする(1800下がりが最高の作業性。棟に合わせると妻中央
@@ -476,7 +511,17 @@ export function buildFaceElevation(
       xMax = Math.max(xMax, s.xEnd);
     }
     if (markerMax > outlineMax + 1e-6) {
-      roofBands.push({ buildingId: o.buildingId, xStart: xMin, xEnd: xMax, ridgeMm: Math.round(markerMax) });
+      // 軒の出: 出幅ぶん左右へ拡張した屋根 x 範囲（出幅なしなら壁範囲と一致）。
+      let xStart = xMin, xEnd = xMax;
+      const b = buildings.find(bb => bb.id === o.buildingId);
+      if (b) {
+        const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? []);
+        if (ohs.some(v => v > 0)) {
+          const range = faceXRange(computeOffsetPolygon(b.points, ohs), o.face);
+          if (range) { xStart = range.xStart; xEnd = range.xEnd; }
+        }
+      }
+      roofBands.push({ buildingId: o.buildingId, xStart, xEnd, ridgeMm: Math.round(markerMax) });
     }
   }
   const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;

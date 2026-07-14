@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { BuildingShape, HeightMarker, Point } from '@/types';
+import type { BuildingShape, HeightMarker, Point, RoofOverhang } from '@/types';
 import { heightToFloors } from '../../calculator';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import {
@@ -335,6 +335,46 @@ describe('E-3.7: 屋根投影バンド roofBands', () => {
   it('マーカー無し: roofBands 空', () => {
     const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
     expect(fe.roofBands).toEqual([]);
+  });
+});
+
+describe('E-3.9: 軒の出を屋根バンドに反映', () => {
+  const markers = (bid: string): HeightMarker[] => [
+    { id: 'n0', buildingId: bid, edgeIndex: 0, t: 0, heightMm: 5000 },
+    { id: 'n1', buildingId: bid, edgeIndex: 0, t: 1, heightMm: 5000 },
+    { id: 'sm', buildingId: bid, edgeIndex: 2, t: 0.5, heightMm: 7000 },
+  ];
+
+  it('出幅あり(RoofConfig 600mm): 壁シルエットは壁位置[0,360]・roofBands は壁±出幅[-60,420]', () => {
+    const roofBuilding: BuildingShape = {
+      ...bld('RF1', RECT, 1),
+      roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null },
+    };
+    const fe = buildFaceElevation([], [roofBuilding], { markers: markers('RF1'), face: 'north' });
+    const segs = fe.buildingOutlines[0].segments;
+    expect(segs[0].xStart).toBe(0);              // 壁シルエットは壁位置
+    expect(segs[segs.length - 1].xEnd).toBe(360);
+    expect(fe.roofBands.length).toBe(1);
+    expect(fe.roofBands[0].xStart).toBe(-60);    // 出幅600mm=60grid 左右へ拡張
+    expect(fe.roofBands[0].xEnd).toBe(420);
+    expect(fe.roofBands[0].ridgeMm).toBe(7000);
+  });
+
+  it('出幅なし: 壁と roofBands の x 範囲が一致', () => {
+    const fe = buildFaceElevation([], [bld('R1', RECT, 1)], { markers: markers('R1'), face: 'north' });
+    const segs = fe.buildingOutlines[0].segments;
+    expect(fe.roofBands[0].xStart).toBe(segs[0].xStart);
+    expect(fe.roofBands[0].xEnd).toBe(segs[segs.length - 1].xEnd);
+  });
+
+  it('旧式 roofOverhangs[](RoofConfig なし建物)でも反映', () => {
+    const legacy: RoofOverhang[] = [
+      { id: 'ro1', buildingId: 'L1', faceIndex: 1, overhangMm: 600 }, // east(edge1)
+      { id: 'ro3', buildingId: 'L1', faceIndex: 3, overhangMm: 600 }, // west(edge3)
+    ];
+    const fe = buildFaceElevation([], [bld('L1', RECT, 1)], { markers: markers('L1'), face: 'north', roofOverhangs: legacy });
+    expect(fe.roofBands[0].xStart).toBe(-60);
+    expect(fe.roofBands[0].xEnd).toBe(420);
   });
 });
 

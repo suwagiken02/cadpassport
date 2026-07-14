@@ -48,8 +48,9 @@ export default function ElevationModal() {
       defaultHeightMm: hasMarkers ? undefined : FALLBACK_HEIGHT_MM,
       pillarType,
       face,
+      roofOverhangs: canvasData.roofOverhangs,
     });
-  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, hasMarkers]);
+  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, canvasData.roofOverhangs, hasMarkers]);
 
   const noScaffold = faceElevation.scaffolds.length === 0;
   const hasContent = faceElevation.buildingOutlines.length > 0 || faceElevation.scaffolds.length > 0;
@@ -171,7 +172,8 @@ function ElevationSVG({
     for (const px of sc.postXs) seeX(px);
     maxH = Math.max(maxH, sc.levels.topRailMm);
   }
-  if (ridgeMaxMm != null) maxH = Math.max(maxH, ridgeMaxMm); // 棟破線が viewBox 内に収まるように
+  for (const rb of roofBands) { seeX(rb.xStart); seeX(rb.xEnd); } // 軒の出ぶん拡張した屋根バンドも算入
+  if (ridgeMaxMm != null) maxH = Math.max(maxH, ridgeMaxMm); // 棟が viewBox 内に収まるように
 
   const heightAvailable = maxH >= 1 && Number.isFinite(minGX);
   if (!heightAvailable) {
@@ -242,11 +244,17 @@ function ElevationSVG({
       {roofBands.map((band) => {
         const o = buildingOutlines.find((bo) => bo.buildingId === band.buildingId);
         if (!o || o.segments.length === 0) return null;
+        // 下端(軒プロファイル)を band の x 範囲（軒の出ぶん拡張）まで水平に延長。
+        // ※勾配による軒先の下がりは棟ライン実装後の課題。今回は水平近似。
+        const first = o.segments[0];
+        const last = o.segments[o.segments.length - 1];
         const profile: string[] = [];
+        profile.push(`${sxg(band.xStart).toFixed(1)},${sy(first.heightStartMm).toFixed(1)}`);
         o.segments.forEach((s, k) => {
           if (k === 0) profile.push(`${sxg(s.xStart).toFixed(1)},${sy(s.heightStartMm).toFixed(1)}`);
           profile.push(`${sxg(s.xEnd).toFixed(1)},${sy(s.heightEndMm).toFixed(1)}`);
         });
+        profile.push(`${sxg(band.xEnd).toFixed(1)},${sy(last.heightEndMm).toFixed(1)}`);
         const pts = [
           ...profile,
           `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
