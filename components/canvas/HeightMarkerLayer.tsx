@@ -36,6 +36,8 @@ export default function HeightMarkerLayer() {
   const wasDraggingRef = useRef(false);
   const dragMarkerIdRef = useRef<string | null>(null);
   const dragInfoRef = useRef<DragInfo | null>(null);
+  // mouse: 押下したマーカー（移動が閾値を超えたら初めてドラッグ化。移動なしの click は編集モーダル）
+  const mousePendingRef = useRef<{ id: string; edgeIndex: number; t: number } | null>(null);
 
   // ドラッグ中の論理位置 (= 視覚フィードバック用 state、 dragEnd で 1 回 store 確定)
   const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
@@ -68,6 +70,22 @@ export default function HeightMarkerLayer() {
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
           pressStartPosRef.current = null;
+        }
+      }
+
+      // mouse: 押下後、移動が閾値を超えたら初めてドラッグ開始 (= click と drag を区別。
+      //   click(移動なし)は onCircleClick で編集モーダルを開く)
+      if (mousePendingRef.current && pressStartPosRef.current && !isDraggingRef.current) {
+        const dist = Math.hypot(
+          pointer.x - pressStartPosRef.current.x,
+          pointer.y - pressStartPosRef.current.y,
+        );
+        if (dist > PRESS_MOVE_THRESHOLD_PX) {
+          const m = mousePendingRef.current;
+          isDraggingRef.current = true;
+          dragMarkerIdRef.current = m.id;
+          updateDragInfo({ markerId: m.id, edgeIndex: m.edgeIndex, t: m.t });
+          mousePendingRef.current = null;
         }
       }
 
@@ -175,6 +193,7 @@ export default function HeightMarkerLayer() {
       }
       isDraggingRef.current = false;
       dragMarkerIdRef.current = null;
+      mousePendingRef.current = null;
       updateDragInfo(null);
       setPointerScreenPos(null);
     };
@@ -203,12 +222,11 @@ export default function HeightMarkerLayer() {
     const stage = e.target.getStage();
     const pointer = stage?.getPointerPosition();
     if (pointer) pressStartPosRef.current = { x: pointer.x, y: pointer.y };
-    // PC マウスは即ドラッグ、 タッチは長押し閾値で誤タップ防止
+    // click/tap(移動なし)は編集モーダルを開くため、押下時はドラッグ開始しない。
+    // mouse: 閾値超の移動で初めてドラッグ化(onStagePointerMove)。touch: 長押しでドラッグ化。
     const isTouch = 'touches' in e.evt;
     if (!isTouch) {
-      isDraggingRef.current = true;
-      dragMarkerIdRef.current = marker.id;
-      updateDragInfo({ markerId: marker.id, edgeIndex: marker.edgeIndex, t: marker.t });
+      mousePendingRef.current = { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t };
       return;
     }
     longPressTimerRef.current = setTimeout(() => {
@@ -283,13 +301,19 @@ export default function HeightMarkerLayer() {
           : `H${marker.heightMm}mm`;
         return (
           <React.Fragment key={marker.id}>
+            {/* 透明ヒット領域（モバイル指基準・半径20px以上）。編集/削除のタップを確実化 */}
             <Circle
-              x={screenX} y={screenY} radius={r}
-              fill={MARKER_COLOR} stroke="#fff" strokeWidth={1.5}
+              x={screenX} y={screenY} radius={Math.max(20, r)}
+              fill="transparent"
               onMouseDown={(e) => onCircleDown(e, { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t })}
               onTouchStart={(e) => onCircleDown(e, { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t })}
               onClick={() => onCircleClick(marker.id)}
               onTap={() => onCircleClick(marker.id)}
+            />
+            <Circle
+              x={screenX} y={screenY} radius={r}
+              fill={MARKER_COLOR} stroke="#fff" strokeWidth={1.5}
+              listening={false}
             />
             <Text
               x={screenX + r + 4} y={screenY - fs / 2}

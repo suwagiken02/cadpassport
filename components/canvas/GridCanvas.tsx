@@ -592,7 +592,7 @@ export default function GridCanvas({ width, height }: Props) {
       {/* マグネットピンレイヤー（最前面のガイド） */}
       <MagnetPinLayer />
 
-      {/* 高さマーカーレイヤー (= Task #8 Phase C、 listening=false で配置のみ) */}
+      {/* 高さマーカーレイヤー (= Task #8 Phase C、 タップで編集/削除・ドラッグで移動) */}
       <HeightMarkerLayer />
 
       {/* 足場開始 ★ アイコン (= 起点角、 #FFD700 ゴールド) */}
