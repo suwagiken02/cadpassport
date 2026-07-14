@@ -316,22 +316,6 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">🏢</span>
               <span className="text-xs font-bold">立面図</span>
             </button>
-            {/* 足場を一括削除（手摺・支柱・アンチを全削除・建物等は残す・undo可） */}
-            <button
-              onClick={() => {
-                setShowAshibaMenu(false);
-                const s = useCanvasStore.getState();
-                if (s.canvasData.handrails.length === 0 && s.canvasData.posts.length === 0 && s.canvasData.antis.length === 0) {
-                  s.setAlertMessage('削除する足場がありません');
-                  return;
-                }
-                setShowClearScaffoldConfirm(true);
-              }}
-              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-red-500/10 border-2 border-red-500 text-red-400 hover:bg-red-500/20 transition-colors"
-            >
-              <span className="text-3xl mb-1">🗑</span>
-              <span className="text-xs font-bold">足場を一括削除</span>
-            </button>
           </div>
         </>
       )}
@@ -392,6 +376,27 @@ export default function ModeToolbar() {
               {selectLock[key] ? '🔒' : ''}{label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 消去モードのオプションバー: 個別削除の案内＋足場一括削除 */}
+      {mode === 'erase' && !isMeasuring && (
+        <div className="fixed bottom-[58px] left-1/2 -translate-x-1/2 z-30 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-2 py-1.5 flex items-center gap-2">
+          <span className="text-[11px] text-dimension">タップで個別削除</span>
+          <button
+            type="button"
+            onClick={() => {
+              const s = useCanvasStore.getState();
+              if (s.canvasData.handrails.length === 0 && s.canvasData.posts.length === 0 && s.canvasData.antis.length === 0) {
+                s.setAlertMessage('削除する足場がありません');
+                return;
+              }
+              setShowClearScaffoldConfirm(true);
+            }}
+            className="px-3 py-1 rounded-lg text-[11px] font-bold bg-red-500/80 text-white hover:bg-red-500 transition-colors"
+          >
+            🗑 足場を一括削除
+          </button>
         </div>
       )}
 
