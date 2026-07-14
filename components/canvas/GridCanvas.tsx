@@ -24,6 +24,7 @@ import PinDirectionPad from './PinDirectionPad';
 import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
+import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
 import CompassWidget from './CompassWidget';
 import { useCanvasInteraction } from '@/lib/konva/useCanvasInteraction';
@@ -417,8 +418,9 @@ export default function GridCanvas({ width, height }: Props) {
           // N階一般化 P2 / S-5e-1: 新フロアは既存最上階+1 (上限 MAX_BUILDING_FLOOR)。下階をなぞった draft をその階で確定。
           const existingMaxFloor = useCanvasStore.getState().canvasData.buildings.reduce((m, b) => Math.max(m, b.floor ?? 1), 0);
           const targetFloor = Math.min(MAX_BUILDING_FLOOR, Math.max(existingMaxFloor, 1) + 1);
+          const b2fId = uuidv4();
           useCanvasStore.getState().addBuilding({
-            id: uuidv4(),
+            id: b2fId,
             type: 'polygon',
             points: finalPoints,
             fill: building2FDraft.fill,
@@ -427,6 +429,10 @@ export default function GridCanvas({ width, height }: Props) {
             templateId: building2FDraft.templateId,
             templateDims: building2FDraft.templateDims,
           });
+          // テンプレートで寄棟を選んでいれば、2F配置時に中央棟線を自動生成（E-3.14）
+          if (building2FDraft.roof?.roofShape === 'hip') {
+            applyRoofShapeRidge(b2fId, finalPoints, 'hip', 'auto');
+          }
           useCanvasStore.getState().setActiveFloor(targetFloor);
           useCanvasStore.getState().clearBuilding2FDraft();
           setDraft2FPos(null);

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { useCanvasStore } from '@/stores/canvasStore';
-import type { BuildingShape, CanvasData, RidgeLine } from '@/types';
+import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
+import type { BuildingShape, CanvasData, Point, RidgeLine } from '@/types';
 
 const emptyData = (): CanvasData => ({
   version: '1.0',
@@ -83,6 +84,43 @@ describe('canvasStore: ridgeLines (E-3.8c)', () => {
     useCanvasStore.getState().removeRidgeLinesForBuilding('OTHER'); // 対象なし
     expect(lines()).toHaveLength(1);
     expect(useCanvasStore.getState().history.past).toHaveLength(0); // pushHistory していない
+  });
+
+  it('applyRoofShapeRidge 寄棟(自動): 中央棟線を生成＋高さ入力を開く(E-3.14)', () => {
+    reset();
+    const rect: Point[] = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 200 }, { x: 0, y: 200 }];
+    applyRoofShapeRidge('B1', rect, 'hip', 'auto');
+    const ls = lines().filter((r) => r.buildingId === 'B1');
+    expect(ls).toHaveLength(1);
+    expect(ls[0].p1).toEqual({ x: 100, y: 100 });
+    expect(ls[0].p2).toEqual({ x: 300, y: 100 });
+    expect(useCanvasStore.getState().ridgeInputLineId).toBe(ls[0].id);
+  });
+
+  it('applyRoofShapeRidge 寄棟(自動)は既存を置換', () => {
+    reset();
+    useCanvasStore.getState().addRidgeLine({ id: 'old', buildingId: 'B1', p1: { x: 1, y: 1 }, p2: { x: 2, y: 2 }, heightMm: 5000 });
+    applyRoofShapeRidge('B1', [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 200 }, { x: 0, y: 200 }], 'hip', 'auto');
+    const ls = lines().filter((r) => r.buildingId === 'B1');
+    expect(ls).toHaveLength(1);
+    expect(ls[0].id).not.toBe('old');
+  });
+
+  it('applyRoofShapeRidge 寄棟(手動): 既存維持＋棟ツール起動', () => {
+    reset();
+    useCanvasStore.getState().addRidgeLine({ id: 'keep', buildingId: 'B1', p1: { x: 1, y: 1 }, p2: { x: 2, y: 2 }, heightMm: 5000 });
+    useCanvasStore.getState().setRidgeLineMode(false);
+    applyRoofShapeRidge('B1', [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], 'hip', 'manual');
+    expect(lines().map((r) => r.id)).toContain('keep');
+    expect(useCanvasStore.getState().isRidgeLineMode).toBe(true);
+    useCanvasStore.getState().setRidgeLineMode(false);
+  });
+
+  it('applyRoofShapeRidge 切妻/水平/片流れ: 棟線を削除', () => {
+    reset();
+    useCanvasStore.getState().addRidgeLine({ id: 'g', buildingId: 'B1', p1: { x: 1, y: 1 }, p2: { x: 2, y: 2 }, heightMm: 5000 });
+    applyRoofShapeRidge('B1', [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], 'gable', 'auto');
+    expect(lines().filter((r) => r.buildingId === 'B1')).toHaveLength(0);
   });
 
   it('roofShape 互換: 旧データ(roofShape なし)の roof は normalize 後も保持(E-3.12)', () => {

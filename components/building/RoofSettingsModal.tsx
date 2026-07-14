@@ -1,27 +1,13 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { RoofType, RoofConfig, Point } from '@/types';
 import NumInput from '@/components/ui/NumInput';
 import { getBuildingEdgesClockwise } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
-import { generateCenterRidgeLine } from '@/lib/konva/elevation/ridgeProjection';
-
-type RoofShape = 'hip' | 'gable' | 'flat' | 'shed';
-const SHAPE_OPTIONS: { v: RoofShape; label: string }[] = [
-  { v: 'hip', label: '寄棟' },
-  { v: 'gable', label: '切妻' },
-  { v: 'flat', label: '水平' },
-  { v: 'shed', label: '片流れ' },
-];
-const SHAPE_GUIDE: Record<RoofShape, string> = {
-  hip: '',
-  gable: '妻面(三角の面)の辺の中央に高さマーカーを置くと立面に反映されます',
-  flat: '',
-  shed: '高い辺と低い辺に高さマーカーを置くと立面に反映されます',
-};
+import RoofShapeSelector, { type RoofShape } from './RoofShapeSelector';
+import { applyRoofShapeRidge } from './roofShapeApply';
 
 type Props = {
   buildingId: string;
@@ -103,24 +89,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
       roofShape,
     };
     updateBuildingRoof(buildingId, config);
-
-    const s = useCanvasStore.getState();
-    if (roofShape === 'hip') {
-      if (hipMode === 'auto') {
-        // 中央に自動: 既存棟線を置換して中央棟線を生成
-        s.removeRidgeLinesForBuilding(buildingId);
-        const { p1, p2 } = generateCenterRidgeLine(buildingPoints ?? []);
-        const id = uuidv4();
-        s.addRidgeLine({ id, buildingId, p1, p2, heightMm: s.lastRidgeInputMm });
-        s.setRidgeInputLineId(id); // 直後に高さ入力モーダル
-      } else {
-        // 手動: 既存棟線は維持し、棟ツールを起動
-        s.setRidgeLineMode(true);
-      }
-    } else {
-      // 寄棟以外(切妻/水平/片流れ) → 棟線を削除
-      s.removeRidgeLinesForBuilding(buildingId);
-    }
+    applyRoofShapeRidge(buildingId, buildingPoints ?? [], roofShape, hipMode);
     onClose();
   };
 
@@ -197,46 +166,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
 
           {/* 屋根形状 (= E-3.12) */}
           {!roofNone && (
-            <div>
-              <label className="block text-sm text-dimension mb-1">屋根形状</label>
-              <div className="grid grid-cols-4 gap-1">
-                {SHAPE_OPTIONS.map((o) => (
-                  <button
-                    key={o.v}
-                    type="button"
-                    onClick={() => setRoofShape(o.v)}
-                    className={`py-2 rounded-lg text-sm font-bold border-2 transition-colors ${
-                      roofShape === o.v
-                        ? 'bg-accent/20 border-accent text-accent'
-                        : 'bg-dark-bg border-dark-border text-dimension hover:text-canvas'
-                    }`}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-              {SHAPE_GUIDE[roofShape] && (
-                <p className="mt-2 text-xs text-dimension">{SHAPE_GUIDE[roofShape]}</p>
-              )}
-              {roofShape === 'hip' && (
-                <div className="mt-2 flex gap-2">
-                  {(([['auto', '棟を中央に自動'], ['manual', '棟を手動で引く']]) as ['auto' | 'manual', string][]).map(([v, label]) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setHipMode(v)}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
-                        hipMode === v
-                          ? 'bg-accent/20 border-accent text-accent'
-                          : 'bg-dark-bg border-dark-border text-dimension hover:text-canvas'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <RoofShapeSelector shape={roofShape} onShapeChange={setRoofShape} hipMode={hipMode} onHipModeChange={setHipMode} />
           )}
 
           {/* 出幅入力 */}

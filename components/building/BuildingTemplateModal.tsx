@@ -9,6 +9,8 @@ import { DEFAULT_COLS, DEFAULT_ROWS } from '@/lib/konva/gridUtils';
 import NumInput from '@/components/ui/NumInput';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { nextBuildingFloor } from '@/lib/konva/floorLimits';
+import RoofShapeSelector, { type RoofShape } from './RoofShapeSelector';
+import { applyRoofShapeRidge } from './roofShapeApply';
 
 type Props = { onClose: () => void; floor?: number; floor1Building?: import('@/types').BuildingShape };
 
@@ -192,6 +194,8 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
   const [unit, setUnit] = useState<'m' | 'mm'>('mm');
   const [uniformRoof, setUniformRoof] = useState(true);
   const [edgeOverhangs, setEdgeOverhangs] = useState<Record<number, number>>({});
+  const [roofShape, setRoofShape] = useState<RoofShape>('hip');
+  const [hipMode, setHipMode] = useState<'auto' | 'manual'>('auto');
   const [anchorPoint, setAnchorPoint] = useState<'tl' | 'tr' | 'bl' | 'br' | 'center'>('tl');
 
   const template = BUILDING_TEMPLATES.find(t => t.id === selectedTemplate);
@@ -266,6 +270,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
       uniformMm: uniformRoof ? roofOverhangMm : 600,
       northMm: null, southMm: null, eastMm: null, westMm: null,
       edgeOverhangsMm: uniformRoof ? undefined : edgeOverhangs,
+      roofShape,
     };
 
     // 2F建物は仮配置モードで配置
@@ -297,7 +302,10 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
     }
 
     // 1F建物は即配置
-    addBuilding({ id: uuidv4(), type: 'polygon', points, fill: '#3d3d3a', floor: 1, roof, templateId: selectedTemplate, templateDims: { ...dims } });
+    const newId = uuidv4();
+    addBuilding({ id: newId, type: 'polygon', points, fill: '#3d3d3a', floor: 1, roof, templateId: selectedTemplate, templateDims: { ...dims } });
+    // 屋根形状に応じて棟線を用意/削除（寄棟自動→生成＋高さ入力、手動→棟ツール、他→削除）
+    if (!roofNone) applyRoofShapeRidge(newId, points, roofShape, hipMode);
     requestAnimationFrame(() => {
       zoomToFitBuildings(window.innerWidth, window.innerHeight - 120);
     });
@@ -534,6 +542,11 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
                       })}
                     </div>
                   )}
+                </div>
+              )}
+              {!roofNone && (
+                <div className="mt-3">
+                  <RoofShapeSelector shape={roofShape} onShapeChange={setRoofShape} hipMode={hipMode} onHipModeChange={setHipMode} />
                 </div>
               )}
             </div>
