@@ -23,6 +23,7 @@ import PinAnchorPickerLayer from './PinAnchorPickerLayer';
 import PinDirectionPad from './PinDirectionPad';
 import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
+import RidgeLineLayer from './RidgeLineLayer';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
 import CompassWidget from './CompassWidget';
 import { useCanvasInteraction } from '@/lib/konva/useCanvasInteraction';
@@ -594,6 +595,9 @@ export default function GridCanvas({ width, height }: Props) {
 
       {/* 高さマーカーレイヤー (= Task #8 Phase C、 タップで編集/削除・ドラッグで移動) */}
       <HeightMarkerLayer />
+
+      {/* 棟ラインレイヤー (= E-3.8d、 2点入力・編集・ドラッグ移動) */}
+      <RidgeLineLayer />
 
       {/* 足場開始 ★ アイコン (= 起点角、 #FFD700 ゴールド) */}
       <ScaffoldStartLayer />

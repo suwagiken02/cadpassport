@@ -6,7 +6,7 @@ import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function ModeToolbar() {
-  const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode, selectActive, setSelectActive, selectLock, setSelectLock } = useCanvasStore();
+  const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode, isRidgeLineMode, setRidgeLineMode, selectActive, setSelectActive, selectLock, setSelectLock } = useCanvasStore();
   const [showKutaiMenu, setShowKutaiMenu] = useState(false);
   const [showAshibaMenu, setShowAshibaMenu] = useState(false);
   const [dismissedStage, setDismissedStage] = useState<string | null>(null);
@@ -16,7 +16,7 @@ export default function ModeToolbar() {
   const [showClearScaffoldConfirm, setShowClearScaffoldConfirm] = useState(false);
 
   // 躯体グループ（建物・障害物・高さマーカー）
-  const isKutaiMode = mode === 'building' || mode === 'obstacle' || mode === 'roof' || isHeightMarkerMode;
+  const isKutaiMode = mode === 'building' || mode === 'obstacle' || mode === 'roof' || isHeightMarkerMode || isRidgeLineMode;
 
   const mainButtons = [
     { id: 'select' as const, label: '選択', icon: '↖', color: '#378ADD' },
@@ -61,6 +61,7 @@ export default function ModeToolbar() {
     if (id !== 'magnet-pin' && isMagnetPinMode) setMagnetPinMode(false);
     // 高さマーカーモードは「kutai 自身」以外のボタン押下で解除 (= 既存 obstacle と同パターン、 Task #8 Phase C)
     if (id !== 'kutai' && isHeightMarkerMode) setHeightMarkerMode(false);
+    if (id !== 'kutai' && isRidgeLineMode) setRidgeLineMode(false);
     // Phase K-1: 入れ替えモードはどのメインボタン押下でも解除 (足場メニューから再開可)
     if (isReorderMode) toggleReorderMode();
     // erase mode 中に「erase / select 以外のボタン」 押下時、 erase 解除 (= 誤タップ削除防止)
@@ -101,6 +102,7 @@ export default function ModeToolbar() {
       if (isKutaiMode) {
         setMode('select');
         setHeightMarkerMode(false);
+        setRidgeLineMode(false);
         setShowKutaiMenu(false);
         useCanvasStore.getState().setShowBuildingModal(false);
         useCanvasStore.getState().setShowBuilding2FModal(false);
@@ -180,6 +182,7 @@ export default function ModeToolbar() {
             <button
               data-tutorial-id="kutai-height"
               onClick={() => {
+                setRidgeLineMode(false);
                 setHeightMarkerMode(true);
                 setShowKutaiMenu(false);
               }}
@@ -187,6 +190,18 @@ export default function ModeToolbar() {
             >
               <span className="text-3xl mb-1">↕</span>
               <span className="text-sm font-bold">高さ</span>
+            </button>
+            {/* 棟ライン（E-3.8d: 寄棟の棟を建物内部に引く） */}
+            <button
+              onClick={() => {
+                setHeightMarkerMode(false);
+                setRidgeLineMode(true);
+                setShowKutaiMenu(false);
+              }}
+              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
+            >
+              <span className="text-3xl mb-1">⌂</span>
+              <span className="text-sm font-bold">棟</span>
             </button>
             <button
               data-tutorial-id="kutai-roof"

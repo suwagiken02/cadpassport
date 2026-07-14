@@ -23,6 +23,7 @@ import FeatureNoticeModal from '@/components/ui/FeatureNoticeModal';
 import CalculatorModal from '@/components/ui/CalculatorModal';
 import { isNoticeDismissed, dismissNotice } from '@/lib/notice';
 import HeightInputModal from '@/components/canvas/HeightInputModal';
+import RidgeLineInputModal from '@/components/canvas/RidgeLineInputModal';
 import AreaCalculationModal from '@/components/canvas/AreaCalculationModal';
 import ElevationModal from '@/components/elevation/ElevationModal';
 import AreaDesignationModeBar from '@/components/scaffold/AreaDesignationModeBar';
@@ -769,6 +770,7 @@ export default function EditorPage() {
         <CalculatorModal onClose={() => setShowCalculator(false)} />
       )}
       <HeightInputModal />
+      <RidgeLineInputModal />
       <AreaCalculationModal siteName={siteName} />
       <ElevationModal />
       <AreaDesignationModeBar />
