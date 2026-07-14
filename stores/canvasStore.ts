@@ -20,6 +20,7 @@ import {
   MagnetPin,
   HeightMarker,
   RidgeLine,
+  ElevationView,
   DimensionLineKey,
   DEFAULT_DIMENSION_OFFSETS_MM,
 } from '@/types';
@@ -40,6 +41,7 @@ const createEmptyCanvasData = (): CanvasData => ({
   magnetPins: [],
   heightMarkers: [],
   ridgeLines: [],
+  elevationViews: [],
 });
 
 /** 互換: 旧プロジェクトで欠落しているフィールドを補完する */
@@ -49,6 +51,7 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
     magnetPins: data.magnetPins ?? [],
     heightMarkers: data.heightMarkers ?? [],
     ridgeLines: data.ridgeLines ?? [],
+    elevationViews: data.elevationViews ?? [],
     dimensionOffsetsMm: data.dimensionOffsetsMm ?? { ...DEFAULT_DIMENSION_OFFSETS_MM },
   };
   // 旧 scaffoldStart → scaffoldStart1F / scaffoldStart2F への移行。
@@ -387,6 +390,10 @@ type CanvasStore = {
   /** 指定建物の棟ラインを全削除（屋根形状変更時の置換/削除・1 history）。 */
   removeRidgeLinesForBuilding: (buildingId: string) => void;
   moveRidgeLine: (id: string, p1: import('@/types').Point, p2: import('@/types').Point) => void;
+  // 立面ビュー (= E-4)
+  addElevationView: (v: ElevationView) => void;
+  removeElevationView: (id: string) => void;
+  moveElevationView: (id: string, originGrid: import('@/types').Point) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
   setShowAreaCalcModal: (v: boolean) => void;
@@ -1259,6 +1266,37 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
+  // === 立面ビュー (= E-4) ===
+  addElevationView: (v) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    // 同じ面の既存ビューは置換（1 面 1 ビュー）。
+    const kept = (canvasData.elevationViews ?? []).filter((e) => e.face !== v.face);
+    set({
+      canvasData: { ...canvasData, elevationViews: [...kept, v] },
+      isDirty: true,
+    });
+  },
+  removeElevationView: (id) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id) },
+      isDirty: true,
+    });
+  },
+  moveElevationView: (id, originGrid) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((e) => (e.id === id ? { ...e, originGrid } : e)),
+      },
+      isDirty: true,
+    });
+  },
+
   // === 平米計算 modal (= 平米計算 Phase C) ===
   showAreaCalcModal: false,
   setShowAreaCalcModal: (v) => set({ showAreaCalcModal: v }),
@@ -1306,6 +1344,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         memos: canvasData.memos.filter((m) => m.id !== id),
         magnetPins: (canvasData.magnetPins ?? []).filter((p) => p.id !== id),
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id),
+        elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id),
       },
       isDirty: true,
     });
@@ -1326,6 +1365,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         memos: canvasData.memos.filter((m) => !idSet.has(m.id)),
         magnetPins: (canvasData.magnetPins ?? []).filter((p) => !idSet.has(p.id)),
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => !idSet.has(r.id)),
+        elevationViews: (canvasData.elevationViews ?? []).filter((e) => !idSet.has(e.id)),
       },
       selectedIds: [],
       isDirty: true,

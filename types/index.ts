@@ -247,6 +247,30 @@ export type RidgeLine = {
   floor?: number;
 };
 
+// === 立面図のキャンバス配置 (= E-4) ===
+/**
+ * 立面プリミティブ: 立面ビューを構成する描画要素。座標はグループローカル・グリッド単位
+ * (= 左端=0、 GL=0、 上方向は負)。線幅/文字サイズは px。ElevationModal の SVG と同等内容。
+ */
+export type ElevationPrimitive =
+  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: string; width: number; dash?: number[]; opacity?: number }
+  | { kind: 'rect'; x: number; y: number; w: number; h: number; fill?: string; fillOpacity?: number; stroke?: string; width?: number }
+  | { kind: 'polygon'; points: number[]; fill?: string; fillOpacity?: number; stroke?: string; width?: number }
+  | { kind: 'text'; x: number; y: number; text: string; size: number; fill: string; anchor?: 'start' | 'middle' | 'end' };
+
+/**
+ * 立面ビュー: 1 面の立面を面グループ単位でキャンバスに配置したもの (= E-4)。
+ * originGrid はグループのローカル原点(左下=GL・左端)のキャンバス配置位置(グリッド)。
+ * scale はローカル座標(グリッド)への倍率(既定 1 = 平面と同縮尺)。
+ */
+export type ElevationView = {
+  id: string;
+  face: 'north' | 'south' | 'east' | 'west';
+  originGrid: Point;
+  scale: number;
+  primitives: ElevationPrimitive[];
+};
+
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===
 /** 寸法線の種別キー。S-4 で N 階へ template literal 拡張 (`${cat}${floor}F`)。
  *  {1,2} では従来 6 key と一致。DEFAULT_DIMENSION_OFFSETS_MM は 6 key のまま維持し、
@@ -292,6 +316,8 @@ export type CanvasData = {
   heightMarkers?: HeightMarker[];
   /** 棟ライン (= E-3.8、 undefined は既存プロジェクト互換、 normalize で [] に正規化) */
   ridgeLines?: RidgeLine[];
+  /** 立面ビュー (= E-4、 キャンバスに配置した立面。undefined は既存互換、 normalize で [] に正規化) */
+  elevationViews?: ElevationView[];
   /** 寸法線オフセット mm (= 既存 hardcoded からの delta、 ドラッグで更新、 normalize で default 補完) */
   dimensionOffsetsMm?: DimensionOffsetsMm;
 };
