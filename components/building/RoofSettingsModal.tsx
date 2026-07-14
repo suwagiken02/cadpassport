@@ -1,11 +1,27 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { RoofType, RoofConfig, Point } from '@/types';
 import NumInput from '@/components/ui/NumInput';
 import { getBuildingEdgesClockwise } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
+import { generateCenterRidgeLine } from '@/lib/konva/elevation/ridgeProjection';
+
+type RoofShape = 'hip' | 'gable' | 'flat' | 'shed';
+const SHAPE_OPTIONS: { v: RoofShape; label: string }[] = [
+  { v: 'hip', label: '寄棟' },
+  { v: 'gable', label: '切妻' },
+  { v: 'flat', label: '水平' },
+  { v: 'shed', label: '片流れ' },
+];
+const SHAPE_GUIDE: Record<RoofShape, string> = {
+  hip: '',
+  gable: '妻面(三角の面)の辺の中央に高さマーカーを置くと立面に反映されます',
+  flat: '',
+  shed: '高い辺と低い辺に高さマーカーを置くと立面に反映されます',
+};
 
 type Props = {
   buildingId: string;
@@ -55,6 +71,10 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
     return d;
   });
 
+  // 屋根形状 (= E-3.12)
+  const [roofShape, setRoofShape] = useState<RoofShape>(initialRoof?.roofShape ?? 'hip');
+  const [hipMode, setHipMode] = useState<'auto' | 'manual'>('auto');
+
   const isMultiEdge = edges && edges.length > 4;
 
   const handleConfirm = () => {
@@ -79,8 +99,26 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
       eastMm: uniform ? null : (isMultiEdge ? null : eastMm),
       westMm: uniform ? null : (isMultiEdge ? null : westMm),
       edgeOverhangsMm: !uniform && isMultiEdge ? edgeOverhangs : undefined,
+      roofShape,
     };
     updateBuildingRoof(buildingId, config);
+
+    // 寄棟: 棟線を用意（中央自動 or 手動）。既存棟線があれば置換（undo で戻せる）。
+    if (roofShape === 'hip') {
+      const s = useCanvasStore.getState();
+      const existing = (s.canvasData.ridgeLines ?? [])
+        .filter((r) => r.buildingId === buildingId)
+        .map((r) => r.id);
+      if (existing.length > 0) s.removeElements(existing);
+      if (hipMode === 'auto') {
+        const { p1, p2 } = generateCenterRidgeLine(buildingPoints ?? []);
+        const id = uuidv4();
+        s.addRidgeLine({ id, buildingId, p1, p2, heightMm: s.lastRidgeInputMm });
+        s.setRidgeInputLineId(id); // 直後に高さ入力モーダル
+      } else {
+        s.setRidgeLineMode(true); // 手動で棟ツール起動
+      }
+    }
     onClose();
   };
 
@@ -154,6 +192,50 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
               </label>
             )}
           </div>
+
+          {/* 屋根形状 (= E-3.12) */}
+          {!roofNone && (
+            <div>
+              <label className="block text-sm text-dimension mb-1">屋根形状</label>
+              <div className="grid grid-cols-4 gap-1">
+                {SHAPE_OPTIONS.map((o) => (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => setRoofShape(o.v)}
+                    className={`py-2 rounded-lg text-sm font-bold border-2 transition-colors ${
+                      roofShape === o.v
+                        ? 'bg-accent/20 border-accent text-accent'
+                        : 'bg-dark-bg border-dark-border text-dimension hover:text-canvas'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              {SHAPE_GUIDE[roofShape] && (
+                <p className="mt-2 text-xs text-dimension">{SHAPE_GUIDE[roofShape]}</p>
+              )}
+              {roofShape === 'hip' && (
+                <div className="mt-2 flex gap-2">
+                  {(([['auto', '棟を中央に自動'], ['manual', '棟を手動で引く']]) as ['auto' | 'manual', string][]).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setHipMode(v)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+                        hipMode === v
+                          ? 'bg-accent/20 border-accent text-accent'
+                          : 'bg-dark-bg border-dark-border text-dimension hover:text-canvas'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 出幅入力 */}
           {!roofNone && (uniform ? (

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { useCanvasStore } from '@/stores/canvasStore';
-import type { CanvasData, RidgeLine } from '@/types';
+import type { BuildingShape, CanvasData, RidgeLine } from '@/types';
 
 const emptyData = (): CanvasData => ({
   version: '1.0',
@@ -61,5 +61,19 @@ describe('canvasStore: ridgeLines (E-3.8c)', () => {
     expect(lines().map((r) => r.id)).toEqual(['r3']);
     useCanvasStore.getState().removeElements(['r3']);
     expect(lines()).toHaveLength(0);
+  });
+
+  it('roofShape 互換: 旧データ(roofShape なし)の roof は normalize 後も保持(E-3.12)', () => {
+    const data = emptyData();
+    const b: BuildingShape = {
+      id: 'B1', type: 'polygon', fill: '#eee',
+      points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+      roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null },
+    };
+    data.buildings = [b];
+    useCanvasStore.getState().setCanvasData(data);
+    const loaded = useCanvasStore.getState().canvasData.buildings[0];
+    expect(loaded.roof?.uniformMm).toBe(600);
+    expect(loaded.roof?.roofShape).toBeUndefined();
   });
 });

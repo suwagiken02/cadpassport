@@ -26,6 +26,9 @@ export type RoofConfig = {
   kirizumaGableFace?: 'ew' | 'ns';
   /** 辺ごとの出幅(mm)。L字など多辺ポリゴン用 */
   edgeOverhangsMm?: Record<number, number>;
+  /** 屋根形状 (= E-3.12、 立面の見え方のヒント。undefined は旧データ互換)
+   *  hip:寄棟 / gable:切妻 / flat:水平 / shed:片流れ */
+  roofShape?: 'hip' | 'gable' | 'flat' | 'shed';
 };
 
 // === 建物外形 ===

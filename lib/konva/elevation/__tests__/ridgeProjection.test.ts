@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, Point, RidgeLine } from '@/types';
-import { projectRidgeLinesToFace } from '../ridgeProjection';
+import { projectRidgeLinesToFace, generateCenterRidgeLine } from '../ridgeProjection';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 const bld = (id: string): BuildingShape => ({ id, type: 'polygon', points: RECT, fill: '#eee', floor: 1 });
@@ -50,5 +50,28 @@ describe('projectRidgeLinesToFace: 棟ラインの面軸投影', () => {
   it('heightMm は丸める', () => {
     const r = ridge('r5', 'B', { x: 90, y: 270 }, { x: 270, y: 270 }, 6999.6);
     expect(projectRidgeLinesToFace([r], b, 'north')[0].heightMm).toBe(7000);
+  });
+});
+
+describe('generateCenterRidgeLine: 寄棟の中央棟線(E-3.12)', () => {
+  it('横長矩形 → 水平棟(長さ=W−H・中央)', () => {
+    const pts: Point[] = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 200 }, { x: 0, y: 200 }];
+    expect(generateCenterRidgeLine(pts)).toEqual({ p1: { x: 100, y: 100 }, p2: { x: 300, y: 100 } });
+  });
+
+  it('縦長矩形 → 垂直棟(長さ=H−W・中央)', () => {
+    const pts: Point[] = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 400 }, { x: 0, y: 400 }];
+    expect(generateCenterRidgeLine(pts)).toEqual({ p1: { x: 100, y: 100 }, p2: { x: 100, y: 300 } });
+  });
+
+  it('正方形 → p1==p2(中央1点・点潰れ)', () => {
+    const pts: Point[] = [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 0, y: 300 }];
+    expect(generateCenterRidgeLine(pts)).toEqual({ p1: { x: 150, y: 150 }, p2: { x: 150, y: 150 } });
+  });
+
+  it('原点以外にオフセットした矩形も中央基準', () => {
+    const pts: Point[] = [{ x: 100, y: 50 }, { x: 500, y: 50 }, { x: 500, y: 250 }, { x: 100, y: 250 }];
+    // W=400,H=200,cx=300,cy=150,half=100
+    expect(generateCenterRidgeLine(pts)).toEqual({ p1: { x: 200, y: 150 }, p2: { x: 400, y: 150 } });
   });
 });
