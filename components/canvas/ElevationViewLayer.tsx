@@ -1,27 +1,26 @@
 'use client';
 
 // ============================================================
-// 立面ビューのキャンバス描画レイヤー（E-4b / E-6e-perf）。
+// 立面ビューのキャンバス描画レイヤー（E-4b / E-6e-perf / E-6e-perf2）。
 //  ・elevationViews を Konva グループとして描画（primitives→Line/Rect/Text）。
-//  ・E-6e-perf: パンを「Group の平行移動」に逃がし、子ノード(primitives)はローカル座標で
-//    memo 化する。これによりパン中に子ノードが再生成されず（React reconciliation を回避）、
-//    Group の x/y 更新だけで済む。ズーム(gridPx 変化)/ビュー変更時のみ子を再計算。
-//  ・グループ単位で native draggable（select）→ dragEnd で moveElevationView、タップで選択、
-//    消去ツールで削除。線幅/文字は px 一定（strokeScaleEnabled=false・group scale=1）。
+//  ・パン: Group の x/y 平行移動に逃がし、子ノードは「確定 gridPx」で memo 化（再生成しない）。
+//  ・ズーム(E-6e-perf2): 実測で「毎フレーム子再生成＋再cache」がズーム重の根因と確定。
+//    ズーム中は Group の scale = liveGridPx / cachedGridPx で追従し、子の再生成・再cache をしない。
+//    ズームが止まったら 200ms デバウンスで cachedGridPx を更新 → 1 回だけ再生成＋再cache（鮮明化）。
+//    ズーム中の一時的なボケは許容。停止後は px 一定の元の見た目に戻る。
+//  ・各 Group は cache() でビットマップ化。選択/ドラッグ/消去は従来どおり。
 // ============================================================
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
-// ===== E-6e-perf2 一時計測プローブ（確定後に削除）=====
-// パン中に childRecompute / cacheRun が増える → memo/cache が効いていない。
-// fps が低い → 描画/合成が重い。console に [EV-PERF] を毎秒出力。
-const _EVPERF = { layerRender: 0, childRecompute: 0, cacheRun: 0, frames: 0 };
-
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
+
+/** ズーム停止後に再cache するまでの待ち時間（ms）。 */
+const RECACHE_DEBOUNCE_MS = 200;
 
 function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen) {
   if (p.kind === 'line') {
@@ -69,32 +68,37 @@ type GroupProps = {
 };
 
 function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelectedIds, moveElevationView }: GroupProps) {
-  // pan を含まないローカル→ワールドpx 写像（pan は Group の x/y に逃がす）。
-  const worldOf: ToScreen = (lx, ly) => ({
-    x: (view.originGrid.x + lx * view.scale) * gridPx,
-    y: (view.originGrid.y + ly * view.scale) * gridPx,
-  });
+  // 「確定 gridPx」: 子ノード/キャッシュはこの値で作る。ズーム中は据え置き、停止後に追従。
+  const [cachedGridPx, setCachedGridPx] = useState(gridPx);
 
-  // 子ノードは view と gridPx にのみ依存 → パンでは再生成されない。
+  // ズームが止まってから(デバウンス)確定 gridPx を更新 → 子再生成＋再cache は 1 回だけ。
+  useEffect(() => {
+    if (gridPx === cachedGridPx) return;
+    const id = setTimeout(() => setCachedGridPx(gridPx), RECACHE_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [gridPx, cachedGridPx]);
+
+  // 子は確定 gridPx でローカル→ワールドpx（pan 非依存・ズーム中不変）。
+  const worldOf: ToScreen = (lx, ly) => ({
+    x: (view.originGrid.x + lx * view.scale) * cachedGridPx,
+    y: (view.originGrid.y + ly * view.scale) * cachedGridPx,
+  });
   const children = useMemo(
-    () => { _EVPERF.childRecompute++; return view.primitives.map((p, i) => renderPrim(p, i, worldOf)); },
+    () => view.primitives.map((p, i) => renderPrim(p, i, worldOf)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view, gridPx],
+    [view, cachedGridPx],
   );
 
-  // 選択枠用のワールドpx bbox（同じく pan 非依存）。
-  const wbox = useMemo(() => {
-    const lb = localBounds(view);
+  // hit 判定用の確定ワールドpx bbox（cache 空間・グループ内）。
+  const lb = useMemo(() => localBounds(view), [view]);
+  const wboxCached = useMemo(() => {
     if (!lb) return null;
     const a = worldOf(lb.minX, lb.minY), b = worldOf(lb.maxX, lb.maxY);
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, gridPx]);
+  }, [lb, cachedGridPx]);
 
-  const listening = mode === 'select' || mode === 'erase' || mode === 'move-select';
-
-  // E-6e-perf 2/3: Group をビットマップ化。パン中は bitmap の平行移動だけで済む
-  // （Konva の per-shape 再描画を回避）。view/gridPx/mode 変化時にのみ再キャッシュ。
+  // Group をビットマップ化。view / cachedGridPx / mode の変化時だけ再cache（ズーム中は走らない）。
   const groupRef = useRef<Konva.Group>(null);
   useEffect(() => {
     const g = groupRef.current;
@@ -103,13 +107,15 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     if (box.width < 1 || box.height < 1) return;
     const maxSide = Math.max(box.width, box.height);
     const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-    // ビットマップ最大辺 ~2600px にクランプ（高ズーム時のメモリ抑制）。
     const pixelRatio = Math.max(0.3, Math.min(dpr, 2600 / maxSide));
-    _EVPERF.cacheRun++;
     g.cache({ pixelRatio });
     g.getLayer()?.batchDraw();
     return () => { g.clearCache(); };
-  }, [view, gridPx, mode]);
+  }, [view, cachedGridPx, mode]);
+
+  const listening = mode === 'select' || mode === 'erase' || mode === 'move-select';
+  // ズーム中の追従倍率。停止時は 1。
+  const followScale = gridPx / cachedGridPx;
 
   const onClick = () => {
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
@@ -117,45 +123,36 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
   };
   const onDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const g = e.target;
+    // ドラッグは position(x/y) を親(Layer)px で動かす。scale は無関係。
     const dx = (g.x() - panX) / gridPx, dy = (g.y() - panY) / gridPx;
     g.x(panX); g.y(panY);
     moveElevationView(view.id, { x: Math.round(view.originGrid.x + dx), y: Math.round(view.originGrid.y + dy) });
   };
 
+  // 選択枠は live gridPx でスクリーン計算（ズーム中も正しく追従）。
+  const selRect = selected && lb ? (() => {
+    const ax = (view.originGrid.x + lb.minX * view.scale) * gridPx + panX;
+    const ay = (view.originGrid.y + lb.minY * view.scale) * gridPx + panY;
+    const bx = (view.originGrid.x + lb.maxX * view.scale) * gridPx + panX;
+    const by = (view.originGrid.y + lb.maxY * view.scale) * gridPx + panY;
+    return { x: Math.min(ax, bx) - 4, y: Math.min(ay, by) - 4, w: Math.abs(bx - ax) + 8, h: Math.abs(by - ay) + 8 };
+  })() : null;
+
   return (
     <>
-      <Group ref={groupRef} x={panX} y={panY} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} listening={listening}>
+      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} listening={listening}>
         {children}
-        {/* cache 後の当たり判定用（cached hit canvas は listening=false 子を無視するため、
-            bbox を覆う透明 Rect を hit 領域にする。scene は opacity=0 で不可視・hit のみ有効）。 */}
-        {wbox && <Rect x={wbox.x} y={wbox.y} width={wbox.w} height={wbox.h} fill="#000" opacity={0} listening={listening} />}
+        {/* cached hit canvas は listening=false 子を無視するため、bbox を覆う透明 Rect を hit 領域に。 */}
+        {wboxCached && <Rect x={wboxCached.x} y={wboxCached.y} width={wboxCached.w} height={wboxCached.h} fill="#000" opacity={0} listening={listening} />}
       </Group>
-      {selected && wbox && (
-        <Rect x={wbox.x + panX - 4} y={wbox.y + panY - 4} width={wbox.w + 8} height={wbox.h + 8} stroke="#378ADD" strokeWidth={1} dash={[6, 4]} listening={false} />
+      {selRect && (
+        <Rect x={selRect.x} y={selRect.y} width={selRect.w} height={selRect.h} stroke="#378ADD" strokeWidth={1} dash={[6, 4]} listening={false} />
       )}
     </>
   );
 }
 
 export default function ElevationViewLayer() {
-  _EVPERF.layerRender++;
-  // 一時プローブ: 毎秒 fps と各カウンタを console 出力（確定後に削除）。
-  useEffect(() => {
-    let raf = 0; let last = performance.now();
-    const loop = (t: number) => {
-      _EVPERF.frames++;
-      if (t - last >= 1000) {
-        // eslint-disable-next-line no-console
-        console.log(`[EV-PERF] fps=${_EVPERF.frames} layerRender=${_EVPERF.layerRender} childRecompute=${_EVPERF.childRecompute} cacheRun=${_EVPERF.cacheRun}`);
-        _EVPERF.frames = 0; _EVPERF.layerRender = 0; _EVPERF.childRecompute = 0; _EVPERF.cacheRun = 0;
-        last = t;
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
   const zoom = useCanvasStore((s) => s.zoom);
   const panX = useCanvasStore((s) => s.panX);
