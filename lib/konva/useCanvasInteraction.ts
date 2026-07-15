@@ -11,6 +11,7 @@ import { getEdgeOverhangs, computeOffsetPolygon } from './roofUtils';
 import { mmToGrid as toMmGrid } from './gridUtils';
 import { Point, Handrail, HandrailDirection, HandrailLengthMm, Obstacle, CanvasData } from '@/types';
 import { collectIdsInRect } from '@/lib/pages/rangeSelect';
+import { shouldAutoOpenTouchMenu } from '@/lib/pages/touchContextMenu';
 
 const SNAP_PX = 80;
 const HIT_TOL = 25; // 手摺ヒット判定のグリッド許容差（250mm、タッチ操作対応）
@@ -774,6 +775,11 @@ export function useCanvasInteraction() {
       const gridPos = toGrid(stage, clientPos);
       const s = useCanvasStore.getState();
 
+      // E-6d: タッチのコンテキストメニュー自動表示用に、選択確定の種別を「消される前」に捕捉。
+      const isTouchUp = 'changedTouches' in e.evt;
+      const viaRubberBandUp = !!selectionRect;
+      const viaTapSelectUp = !viaRubberBandUp && movingElementId.current != null && !isDragging.current;
+
       // 平米計算 1F足場指定モード: ラバーバンド確定 → 個別反転 (= 平米計算 Phase D-2-c)
       if (s.isAreaDesignationMode && areaDesignationRubberBandArmed.current) {
         if (selectionRect) {
@@ -817,6 +823,22 @@ export function useCanvasInteraction() {
         }
         selectRubberBandArmed.current = false;
         selectRubberCtrl.current = false;
+      }
+
+      // E-6d: タッチで選択が確定(範囲選択の指離し / 単体タップ)し、選択が非空なら
+      // 指を離した位置にコンテキストメニューを自動表示（PC マウスは従来どおり右クリック）。
+      if (shouldAutoOpenTouchMenu({
+        isTouch: isTouchUp,
+        mode: s.mode,
+        selectionCount: useCanvasStore.getState().selectedIds.length,
+        viaRubberBand: viaRubberBandUp,
+        viaTapSelect: viaTapSelectUp,
+      })) {
+        useCanvasStore.getState().openContextMenu({
+          clientX: clientPos.clientX,
+          clientY: clientPos.clientY,
+          gridAnchor: { x: Math.round(gridPos.x), y: Math.round(gridPos.y) },
+        });
       }
 
       // move-select: ラバーバンド確定 or 空タップで選択解除
