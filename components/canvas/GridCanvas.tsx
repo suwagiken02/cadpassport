@@ -303,6 +303,18 @@ export default function GridCanvas({ width, height }: Props) {
   useEffect(() => {
     const handleContextMenu = (e: Event) => {
       e.preventDefault();
+      // select モードのみ: 右クリック/長押し位置でコンテキストメニューを開く（E-6c）。
+      const s = useCanvasStore.getState();
+      if (s.mode !== 'select') return;
+      const me = e as MouseEvent;
+      const rect = stageRef.current?.container().getBoundingClientRect();
+      if (!rect) return;
+      const gpx = INITIAL_GRID_PX * s.zoom;
+      const gridAnchor = {
+        x: Math.round((me.clientX - rect.left - s.panX) / gpx),
+        y: Math.round((me.clientY - rect.top - s.panY) / gpx),
+      };
+      s.openContextMenu({ clientX: me.clientX, clientY: me.clientY, gridAnchor });
     };
     const container = stageRef.current?.container();
     container?.addEventListener('contextmenu', handleContextMenu);
@@ -323,20 +335,35 @@ export default function GridCanvas({ width, height }: Props) {
         e.preventDefault();
         useCanvasStore.getState().redo();
       }
+      // 入力欄（モーダルの数値入力など）にフォーカス中は編集系ショートカットを発火させない。
+      const ae = document.activeElement as HTMLElement | null;
+      const tag = ae?.tagName;
+      const editing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
       // Delete / Backspace: 選択中の要素を削除
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // 入力欄（モーダルの数値入力など）にフォーカス中は削除を発火させない。
-        // これがないと初期値の Backspace 消去で選択中の建物が消え、モーダルが閉じてしまう。
-        const ae = document.activeElement as HTMLElement | null;
-        const tag = ae?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable) {
-          return;
-        }
+        if (editing) return;
         const s = useCanvasStore.getState();
         if (s.selectedIds.length > 0) {
           e.preventDefault();
           s.removeElements(s.selectedIds);
         }
+      }
+      // Ctrl+C / Ctrl+X / Ctrl+V: コピー / 切り取り / 貼り付け（E-6c）。入力欄では通常動作を優先。
+      if (e.ctrlKey && !editing && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        useCanvasStore.getState().copySelection();
+      }
+      if (e.ctrlKey && !editing && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        useCanvasStore.getState().cutSelection();
+      }
+      if (e.ctrlKey && !editing && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        const s = useCanvasStore.getState();
+        const gpx = INITIAL_GRID_PX * s.zoom;
+        const { width: cw, height: ch } = s.canvasSize;
+        const center = { x: Math.round((cw / 2 - s.panX) / gpx), y: Math.round((ch / 2 - s.panY) / gpx) };
+        s.pasteClipboard(center);
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {

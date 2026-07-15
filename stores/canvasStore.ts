@@ -122,6 +122,10 @@ type CanvasStore = {
   cutSelection: () => void;
   /** anchorGrid を基準に貼り付け（相対配置を保持。pushHistory で undo 可）。 */
   pasteClipboard: (anchorGrid: Point) => void;
+  /** キャンバス右クリック/長押しのコンテキストメニュー（E-6c）。gridAnchor は貼り付け位置。 */
+  contextMenu: { clientX: number; clientY: number; gridAnchor: Point } | null;
+  openContextMenu: (cm: { clientX: number; clientY: number; gridAnchor: Point }) => void;
+  closeContextMenu: () => void;
   selectedHandrailLength: HandrailLengthMm;
   setSelectedHandrailLength: (l: HandrailLengthMm) => void;
   selectedAntiWidth: AntiWidth;
@@ -475,6 +479,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     selectedIds: [],
     selectedLineIds: [],
     highlightIds: [],
+    contextMenu: null,
     // 壁方向入力 / 建物配置
     directionPoints: [],
     directionPointsHistory: [],
@@ -581,6 +586,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  contextMenu: null,
+  openContextMenu: (cm) => set({ contextMenu: cm }),
+  closeContextMenu: () => set({ contextMenu: null }),
 
   selectedHandrailLength: 1800,
   setSelectedHandrailLength: (l) => set({ selectedHandrailLength: l }),
