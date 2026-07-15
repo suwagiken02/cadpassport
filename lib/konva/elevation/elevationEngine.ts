@@ -573,6 +573,46 @@ function computeSpanRaises(
   return raises;
 }
 
+/** 区間 [x0,x1] から holes 群（各 [a,b]）の和を差し引いた残り小区間[]（pure・E-5）。 */
+export function subtractIntervals(
+  x0: number, x1: number, holes: [number, number][],
+): [number, number][] {
+  let segs: [number, number][] = [[Math.min(x0, x1), Math.max(x0, x1)]];
+  for (const [h0raw, h1raw] of holes) {
+    const h0 = Math.min(h0raw, h1raw), h1 = Math.max(h0raw, h1raw);
+    const next: [number, number][] = [];
+    for (const [a, b] of segs) {
+      if (h1 <= a + 1e-6 || h0 >= b - 1e-6) { next.push([a, b]); continue; } // 重なりなし
+      if (h0 > a + 1e-6) next.push([a, h0]); // 左の残り
+      if (h1 < b - 1e-6) next.push([h1, b]); // 右の残り
+      // それ以外は完全被覆 → 落とす
+    }
+    segs = next;
+  }
+  return segs.filter(([a, b]) => b - a > 1e-6);
+}
+
+/**
+ * 入隅の前後（オクルージョン）で、奥列の横線（rails・boards）を手前列の x 区間で切る（pure・E-5）。
+ * 手前 = 面の外向き法線方向で最も遠い列（視点に最も近い）。north/west→depthCoord 小、south/east→大。
+ * 各列につき「自分より手前の全列の [xStart,xEnd] の和」を穴として横線を分割する。
+ * 支柱・ジャッキ・spanRaises は現状維持（v1・要確認）。dims 基準（column.rails/postXs）は不変。
+ */
+export function applyOcclusionCut(scaffolds: ElevationScaffold[], face: Face): ElevationScaffold[] {
+  // 「手前度」= 大きいほど手前。north/west は depthCoord 小が手前なので符号反転。
+  const frontness = (depthCoord: number) => (face === 'north' || face === 'west' ? -depthCoord : depthCoord);
+  return scaffolds.map((sc) => {
+    const myFront = frontness(sc.column.depthCoord);
+    const holes: [number, number][] = scaffolds
+      .filter((o) => o !== sc && frontness(o.column.depthCoord) > myFront + 1e-6)
+      .map((o) => [Math.min(o.column.xStart, o.column.xEnd), Math.max(o.column.xStart, o.column.xEnd)]);
+    if (holes.length === 0) return sc;
+    const rails = sc.rails.flatMap((r) => subtractIntervals(r.x0, r.x1, holes).map(([a, b]) => ({ ...r, x0: a, x1: b })));
+    const boards = sc.boards.flatMap((b) => subtractIntervals(b.x0, b.x1, holes).map(([a, c]) => ({ ...b, x0: a, x1: c })));
+    return { ...sc, rails, boards };
+  });
+}
+
 /**
  * 同一面・同一 floor の列群 → 1 面の立面モデル。
  * @param faceColumns 同 face・同 floor の FaceSpanColumn 群（E-1 出力を絞ったもの）。
@@ -668,5 +708,8 @@ export function buildFaceElevation(
     return { column, postXs, levels, boards, rails, spanRaises };
   });
 
-  return { face, floor, buildingOutlines, scaffolds, roofBands, ridgeMaxMm };
+  // E-5: 入隅の前後判定で、奥列の横線を手前列の x 区間で切る。
+  const cutScaffolds = applyOcclusionCut(scaffolds, face);
+
+  return { face, floor, buildingOutlines, scaffolds: cutScaffolds, roofBands, ridgeMaxMm };
 }
