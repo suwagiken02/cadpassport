@@ -22,6 +22,17 @@ type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 /** ズーム停止後に再cache するまでの待ち時間（ms）。 */
 const RECACHE_DEBOUNCE_MS = 200;
 
+/** hex(#rrggbb) を fillOpacity 付き rgba に。fill の半透明は fill 側で表し stroke は不透明を保つ
+ *  （E-5-fix2: 従来は opacity=fillOpacity で shape 全体を薄くし、建物外形・屋根の輪郭線＝L 字
+ *  段差の縦線が 0.22 で消えて見えた。プレビュー(Modal)は fill と stroke の不透明度を分けている）。 */
+function withAlpha(hex: string | undefined, a: number | undefined): string | undefined {
+  if (!hex || a == null || a >= 1) return hex;
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
 function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen) {
   if (p.kind === 'line') {
     const a = S(p.x1, p.y1), b = S(p.x2, p.y2);
@@ -29,12 +40,12 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen) {
   }
   if (p.kind === 'rect') {
     const a = S(p.x, p.y), b = S(p.x + p.w, p.y + p.h);
-    return <Rect key={i} x={Math.min(a.x, b.x)} y={Math.min(a.y, b.y)} width={Math.abs(b.x - a.x)} height={Math.abs(b.y - a.y)} fill={p.fill} opacity={p.fillOpacity ?? 1} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
+    return <Rect key={i} x={Math.min(a.x, b.x)} y={Math.min(a.y, b.y)} width={Math.abs(b.x - a.x)} height={Math.abs(b.y - a.y)} fill={withAlpha(p.fill, p.fillOpacity)} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
   }
   if (p.kind === 'polygon') {
     const pts: number[] = [];
     for (let k = 0; k < p.points.length; k += 2) { const s = S(p.points[k], p.points[k + 1]); pts.push(s.x, s.y); }
-    return <Line key={i} points={pts} closed fill={p.fill} opacity={p.fillOpacity ?? 1} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
+    return <Line key={i} points={pts} closed fill={withAlpha(p.fill, p.fillOpacity)} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
   }
   // text
   const a = S(p.x, p.y);

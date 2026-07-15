@@ -55,3 +55,28 @@ describe('initialPlacementOrigin: 立面の初期配置位置(E-4b)', () => {
     expect(initialPlacementOrigin([])).toEqual({ x: 100, y: 200 });
   });
 });
+
+describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)', () => {
+  const L: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 180 }, { x: 180, y: 180 }, { x: 180, y: 360 }, { x: 0, y: 360 }];
+  const lbld: BuildingShape = { id: 'L', type: 'polygon', points: L, fill: '#3d3d3a', floor: 2 };
+  // 南面2列(L字): 内側 depth270 x[90,450](奥)、外側 depth450 x[-90,270](手前)。
+  const inner: FaceSpanColumn = { face: 'south', floor: 2, depthCoord: 270, xStart: 90, xEnd: 450, rails: [1800, 1800], handrailIds: ['a', 'b'] };
+  const outer: FaceSpanColumn = { face: 'south', floor: 2, depthCoord: 450, xStart: -90, xEnd: 270, rails: [1800, 1800], handrailIds: ['c', 'd'] };
+  const fe = buildFaceElevation([inner, outer], [lbld], { defaultHeightMm: 5000 });
+  const prims = faceElevationToPrimitives(fe);
+
+  it('建物シルエットはセグメントごとに polygon(段差の縦線を保持・stroke あり)', () => {
+    const bpolys = prims.filter((p) => p.kind === 'polygon' && p.fillOpacity === 0.22);
+    // 南面外形は x=180 で2セグメントに分割 → 2 polygon。各 polygon は縦辺(段差線)を持つ。
+    expect(bpolys.length).toBe(fe.buildingOutlines[0].segments.length);
+    expect(bpolys.length).toBeGreaterThanOrEqual(2);
+    expect(bpolys.every((p) => p.kind === 'polygon' && p.stroke === '#8a8a86' && p.width === 1.5)).toBe(true);
+  });
+
+  it('奥列の手摺が手前区間で切断され、幅の異なる rail 線として現れる', () => {
+    const rails = prims.filter((p) => p.kind === 'line' && p.stroke === '#378ADD' && p.width === 0.7);
+    const widths = new Set(rails.map((p) => (p.kind === 'line' ? Math.round(Math.abs(p.x2 - p.x1)) : 0)));
+    expect(widths.has(360)).toBe(true); // 手前列 [-90,270] 幅360
+    expect(widths.has(180)).toBe(true); // 奥列(切断後) [270,450] 幅180
+  });
+});
