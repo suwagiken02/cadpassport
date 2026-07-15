@@ -104,7 +104,8 @@ export default function ElevationPlaceDialog({
       if (target === 'current') {
         const views = buildViews(baseCurrent);
         if (!views) { alert('配置できる立面がありません（建物・足場を確認してください）'); return; }
-        views.forEach((v) => useCanvasStore.getState().addElevationView(v));
+        // 4 面まとめて 1 回の pushHistory で追加（E-6e-perf: 履歴スナップショットの重複を回避）。
+        useCanvasStore.getState().addElevationViews(views);
       } else if (target === 'new') {
         const views = buildViews(baseOther);
         if (!views) { alert('配置できる立面がありません（建物・足場を確認してください）'); return; }

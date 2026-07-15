@@ -410,6 +410,8 @@ type CanvasStore = {
   moveRidgeLine: (id: string, p1: import('@/types').Point, p2: import('@/types').Point) => void;
   // 立面ビュー (= E-4)
   addElevationView: (v: ElevationView) => void;
+  /** 複数ビューを 1 回の pushHistory で追加（4面一括配置用。同一面は置換）。 */
+  addElevationViews: (views: ElevationView[]) => void;
   removeElevationView: (id: string) => void;
   moveElevationView: (id: string, originGrid: import('@/types').Point) => void;
   // 平米計算 modal (= 平米計算 Phase C)
@@ -1327,6 +1329,18 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const kept = (canvasData.elevationViews ?? []).filter((e) => e.face !== v.face);
     set({
       canvasData: { ...canvasData, elevationViews: [...kept, v] },
+      isDirty: true,
+    });
+  },
+  addElevationViews: (views) => {
+    if (views.length === 0) return;
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    // 追加する面の既存ビューをまとめて置換（1 面 1 ビュー）。
+    const placedFaces = new Set(views.map((v) => v.face));
+    const kept = (canvasData.elevationViews ?? []).filter((e) => !placedFaces.has(e.face));
+    set({
+      canvasData: { ...canvasData, elevationViews: [...kept, ...views] },
       isDirty: true,
     });
   },
