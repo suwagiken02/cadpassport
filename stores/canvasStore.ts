@@ -474,8 +474,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     showSettings: false,
     showInnerPost: false,
     alertMessage: null,
-    // mode + selection (= 図面切替時は閲覧モードで開始、 ユーザが明示的にボタン押下で mode 遷移)
-    mode: 'view',
+    // selection のみリセット。mode は維持（E-6c-fix: ページ切替後もアクティブツールを引き継ぐ。
+    // 図面の作業 state はクリアするので、mode を残しても各ツールは初期状態から開始される）。
     selectedIds: [],
     selectedLineIds: [],
     highlightIds: [],

@@ -303,9 +303,11 @@ export default function GridCanvas({ width, height }: Props) {
   useEffect(() => {
     const handleContextMenu = (e: Event) => {
       e.preventDefault();
-      // select モードのみ: 右クリック/長押し位置でコンテキストメニューを開く（E-6c）。
+      // 右クリック/長押し位置でコンテキストメニューを開く（E-6c）。
+      // ツールを問わず、選択がある(コピー/切取/削除)か、クリップボードに中身がある(貼り付け)
+      // ときのみ開く（E-6c-fix。ページ切替直後にツールが select でなくても貼り付け導線を出す）。
       const s = useCanvasStore.getState();
-      if (s.mode !== 'select') return;
+      if (s.selectedIds.length === 0 && !s.clipboard) return;
       const me = e as MouseEvent;
       const rect = stageRef.current?.container().getBoundingClientRect();
       if (!rect) return;

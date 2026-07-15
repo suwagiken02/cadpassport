@@ -62,15 +62,26 @@ export default function CanvasContextMenu() {
         className="fixed z-[61] w-44 p-1 bg-dark-surface border border-dark-border rounded-xl shadow-2xl"
         style={{ left, top }}
       >
-        <Item label="コピー" shortcut="Ctrl+C" enabled={hasSelection}
-          onClick={run(() => useCanvasStore.getState().copySelection(), hasSelection)} />
-        <Item label="切り取り" shortcut="Ctrl+X" enabled={hasSelection}
-          onClick={run(() => useCanvasStore.getState().cutSelection(), hasSelection)} />
-        <Item label="貼り付け" shortcut="Ctrl+V" enabled={canPaste}
-          onClick={run(() => useCanvasStore.getState().pasteClipboard(contextMenu.gridAnchor), canPaste)} />
-        <div className="my-1 border-t border-dark-border" />
-        <Item label="削除" shortcut="Del" enabled={hasSelection} danger
-          onClick={run(() => useCanvasStore.getState().removeElements(selectedIds), hasSelection)} />
+        {/* コピー/切り取り/削除は選択があるときのみ表示。貼り付けはクリップボードがあるときのみ表示。 */}
+        {hasSelection && (
+          <>
+            <Item label="コピー" shortcut="Ctrl+C" enabled
+              onClick={run(() => useCanvasStore.getState().copySelection(), true)} />
+            <Item label="切り取り" shortcut="Ctrl+X" enabled
+              onClick={run(() => useCanvasStore.getState().cutSelection(), true)} />
+          </>
+        )}
+        {canPaste && (
+          <Item label="貼り付け" shortcut="Ctrl+V" enabled
+            onClick={run(() => useCanvasStore.getState().pasteClipboard(contextMenu.gridAnchor), true)} />
+        )}
+        {hasSelection && (
+          <>
+            <div className="my-1 border-t border-dark-border" />
+            <Item label="削除" shortcut="Del" enabled danger
+              onClick={run(() => useCanvasStore.getState().removeElements(selectedIds), true)} />
+          </>
+        )}
       </div>
     </>
   );
