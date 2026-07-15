@@ -16,6 +16,11 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
+// ===== E-6e-perf2 一時計測プローブ（確定後に削除）=====
+// パン中に childRecompute / cacheRun が増える → memo/cache が効いていない。
+// fps が低い → 描画/合成が重い。console に [EV-PERF] を毎秒出力。
+const _EVPERF = { layerRender: 0, childRecompute: 0, cacheRun: 0, frames: 0 };
+
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 
 function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen) {
@@ -72,7 +77,7 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 
   // 子ノードは view と gridPx にのみ依存 → パンでは再生成されない。
   const children = useMemo(
-    () => view.primitives.map((p, i) => renderPrim(p, i, worldOf)),
+    () => { _EVPERF.childRecompute++; return view.primitives.map((p, i) => renderPrim(p, i, worldOf)); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [view, gridPx],
   );
@@ -100,6 +105,7 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
     // ビットマップ最大辺 ~2600px にクランプ（高ズーム時のメモリ抑制）。
     const pixelRatio = Math.max(0.3, Math.min(dpr, 2600 / maxSide));
+    _EVPERF.cacheRun++;
     g.cache({ pixelRatio });
     g.getLayer()?.batchDraw();
     return () => { g.clearCache(); };
@@ -132,6 +138,24 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 }
 
 export default function ElevationViewLayer() {
+  _EVPERF.layerRender++;
+  // 一時プローブ: 毎秒 fps と各カウンタを console 出力（確定後に削除）。
+  useEffect(() => {
+    let raf = 0; let last = performance.now();
+    const loop = (t: number) => {
+      _EVPERF.frames++;
+      if (t - last >= 1000) {
+        // eslint-disable-next-line no-console
+        console.log(`[EV-PERF] fps=${_EVPERF.frames} layerRender=${_EVPERF.layerRender} childRecompute=${_EVPERF.childRecompute} cacheRun=${_EVPERF.cacheRun}`);
+        _EVPERF.frames = 0; _EVPERF.layerRender = 0; _EVPERF.childRecompute = 0; _EVPERF.cacheRun = 0;
+        last = t;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
   const zoom = useCanvasStore((s) => s.zoom);
   const panX = useCanvasStore((s) => s.panX);
