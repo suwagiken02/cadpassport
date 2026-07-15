@@ -10,6 +10,7 @@ import { getHandrailColor } from './handrailColors';
 import { getEdgeOverhangs, computeOffsetPolygon } from './roofUtils';
 import { mmToGrid as toMmGrid } from './gridUtils';
 import { Point, Handrail, HandrailDirection, HandrailLengthMm, Obstacle, CanvasData } from '@/types';
+import { collectIdsInRect } from '@/lib/pages/rangeSelect';
 
 const SNAP_PX = 80;
 const HIT_TOL = 25; // 手摺ヒット判定のグリッド許容差（250mm、タッチ操作対応）
@@ -248,6 +249,10 @@ export function useCanvasInteraction() {
   const stageRef = useRef<Konva.Stage | null>(null);
   // move-select: 空キャンバスで mousedown したかフラグ (ラバーバンド開始条件)
   const moveSelectRubberBandArmed = useRef(false);
+  // select: 空キャンバスから即ラバーバンド (E-6c、 PC はマウスドラッグで即開始・スマホは長押し起点)
+  const selectRubberBandArmed = useRef(false);
+  // select ラバーバンド開始時に Ctrl/Meta が押されていたか (加算選択)
+  const selectRubberCtrl = useRef(false);
   // area-designation: 空キャンバスで mousedown したかフラグ (= ラバーバンド開始条件、 平米計算 Phase D-2-c)
   const areaDesignationRubberBandArmed = useRef(false);
 
@@ -520,6 +525,16 @@ export function useCanvasInteraction() {
         }
         dragStart.current = rawPos;
         isDragging.current = false;
+        // Ctrl/Meta+クリック: 選択に個別追加/除外（移動は開始しない・E-6c）
+        const ctrlHit = 'ctrlKey' in e.evt && ((e.evt as MouseEvent).ctrlKey || (e.evt as MouseEvent).metaKey);
+        if (s.mode === 'select' && ctrlHit) {
+          const id = movingElementId.current!;
+          const cur = s.selectedIds;
+          s.setSelectedIds(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+          movingElementId.current = null;
+          dragStart.current = null;
+          return;
+        }
         s.setSelectedIds([movingElementId.current!]);
         return;
       }
@@ -533,9 +548,16 @@ export function useCanvasInteraction() {
       dragStart.current = gridPos;
       isDragging.current = false;
 
-      // select モード: 長押し検出
+      // select モード: PC はマウスドラッグで即ラバーバンド、スマホは長押し起点（E-6c）
       if (s.mode === 'select') {
-        longPressTimer.current = setTimeout(() => setIsLongPress(true), 500);
+        const isTouch = 'touches' in e.evt;
+        const ctrlDown = 'ctrlKey' in e.evt && ((e.evt as MouseEvent).ctrlKey || (e.evt as MouseEvent).metaKey);
+        if (isTouch) {
+          longPressTimer.current = setTimeout(() => setIsLongPress(true), 500);
+        } else {
+          selectRubberBandArmed.current = true;
+          selectRubberCtrl.current = ctrlDown;
+        }
       }
 
       // post モード: クリックで支柱配置（手摺端部にスナップ成功時のみ配置）
@@ -612,11 +634,14 @@ export function useCanvasInteraction() {
         if (target !== stage && target.id()) s.removeElement(target.id());
       }
 
-      // select モード（ドラッグ移動中でなければ選択更新）
+      // select モード（ドラッグ移動中でなければ選択更新）。Ctrl 押下時は既存選択を保持（加算のため）。
       if (s.mode === 'select' && !isLongPress && !isDragging.current) {
         const target = e.target;
-        if (target === stage) s.setSelectedIds([]);
-        else if (target.id()) s.setSelectedIds([target.id()]);
+        const ctrlDown = 'ctrlKey' in e.evt && ((e.evt as MouseEvent).ctrlKey || (e.evt as MouseEvent).metaKey);
+        if (!ctrlDown) {
+          if (target === stage) s.setSelectedIds([]);
+          else if (target.id()) s.setSelectedIds([target.id()]);
+        }
       }
 
       // move-select モード: 空キャンバスなら arm (ラバーバンド)、要素ならタップでトグル
@@ -711,7 +736,7 @@ export function useCanvasInteraction() {
 
       // select + longPress または move-select (空キャンバス起点): 範囲選択矩形
       const canRubberBand =
-        (s.mode === 'select' && isLongPress) ||
+        (s.mode === 'select' && (isLongPress || selectRubberBandArmed.current)) ||
         (s.mode === 'move-select' && moveSelectRubberBandArmed.current);
       if (canRubberBand) {
         setSelectionRect({
@@ -777,21 +802,21 @@ export function useCanvasInteraction() {
 
       // 手摺ドラッグ移動完了は window イベントで処理（キャンバス外対応）
 
-      // 範囲選択完了
-      if (s.mode === 'select' && isLongPress && selectionRect) {
-        const rect = selectionRect;
-        const ids: string[] = [];
-        s.canvasData.handrails.forEach((h) => {
-          if (h.x >= rect.x && h.y >= rect.y && h.x <= rect.x + rect.w && h.y <= rect.y + rect.h) ids.push(h.id);
-        });
-        s.canvasData.posts.forEach((p) => {
-          if (p.x >= rect.x && p.y >= rect.y && p.x <= rect.x + rect.w && p.y <= rect.y + rect.h) ids.push(p.id);
-        });
-        s.canvasData.antis.forEach((a) => {
-          if (a.x >= rect.x && a.y >= rect.y && a.x <= rect.x + rect.w && a.y <= rect.y + rect.h) ids.push(a.id);
-        });
-        s.setSelectedIds(ids);
-        setSelectionRect(null);
+      // 範囲選択完了（全種・E-6c）。Ctrl 押下ドラッグは既存選択に加算。
+      if (s.mode === 'select' && (isLongPress || selectRubberBandArmed.current)) {
+        if (selectionRect) {
+          const hits = collectIdsInRect(s.canvasData, selectionRect);
+          if (selectRubberCtrl.current) {
+            const cur = new Set(s.selectedIds);
+            hits.forEach((id) => cur.add(id));
+            s.setSelectedIds(Array.from(cur));
+          } else {
+            s.setSelectedIds(hits);
+          }
+          setSelectionRect(null);
+        }
+        selectRubberBandArmed.current = false;
+        selectRubberCtrl.current = false;
       }
 
       // move-select: ラバーバンド確定 or 空タップで選択解除
@@ -836,6 +861,8 @@ export function useCanvasInteraction() {
       }
 
       setIsLongPress(false);
+      selectRubberBandArmed.current = false;
+      selectRubberCtrl.current = false;
       dragStart.current = null;
       isDragging.current = false;
     },
