@@ -1,21 +1,21 @@
 // ============================================================
-// ページまたぎコピー/移動の pure ロジック（E-6b）。
-// 選択オブジェクト集合から、別ページへ差し込む「ペイロード」を組み立てる。
-//   ・全オブジェクトに新 id を採番（コピー先での衝突回避）。
-//   ・建物を選ぶと、その建物に紐づく roofOverhang / ridgeLine / heightMarker
-//     （buildingId 参照）を自動同梱し、buildingId を新 building id へ追随させる。
-//   ・roof は BuildingShape に内包のため建物ごと自動で運ばれる（remap 不要）。
-//   ・handrail/post/anti/obstacle/memo/elevationView は選択された id のみ、新 id 採番。
-//   ・sourceIds = 移動(move)時に元ページから削除すべき元 id 一式（選択＋自動同梱の依存）。
-// DB I/O は持たない（呼び出し側が対象ページの canvas_data へ merge して保存）。
+// ページまたぎコピー/移動・クリップボード貼り付けの pure ロジック（E-6b / E-6c）。
+//   ・collectSelectionSubset: 選択集合から「素の部分集合」を収集（id 振り直しなし）。
+//     建物を選ぶと buildingId 参照の roofOverhang/ridgeLine/heightMarker を自動同梱。
+//     origin（bbox 左上）も返す＝貼り付け時のオフセット基準。
+//   ・instantiateSubset: 部分集合を deep clone し、新 id 採番・buildingId 追随・
+//     位置オフセット適用（heightMarker/roofOverhang は建物パラメトリックのため非オフセット）。
+//   ・buildCrossPagePayload: collect + instantiate(offset=0)（E-6b 後方互換）。
+//   ・mergePayloadIntoCanvas: 対象 canvas へ配列 append。
+// DB I/O は持たない。
 // ============================================================
 import type {
   CanvasData, BuildingShape, RoofOverhang, Obstacle, Handrail, Post, Anti, Memo,
-  HeightMarker, RidgeLine, ElevationView,
+  HeightMarker, RidgeLine, ElevationView, MagnetPin, Point,
 } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
-/** 別ページへ差し込むオブジェクト群（CanvasData の配列サブセット）。 */
+/** 別ページ/クリップボード用オブジェクト群（CanvasData の配列サブセット）。 */
 export type CrossPagePayload = {
   buildings: BuildingShape[];
   roofOverhangs: RoofOverhang[];
@@ -27,13 +27,13 @@ export type CrossPagePayload = {
   heightMarkers: HeightMarker[];
   ridgeLines: RidgeLine[];
   elevationViews: ElevationView[];
+  magnetPins: MagnetPin[];
 };
 
-/** 空ペイロード。 */
 function emptyPayload(): CrossPagePayload {
   return {
     buildings: [], roofOverhangs: [], obstacles: [], handrails: [], posts: [],
-    antis: [], memos: [], heightMarkers: [], ridgeLines: [], elevationViews: [],
+    antis: [], memos: [], heightMarkers: [], ridgeLines: [], elevationViews: [], magnetPins: [],
   };
 }
 
@@ -43,64 +43,130 @@ function clone<T>(v: T): T {
 }
 
 /**
- * 選択集合から別ページ用ペイロードと、移動時に消す元 id 一式を組み立てる。
- * @param genId 新 id 生成器（既定 uuid。テストで決定的に差し替え可能）。
+ * 選択集合から「素の部分集合」（id 振り直しなし・deep clone 済）と、
+ * 移動時に消す元 id 一式、貼り付け基準 origin（bbox 左上）を返す。
+ */
+export function collectSelectionSubset(
+  canvasData: CanvasData,
+  selectedIds: string[],
+): { subset: CrossPagePayload; sourceIds: string[]; origin: Point } {
+  const sel = new Set(selectedIds);
+  const subset = emptyPayload();
+  const sourceIds: string[] = [];
+  const selBuildingIds = new Set<string>();
+
+  for (const b of canvasData.buildings) {
+    if (!sel.has(b.id)) continue;
+    subset.buildings.push(clone(b));
+    selBuildingIds.add(b.id);
+    sourceIds.push(b.id);
+  }
+  // 建物依存（buildingId 参照）: 選択建物に紐づくものを自動同梱。
+  for (const r of canvasData.roofOverhangs) {
+    if (!selBuildingIds.has(r.buildingId)) continue;
+    subset.roofOverhangs.push(clone(r)); sourceIds.push(r.id);
+  }
+  for (const m of canvasData.heightMarkers ?? []) {
+    if (!selBuildingIds.has(m.buildingId)) continue;
+    subset.heightMarkers.push(clone(m)); sourceIds.push(m.id);
+  }
+  for (const rl of canvasData.ridgeLines ?? []) {
+    if (!selBuildingIds.has(rl.buildingId)) continue;
+    subset.ridgeLines.push(clone(rl)); sourceIds.push(rl.id);
+  }
+  // 独立オブジェクト: 選択された id のみ。
+  const pushSelected = <T extends { id: string }>(src: T[], dst: T[]) => {
+    for (const o of src) {
+      if (!sel.has(o.id)) continue;
+      dst.push(clone(o)); sourceIds.push(o.id);
+    }
+  };
+  pushSelected(canvasData.obstacles, subset.obstacles);
+  pushSelected(canvasData.handrails, subset.handrails);
+  pushSelected(canvasData.posts, subset.posts);
+  pushSelected(canvasData.antis, subset.antis);
+  pushSelected(canvasData.memos, subset.memos);
+  pushSelected(canvasData.elevationViews ?? [], subset.elevationViews);
+  pushSelected(canvasData.magnetPins ?? [], subset.magnetPins);
+
+  return { subset, sourceIds, origin: subsetOrigin(subset) };
+}
+
+/** 部分集合の位置系ジオメトリの bbox 左上（貼り付けオフセット基準）。無ければ {0,0}。 */
+function subsetOrigin(s: CrossPagePayload): Point {
+  let minX = Infinity, minY = Infinity;
+  const see = (x: number, y: number) => { if (x < minX) minX = x; if (y < minY) minY = y; };
+  for (const b of s.buildings) for (const p of b.points) see(p.x, p.y);
+  for (const o of s.obstacles) { see(o.x, o.y); if (o.points) for (const p of o.points) see(p.x, p.y); }
+  for (const h of s.handrails) see(h.x, h.y);
+  for (const p of s.posts) see(p.x, p.y);
+  for (const a of s.antis) see(a.x, a.y);
+  for (const m of s.memos) see(m.x, m.y);
+  for (const mp of s.magnetPins) see(mp.x, mp.y);
+  for (const ev of s.elevationViews) see(ev.originGrid.x, ev.originGrid.y);
+  for (const rl of s.ridgeLines) { see(rl.p1.x, rl.p1.y); see(rl.p2.x, rl.p2.y); }
+  return Number.isFinite(minX) ? { x: minX, y: minY } : { x: 0, y: 0 };
+}
+
+/**
+ * 部分集合を新規オブジェクト列へ実体化。新 id 採番・buildingId 追随・位置オフセット適用。
+ * heightMarker/roofOverhang は建物パラメトリックのため位置オフセットは掛けない（建物に自動追随）。
+ */
+export function instantiateSubset(
+  subset: CrossPagePayload,
+  offset: Point,
+  genId: () => string = uuidv4,
+): CrossPagePayload {
+  const out = emptyPayload();
+  const off = <P extends Point>(p: P): P => ({ ...p, x: p.x + offset.x, y: p.y + offset.y });
+  const buildingIdMap = new Map<string, string>();
+
+  for (const b of subset.buildings) {
+    const id = genId();
+    buildingIdMap.set(b.id, id);
+    out.buildings.push({ ...clone(b), id, points: b.points.map(off) });
+  }
+  for (const r of subset.roofOverhangs) {
+    out.roofOverhangs.push({ ...clone(r), id: genId(), buildingId: buildingIdMap.get(r.buildingId) ?? r.buildingId });
+  }
+  for (const m of subset.heightMarkers) {
+    out.heightMarkers.push({ ...clone(m), id: genId(), buildingId: buildingIdMap.get(m.buildingId) ?? m.buildingId });
+  }
+  for (const rl of subset.ridgeLines) {
+    out.ridgeLines.push({ ...clone(rl), id: genId(), buildingId: buildingIdMap.get(rl.buildingId) ?? rl.buildingId, p1: off(rl.p1), p2: off(rl.p2) });
+  }
+  for (const o of subset.obstacles) {
+    out.obstacles.push({ ...clone(o), id: genId(), x: o.x + offset.x, y: o.y + offset.y, ...(o.points ? { points: o.points.map(off) } : {}) });
+  }
+  for (const h of subset.handrails) out.handrails.push({ ...clone(h), id: genId(), x: h.x + offset.x, y: h.y + offset.y });
+  for (const p of subset.posts) out.posts.push({ ...clone(p), id: genId(), x: p.x + offset.x, y: p.y + offset.y });
+  for (const a of subset.antis) out.antis.push({ ...clone(a), id: genId(), x: a.x + offset.x, y: a.y + offset.y });
+  for (const m of subset.memos) out.memos.push({ ...clone(m), id: genId(), x: m.x + offset.x, y: m.y + offset.y });
+  for (const ev of subset.elevationViews) out.elevationViews.push({ ...clone(ev), id: genId(), originGrid: off(ev.originGrid) });
+  for (const mp of subset.magnetPins) out.magnetPins.push({ ...clone(mp), id: genId(), x: mp.x + offset.x, y: mp.y + offset.y });
+
+  return out;
+}
+
+/** 全 top-level 新 id を列挙（貼り付け後に選択状態にする用）。 */
+export function payloadIds(p: CrossPagePayload): string[] {
+  return [
+    ...p.buildings, ...p.roofOverhangs, ...p.obstacles, ...p.handrails, ...p.posts,
+    ...p.antis, ...p.memos, ...p.heightMarkers, ...p.ridgeLines, ...p.elevationViews, ...p.magnetPins,
+  ].map((o) => o.id);
+}
+
+/**
+ * 選択集合から別ページ用ペイロード（id 振り直し済）と、移動時に消す元 id 一式を返す。
+ * E-6b 後方互換（offset=0）。
  */
 export function buildCrossPagePayload(
   canvasData: CanvasData,
   selectedIds: string[],
   genId: () => string = uuidv4,
 ): { payload: CrossPagePayload; sourceIds: string[] } {
-  const sel = new Set(selectedIds);
-  const payload = emptyPayload();
-  const sourceIds: string[] = [];
-
-  // 建物: 選択された building。old→new id マップを作る。
-  const buildingIdMap = new Map<string, string>();
-  for (const b of canvasData.buildings) {
-    if (!sel.has(b.id)) continue;
-    const newId = genId();
-    buildingIdMap.set(b.id, newId);
-    payload.buildings.push({ ...clone(b), id: newId });
-    sourceIds.push(b.id);
-  }
-
-  // 建物依存（buildingId 参照）: 選択建物に紐づくものを自動同梱し buildingId を追随。
-  for (const r of canvasData.roofOverhangs) {
-    const newBid = buildingIdMap.get(r.buildingId);
-    if (!newBid) continue;
-    payload.roofOverhangs.push({ ...clone(r), id: genId(), buildingId: newBid });
-    sourceIds.push(r.id);
-  }
-  for (const m of canvasData.heightMarkers ?? []) {
-    const newBid = buildingIdMap.get(m.buildingId);
-    if (!newBid) continue;
-    payload.heightMarkers.push({ ...clone(m), id: genId(), buildingId: newBid });
-    sourceIds.push(m.id);
-  }
-  for (const rl of canvasData.ridgeLines ?? []) {
-    const newBid = buildingIdMap.get(rl.buildingId);
-    if (!newBid) continue;
-    payload.ridgeLines.push({ ...clone(rl), id: genId(), buildingId: newBid });
-    sourceIds.push(rl.id);
-  }
-
-  // buildingId 参照を持たない独立オブジェクト: 選択された id のみ。
-  const pushSelected = <T extends { id: string }>(src: T[], dst: T[]) => {
-    for (const o of src) {
-      if (!sel.has(o.id)) continue;
-      dst.push({ ...clone(o), id: genId() });
-      sourceIds.push(o.id);
-    }
-  };
-  pushSelected(canvasData.obstacles, payload.obstacles);
-  pushSelected(canvasData.handrails, payload.handrails);
-  pushSelected(canvasData.posts, payload.posts);
-  pushSelected(canvasData.antis, payload.antis);
-  pushSelected(canvasData.memos, payload.memos);
-  pushSelected(canvasData.elevationViews ?? [], payload.elevationViews);
-
-  return { payload, sourceIds };
+  const { subset, sourceIds } = collectSelectionSubset(canvasData, selectedIds);
+  return { payload: instantiateSubset(subset, { x: 0, y: 0 }, genId), sourceIds };
 }
 
 /** ペイロードを対象ページの canvas_data に追記した新しい CanvasData を返す（pure）。 */
@@ -117,15 +183,11 @@ export function mergePayloadIntoCanvas(canvasData: CanvasData, payload: CrossPag
     heightMarkers: [...(canvasData.heightMarkers ?? []), ...payload.heightMarkers],
     ridgeLines: [...(canvasData.ridgeLines ?? []), ...payload.ridgeLines],
     elevationViews: [...(canvasData.elevationViews ?? []), ...payload.elevationViews],
+    magnetPins: [...(canvasData.magnetPins ?? []), ...payload.magnetPins],
   };
 }
 
 /** ペイロードの総オブジェクト数（UI の「N 個」表示・空判定用）。 */
 export function payloadCount(payload: CrossPagePayload): number {
-  return (
-    payload.buildings.length + payload.roofOverhangs.length + payload.obstacles.length +
-    payload.handrails.length + payload.posts.length + payload.antis.length +
-    payload.memos.length + payload.heightMarkers.length + payload.ridgeLines.length +
-    payload.elevationViews.length
-  );
+  return payloadIds(payload).length;
 }

@@ -26,6 +26,11 @@ import {
 } from '@/types';
 import { PinAnchor } from '@/lib/magnetPin/anchorPoints';
 import { DEFAULT_COLS, DEFAULT_ROWS, INITIAL_GRID_PX, ZOOM_MIN, ZOOM_MAX } from '@/lib/konva/gridUtils';
+import type { Point } from '@/types';
+import {
+  collectSelectionSubset, instantiateSubset, mergePayloadIntoCanvas, payloadCount, payloadIds,
+  type CrossPagePayload,
+} from '@/lib/pages/crossPageCopy';
 
 const createEmptyCanvasData = (): CanvasData => ({
   version: '1.0',
@@ -108,6 +113,15 @@ type CanvasStore = {
   // Selection
   selectedIds: string[];
   setSelectedIds: (ids: string[]) => void;
+
+  // クリップボード（E-6c）: 選択オブジェクトのコピー/切り取り/貼り付け。
+  //   subset は id 振り直し前の素の集合、origin は貼り付けオフセット基準（bbox 左上）。
+  //   store は module singleton なのでタブ切替（router.push）を生き延びる。
+  clipboard: { subset: CrossPagePayload; origin: Point } | null;
+  copySelection: () => void;
+  cutSelection: () => void;
+  /** anchorGrid を基準に貼り付け（相対配置を保持。pushHistory で undo 可）。 */
+  pasteClipboard: (anchorGrid: Point) => void;
   selectedHandrailLength: HandrailLengthMm;
   setSelectedHandrailLength: (l: HandrailLengthMm) => void;
   selectedAntiWidth: AntiWidth;
@@ -537,6 +551,37 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   selectedIds: [],
   setSelectedIds: (ids) => set({ selectedIds: ids }),
+
+  // === クリップボード（E-6c） ===
+  clipboard: null,
+  copySelection: () => {
+    const { canvasData, selectedIds } = get();
+    const { subset, origin } = collectSelectionSubset(canvasData, selectedIds);
+    if (payloadCount(subset) === 0) return;
+    set({ clipboard: { subset, origin } });
+  },
+  cutSelection: () => {
+    const { canvasData, selectedIds } = get();
+    const { subset, sourceIds, origin } = collectSelectionSubset(canvasData, selectedIds);
+    if (payloadCount(subset) === 0) return;
+    set({ clipboard: { subset, origin } });
+    // 削除は removeElements 経由（pushHistory で undo 可能）。
+    get().removeElements(sourceIds);
+  },
+  pasteClipboard: (anchorGrid) => {
+    const { clipboard, canvasData, pushHistory } = get();
+    if (!clipboard) return;
+    const offset = { x: anchorGrid.x - clipboard.origin.x, y: anchorGrid.y - clipboard.origin.y };
+    const payload = instantiateSubset(clipboard.subset, offset);
+    if (payloadCount(payload) === 0) return;
+    pushHistory();
+    set({
+      canvasData: mergePayloadIntoCanvas(canvasData, payload),
+      selectedIds: payloadIds(payload),
+      isDirty: true,
+    });
+  },
+
   selectedHandrailLength: 1800,
   setSelectedHandrailLength: (l) => set({ selectedHandrailLength: l }),
   selectedAntiWidth: 400,
@@ -1344,6 +1389,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         memos: canvasData.memos.filter((m) => m.id !== id),
         magnetPins: (canvasData.magnetPins ?? []).filter((p) => p.id !== id),
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id),
+        heightMarkers: (canvasData.heightMarkers ?? []).filter((h) => h.id !== id),
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id),
       },
       isDirty: true,
@@ -1365,6 +1411,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         memos: canvasData.memos.filter((m) => !idSet.has(m.id)),
         magnetPins: (canvasData.magnetPins ?? []).filter((p) => !idSet.has(p.id)),
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => !idSet.has(r.id)),
+        heightMarkers: (canvasData.heightMarkers ?? []).filter((h) => !idSet.has(h.id)),
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => !idSet.has(e.id)),
       },
       selectedIds: [],
