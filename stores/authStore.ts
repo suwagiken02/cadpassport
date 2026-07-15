@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
+import { extractSupabaseEmail } from '@/lib/auth/supabaseUser';
 
 /**
  * Supabase Auth が返す英語エラーメッセージを日本語化する。
@@ -169,7 +170,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        set({ user: { id: session.user.id, email: session.user.email || '' } });
+        set({ user: { id: session.user.id, email: extractSupabaseEmail(session.user) } });
         try {
           const { data } = await supabase
             .from('profiles')

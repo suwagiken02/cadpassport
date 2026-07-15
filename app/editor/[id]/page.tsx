@@ -194,6 +194,13 @@ export default function EditorPage() {
     useHandrailSettingsStore.getState().loadHandrailSettings();
   }, []);
 
+  // 認証セッションを hydrate（E-4.1）。エディタを直接開く/リロードすると authStore は匿名
+  // (email='') で初期化され loadSession が呼ばれず、管理者限定機能(立面図など)の判定が
+  // 効かなくなる。ここで復元 → user 反映後に reactive に再評価される（完了前は匿名=非表示）。
+  useEffect(() => {
+    useAuthStore.getState().loadSession();
+  }, []);
+
   // 選択カテゴリロックを localStorage から復元 (= default 全 false、 不正値は無視)
   useEffect(() => {
     if (typeof window === 'undefined') return;
