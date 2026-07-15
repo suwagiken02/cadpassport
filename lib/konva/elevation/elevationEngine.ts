@@ -614,6 +614,46 @@ export function applyOcclusionCut(scaffolds: ElevationScaffold[], face: Face): E
 }
 
 /**
+ * 変軸(横)を左右反転した FaceElevation を返す（pure・E-5-fix）。
+ * 立面図は「その面の外に立って建物を見た、見た目そのままの左右」で描く必要がある。
+ * 現状の描画は「画面左＝変軸の小さい側」で、これは south/west は正しいが north/east は逆:
+ *   ・北立面(南向きに見る): 画面左=東(大x) が正 ← 現状 西(小x) なので反転が必要。
+ *   ・東立面(西向きに見る): 画面左=南(大y) が正 ← 現状 北(小y) なので反転が必要。
+ * 反転は x→-x（開始/終了を持つ要素は入替えて左→右昇順を保つ）。深さ軸(depthCoord)・高さは不変。
+ * エンジンの最終出力に対して1回かければ、建物外形・足場・屋根バンド・寸法・全描画に波及する。
+ */
+export function mirrorVariableAxis(fe: FaceElevation): FaceElevation {
+  const nz = (x: number) => (x === 0 ? 0 : -x); // -0 を +0 に正規化
+  const seg = (s: BuildingOutlineSegment): BuildingOutlineSegment => ({
+    xStart: nz(s.xEnd), xEnd: nz(s.xStart),
+    heightStartMm: s.heightEndMm, heightEndMm: s.heightStartMm,
+  });
+  const buildingOutlines = fe.buildingOutlines.map(o => ({
+    ...o,
+    segments: o.segments.map(seg).sort((a, b) => a.xStart - b.xStart),
+  }));
+  const scaffolds = fe.scaffolds.map(sc => ({
+    ...sc,
+    column: {
+      ...sc.column,
+      xStart: nz(sc.column.xEnd), xEnd: nz(sc.column.xStart),
+      rails: [...sc.column.rails].reverse(),
+      handrailIds: [...sc.column.handrailIds].reverse(),
+    },
+    postXs: sc.postXs.map(nz).sort((a, b) => a - b),
+    boards: sc.boards.map(b => ({ ...b, x0: nz(b.x1), x1: nz(b.x0) })),
+    rails: sc.rails.map(r => ({ ...r, x0: nz(r.x1), x1: nz(r.x0) })),
+    spanRaises: sc.spanRaises.map(r => ({ ...r, x0: nz(r.x1), x1: nz(r.x0) })),
+  }));
+  const roofBands = fe.roofBands.map(rb => ({
+    ...rb,
+    xStart: nz(rb.xEnd), xEnd: nz(rb.xStart),
+    profile: rb.profile.map(p => ({ x: nz(p.x), mm: p.mm })).reverse(),
+  }));
+  return { ...fe, buildingOutlines, scaffolds, roofBands };
+}
+
+/**
  * 同一面・同一 floor の列群 → 1 面の立面モデル。
  * @param faceColumns 同 face・同 floor の FaceSpanColumn 群（E-1 出力を絞ったもの）。
  * @param buildings 建物（該当 floor + 重ねる下階を含めてよい）。
@@ -710,6 +750,8 @@ export function buildFaceElevation(
 
   // E-5: 入隅の前後判定で、奥列の横線を手前列の x 区間で切る。
   const cutScaffolds = applyOcclusionCut(scaffolds, face);
+  const fe: FaceElevation = { face, floor, buildingOutlines, scaffolds: cutScaffolds, roofBands, ridgeMaxMm };
 
-  return { face, floor, buildingOutlines, scaffolds: cutScaffolds, roofBands, ridgeMaxMm };
+  // E-5-fix: 北/東立面は視点方向が逆になるため変軸を左右反転（south/west はそのままが正）。
+  return (face === 'north' || face === 'east') ? mirrorVariableAxis(fe) : fe;
 }

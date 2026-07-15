@@ -321,8 +321,9 @@ describe('E-3.7: 屋根投影バンド roofBands', () => {
     expect(fe.roofBands.length).toBe(1);
     expect(fe.roofBands[0].buildingId).toBe('R1');
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
-    expect(fe.roofBands[0].xStart).toBe(0);
-    expect(fe.roofBands[0].xEnd).toBe(360);
+    // E-5-fix: 北立面は視点補正で変軸を左右反転(x→-x)。壁範囲[0,360]→[-360,0]。
+    expect(fe.roofBands[0].xStart).toBe(-360);
+    expect(fe.roofBands[0].xEnd).toBe(0);
     expect(fe.ridgeMaxMm).toBe(7000);
   });
 
@@ -352,11 +353,12 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
     };
     const fe = buildFaceElevation([], [roofBuilding], { markers: markers('RF1'), face: 'north' });
     const segs = fe.buildingOutlines[0].segments;
-    expect(segs[0].xStart).toBe(0);              // 壁シルエットは壁位置
-    expect(segs[segs.length - 1].xEnd).toBe(360);
+    // E-5-fix: 北立面は左右反転。壁[0,360]→[-360,0]、壁±出幅[-60,420]→[-420,60]。
+    expect(segs[0].xStart).toBe(-360);           // 壁シルエットは壁位置
+    expect(segs[segs.length - 1].xEnd).toBe(0);
     expect(fe.roofBands.length).toBe(1);
-    expect(fe.roofBands[0].xStart).toBe(-60);    // 出幅600mm=60grid 左右へ拡張
-    expect(fe.roofBands[0].xEnd).toBe(420);
+    expect(fe.roofBands[0].xStart).toBe(-420);   // 出幅600mm=60grid 左右へ拡張
+    expect(fe.roofBands[0].xEnd).toBe(60);
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
   });
 
@@ -373,8 +375,9 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
       { id: 'ro3', buildingId: 'L1', faceIndex: 3, overhangMm: 600 }, // west(edge3)
     ];
     const fe = buildFaceElevation([], [bld('L1', RECT, 1)], { markers: markers('L1'), face: 'north', roofOverhangs: legacy });
-    expect(fe.roofBands[0].xStart).toBe(-60);
-    expect(fe.roofBands[0].xEnd).toBe(420);
+    // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]。
+    expect(fe.roofBands[0].xStart).toBe(-420);
+    expect(fe.roofBands[0].xEnd).toBe(60);
   });
 
   // 実機不具合: 棟マーカー無し(建物高さ1点)＋出幅ありで軒バンドが出ず張り出さなかった問題の回帰固定。
@@ -388,10 +391,11 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
     ];
     const fe = buildFaceElevation([], [roofBuilding], { markers, face: 'north' });
     expect(fe.roofBands.length).toBe(1);
-    expect(fe.roofBands[0].xStart).toBe(-60);      // 壁[0,360] より左右へ張り出す
-    expect(fe.roofBands[0].xEnd).toBe(420);
+    // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]、壁[0,360]→[-360,0]。
+    expect(fe.roofBands[0].xStart).toBe(-420);     // 壁[-360,0] より左右へ張り出す
+    expect(fe.roofBands[0].xEnd).toBe(60);
     expect(fe.roofBands[0].ridgeMm).toBe(6000);    // 軒高でフラット
-    expect(fe.buildingOutlines[0].segments[0].xStart).toBe(0); // 壁シルエットは壁位置
+    expect(fe.buildingOutlines[0].segments[0].xStart).toBe(-360); // 壁シルエットは壁位置
   });
 
   it('出幅なし・棟マーカー無しなら軒バンドは出ない', () => {
@@ -410,7 +414,8 @@ describe('buildFaceElevation: 矩形2階 × H=6500', () => {
     const sc = fe.scaffolds[0];
     expect(sc.levels.levels).toEqual([1100, 2900, 4700]);
     expect(sc.levels.topRailMm).toBe(6500);
-    expect(sc.postXs).toEqual([-90, 90, 270, 450]);
+    // E-5-fix: 北立面は左右反転。postXs[-90,90,270,450]→[-450,-270,-90,90]。
+    expect(sc.postXs).toEqual([-450, -270, -90, 90]);
   });
 
   it('踏板帯=段数・横線=コマ格子数', () => {
@@ -418,8 +423,9 @@ describe('buildFaceElevation: 矩形2階 × H=6500', () => {
     expect(sc.boards.length).toBe(sc.levels.floors); // 3
     expect(sc.boards.map(b => b.levelMm)).toEqual([1100, 2900, 4700]);
     expect(sc.rails.length).toBe(sc.levels.komaGridMm.length);
-    expect(sc.boards[0].x0).toBe(-90);
-    expect(sc.boards[0].x1).toBe(450);
+    // E-5-fix: 北立面は左右反転。踏板 x[-90,450]→[-450,90]。
+    expect(sc.boards[0].x0).toBe(-450);
+    expect(sc.boards[0].x1).toBe(90);
   });
 
   it('建物輪郭が北面に出る（高さ6500）', () => {
@@ -463,13 +469,14 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
     expect(fe.roofBands.length).toBe(1);
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(false);
-    expect(band.xStart).toBe(-60);
-    expect(band.xEnd).toBe(420);
+    // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]、profile も x→-x で反転。
+    expect(band.xStart).toBe(-420);
+    expect(band.xEnd).toBe(60);
     // 傾き=(7000-5000)/180 mm/grid、出幅60grid → けらば軒先 = 5000 − 2000/180×60 = 4333
-    expect(band.profile[0]).toEqual({ x: -60, mm: 4333 });
-    expect(band.profile[band.profile.length - 1]).toEqual({ x: 420, mm: 4333 });
+    expect(band.profile[0]).toEqual({ x: -420, mm: 4333 });
+    expect(band.profile[band.profile.length - 1]).toEqual({ x: 60, mm: 4333 });
     // 中央の壁プロファイル(棟)を保持
-    expect(band.profile.some((p) => p.x === 180 && p.mm === 7000)).toBe(true);
+    expect(band.profile.some((p) => p.x === -180 && p.mm === 7000)).toBe(true);
   });
 
   it('けらば軒先の高さは GL(0) 下限', () => {
@@ -495,8 +502,9 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
     const fe = buildFaceElevation([], [roofBld('E')], { markers, face: 'north' });
     expect(fe.roofBands[0].filledToRidge).toBe(true);
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
-    expect(fe.roofBands[0].xStart).toBe(-60);
-    expect(fe.roofBands[0].xEnd).toBe(420);
+    // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]。
+    expect(fe.roofBands[0].xStart).toBe(-420);
+    expect(fe.roofBands[0].xEnd).toBe(60);
     expect(fe.roofBands[0].baseMm).toBeUndefined(); // マーカー方式
   });
 });
@@ -519,11 +527,12 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     expect(band.filledToRidge).toBe(true);
     expect(band.baseMm).toBe(5000);
     expect(band.ridgeMm).toBe(7000);
-    expect(band.xStart).toBe(-60);
-    expect(band.xEnd).toBe(420);
+    // E-5-fix: 北立面は左右反転。x→-x で profile を反転（配列も逆順）。
+    expect(band.xStart).toBe(-420);
+    expect(band.xEnd).toBe(60);
     expect(band.profile).toEqual([
-      { x: -60, mm: 5000 }, { x: 0, mm: 5800 }, { x: 90, mm: 7000 },
-      { x: 270, mm: 7000 }, { x: 360, mm: 5800 }, { x: 420, mm: 5000 },
+      { x: -420, mm: 5000 }, { x: -360, mm: 5800 }, { x: -270, mm: 7000 },
+      { x: -90, mm: 7000 }, { x: 0, mm: 5800 }, { x: 60, mm: 5000 },
     ]);
   });
 
@@ -532,9 +541,10 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     const fe = buildFaceElevation([], [roofBld('G')], { markers: eaveMarker('G'), face: 'north', ridgeLines: [ridge] });
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(true);
+    // E-5-fix: 北立面は左右反転。x→-x で profile を反転（棟が中央なので mm は対称）。
     expect(band.profile).toEqual([
-      { x: -60, mm: 5000 }, { x: 0, mm: 5500 }, { x: 180, mm: 7000 },
-      { x: 360, mm: 5500 }, { x: 420, mm: 5000 },
+      { x: -420, mm: 5000 }, { x: -360, mm: 5500 }, { x: -180, mm: 7000 },
+      { x: 0, mm: 5500 }, { x: 60, mm: 5000 },
     ]);
   });
 
@@ -542,10 +552,11 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     const ridge = rline('r', 'N', { x: 90, y: 270 }, { x: 270, y: 270 }, 7000);
     const fe = buildFaceElevation([], [bld('N', RECT, 1)], { markers: eaveMarker('N'), face: 'north', ridgeLines: [ridge] });
     const band = fe.roofBands[0];
-    expect(band.xStart).toBe(0);
-    expect(band.xEnd).toBe(360);
+    // E-5-fix: 北立面は左右反転。壁範囲[0,360]→[-360,0]、profile も x→-x で反転。
+    expect(band.xStart).toBe(-360);
+    expect(band.xEnd).toBe(0);
     expect(band.profile).toEqual([
-      { x: 0, mm: 5000 }, { x: 90, mm: 7000 }, { x: 270, mm: 7000 }, { x: 360, mm: 5000 },
+      { x: -360, mm: 5000 }, { x: -270, mm: 7000 }, { x: -90, mm: 7000 }, { x: 0, mm: 5000 },
     ]);
   });
 
@@ -554,10 +565,11 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     const r2 = rline('r2', 'M', { x: 240, y: 270 }, { x: 300, y: 270 }, 7000);
     const fe = buildFaceElevation([], [bld('M', RECT, 1)], { markers: eaveMarker('M'), face: 'north', ridgeLines: [r1, r2] });
     const band = fe.roofBands[0];
+    // E-5-fix: 北立面は左右反転。x→-x で profile を反転（谷位置も -180 へ）。
     expect(band.profile).toEqual([
-      { x: 0, mm: 5000 }, { x: 60, mm: 7000 }, { x: 120, mm: 7000 },
-      { x: 180, mm: 6500 }, // 2 棟の谷
-      { x: 240, mm: 7000 }, { x: 300, mm: 7000 }, { x: 360, mm: 5000 },
+      { x: -360, mm: 5000 }, { x: -300, mm: 7000 }, { x: -240, mm: 7000 },
+      { x: -180, mm: 6500 }, // 2 棟の谷
+      { x: -120, mm: 7000 }, { x: -60, mm: 7000 }, { x: 0, mm: 5000 },
     ]);
   });
 
@@ -584,5 +596,55 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     expect(fe.roofBands[0].baseMm).toBe(5000);
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
     expect(fe.roofBands[0].profile.some((p) => p.mm === 7000)).toBe(true);
+  });
+});
+
+describe('E-5-fix: 立面の視点方向(外から見た左右)', () => {
+  // 建物外壁に高さ勾配を付け、どちらの端(東西/南北)が画面左に来るかを固定する。
+  const bV = bld('V', RECT, 1); // 北辺=edge0(x 0→360)、東辺=edge1(y 0→540)、南辺=edge2、西辺=edge3
+  const seg0 = (fe: ReturnType<typeof buildFaceElevation>) => fe.buildingOutlines[0].segments[0];
+
+  it('北立面(南向きに見る): 画面左=東(大x)。左端の高さ=東端', () => {
+    // 北辺: 西端(x=0)=5000, 東端(x=360)=6000。
+    const markers: HeightMarker[] = [
+      { id: 'w', buildingId: 'V', edgeIndex: 0, t: 0, heightMm: 5000 },
+      { id: 'e', buildingId: 'V', edgeIndex: 0, t: 1, heightMm: 6000 },
+    ];
+    const fe = buildFaceElevation([], [bV], { markers, face: 'north' });
+    // 反転後、左端セグメント開始 = 東端(6000)。
+    expect(seg0(fe).heightStartMm).toBe(6000);
+  });
+
+  it('南立面(北向きに見る): 画面左=西(小x)。反転しない', () => {
+    // 南辺(edge2): 東端(t=0,x=360)=6000, 西端(t=1,x=0)=5000。
+    const markers: HeightMarker[] = [
+      { id: 'e', buildingId: 'V', edgeIndex: 2, t: 0, heightMm: 6000 },
+      { id: 'w', buildingId: 'V', edgeIndex: 2, t: 1, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([], [bV], { markers, face: 'south' });
+    // 反転なし、左端 = 西端(5000)。
+    expect(seg0(fe).heightStartMm).toBe(5000);
+  });
+
+  it('東立面(西向きに見る): 画面左=南(大y)。左端の高さ=南端', () => {
+    // 東辺(edge1): 北端(t=0,y=0)=5000, 南端(t=1,y=540)=6000。
+    const markers: HeightMarker[] = [
+      { id: 'n', buildingId: 'V', edgeIndex: 1, t: 0, heightMm: 5000 },
+      { id: 's', buildingId: 'V', edgeIndex: 1, t: 1, heightMm: 6000 },
+    ];
+    const fe = buildFaceElevation([], [bV], { markers, face: 'east' });
+    // 反転後、左端 = 南端(6000)。
+    expect(seg0(fe).heightStartMm).toBe(6000);
+  });
+
+  it('西立面(東向きに見る): 画面左=北(小y)。反転しない', () => {
+    // 西辺(edge3): 南端(t=0,y=540)=6000, 北端(t=1,y=0)=5000。
+    const markers: HeightMarker[] = [
+      { id: 's', buildingId: 'V', edgeIndex: 3, t: 0, heightMm: 6000 },
+      { id: 'n', buildingId: 'V', edgeIndex: 3, t: 1, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([], [bV], { markers, face: 'west' });
+    // 反転なし、左端 = 北端(5000)。
+    expect(seg0(fe).heightStartMm).toBe(5000);
   });
 });
