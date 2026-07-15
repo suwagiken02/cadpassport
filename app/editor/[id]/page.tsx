@@ -42,6 +42,7 @@ import DirectionInputModal from '@/components/building/DirectionInputModal';
 import PinDistanceInputModal from '@/components/canvas/PinDistanceInputModal';
 import ProjectEditModal from '@/components/project/ProjectEditModal';
 import PageTabsContainer from '@/components/editor/PageTabsContainer';
+import CrossPageTransfer from '@/components/editor/CrossPageTransfer';
 import { CanvasData, PaperSize, ScaleOption } from '@/types';
 
 // Konvaはクライアントサイドのみ
@@ -667,6 +668,9 @@ export default function EditorPage() {
 
       {/* 部材選択パネル */}
       {(showPartSelector || mode === 'obstacle') && <PartSelector />}
+
+      {/* ページまたぎコピー/移動（選択中に下部アクションバー＋ページ選択モーダル・E-6b） */}
+      <CrossPageTransfer />
 
       {/* モードツールバー */}
       <ModeToolbar />
