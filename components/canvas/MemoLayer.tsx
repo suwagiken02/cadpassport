@@ -29,6 +29,9 @@ export default function MemoLayer() {
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
 
+  // E-6a-perf: メモが無ければ Layer(canvas) をマウントしない（空レイヤー削減）。
+  if ((canvasData.memos ?? []).length === 0) return null;
+
   return (
     <Layer>
       {canvasData.memos.map((memo) => {

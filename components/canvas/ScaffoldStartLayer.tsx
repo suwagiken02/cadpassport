@@ -76,5 +76,7 @@ export default function ScaffoldStartLayer() {
     );
   }
 
+  // E-6a-perf: 描画要素が無ければ Layer(canvas) をマウントしない（空レイヤー削減）。
+  if (elements.length === 0) return null;
   return <Layer listening={false}>{elements}</Layer>;
 }

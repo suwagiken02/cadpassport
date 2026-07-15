@@ -21,7 +21,7 @@ export default function MagnetPinLayer() {
   const eraseMode = mode === 'erase';
 
   const pins = magnetPins ?? [];
-  if (pins.length === 0) return <Layer listening={false} />;
+  if (pins.length === 0) return null;
 
   const gridPx = INITIAL_GRID_PX * zoom;
 

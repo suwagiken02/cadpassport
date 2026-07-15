@@ -83,8 +83,8 @@ export default function DimensionLayer() {
   const { canvasData, zoom, panX, panY, showDimensions } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
 
-  if (!showDimensions) return <Layer listening={false} />;
-  if (!canvasData.buildings.length || !canvasData.handrails.length) return <Layer listening={false} />;
+  if (!showDimensions) return null;
+  if (!canvasData.buildings.length || !canvasData.handrails.length) return null;
 
   const gx = (g: number) => g * gridPx + panX;
   const gy = (g: number) => g * gridPx + panY;

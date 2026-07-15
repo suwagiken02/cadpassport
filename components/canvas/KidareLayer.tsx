@@ -12,8 +12,8 @@ const ARROW = 5;
 
 export default function KidareLayer() {
   const { canvasData, zoom, panX, panY, showKidare } = useCanvasStore();
-  if (!showKidare) return <Layer listening={false} />;
-  if (!canvasData.buildings.length || !canvasData.handrails.length) return <Layer listening={false} />;
+  if (!showKidare) return null;
+  if (!canvasData.buildings.length || !canvasData.handrails.length) return null;
 
   const gridPx = INITIAL_GRID_PX * zoom;
   const gx = (g: number) => g * gridPx + panX;
