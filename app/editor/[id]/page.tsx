@@ -41,6 +41,7 @@ import MemoCreateModal from '@/components/memo/MemoCreateModal';
 import DirectionInputModal from '@/components/building/DirectionInputModal';
 import PinDistanceInputModal from '@/components/canvas/PinDistanceInputModal';
 import ProjectEditModal from '@/components/project/ProjectEditModal';
+import PageTabsContainer from '@/components/editor/PageTabsContainer';
 import { CanvasData, PaperSize, ScaleOption } from '@/types';
 
 // Konvaはクライアントサイドのみ
@@ -491,6 +492,9 @@ export default function EditorPage() {
           <DarkModeToggle />
         </div>
       </header>
+
+      {/* ページ(シート)タブ (= E-6a、 現物件の複数 drawing をタブ切替) */}
+      <PageTabsContainer />
 
       {/* キャンバスエリア */}
       <div ref={containerRef} data-canvas-container className="flex-1 relative overflow-hidden">
