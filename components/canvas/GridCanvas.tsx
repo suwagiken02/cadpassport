@@ -550,7 +550,8 @@ export default function GridCanvas({ width, height }: Props) {
       onMouseUp={(e) => { handleMouseUp(e); handleStageMouseUp(e); }}
       style={{ touchAction: 'none', cursor: building2FDraft || memoDraft ? 'crosshair' : isPanning ? 'grab' : 'default' }}
     >
-      {/* キャンバス背景（ビューポート + 印刷範囲を含む拡張範囲、 PDF キャプチャで端まで埋まる） */}
+      {/* キャンバス背景＋グリッド線（E-6a-perf: 静的・listening=false の 2 層を 1 canvas に統合）。
+          背景 Rect → グリッド線 → ガイド線 の順で描画（統合前の z 順を保持）。 */}
       <Layer listening={false}>
         {(() => {
           const gridPx = INITIAL_GRID_PX * zoom;
@@ -568,10 +569,6 @@ export default function GridCanvas({ width, height }: Props) {
           }
           return <Rect x={0} y={0} width={width} height={height} fill={colorCanvasBg} />;
         })()}
-      </Layer>
-
-      {/* グリッド線（キャンバス全体の背景として描画） */}
-      <Layer listening={false}>
         {gridLines()}
         {gridGuideLines()}
       </Layer>
