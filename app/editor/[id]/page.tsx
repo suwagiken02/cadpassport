@@ -72,7 +72,7 @@ export default function EditorPage() {
     undo,
     redo,
     history,
-    zoomToFitBuildings,
+    zoomToFitContent,
     showDimensions,
     toggleShowDimensions,
     showGridGuide,
@@ -255,15 +255,18 @@ export default function EditorPage() {
     loadDrawing();
   }, [drawingId, setDrawingId, setProjectId, setCanvasData]);
 
-  // 起動時自動全範囲表示 (= #1): buildings + canvasSize 確定後、 drawingId ごとに 1 回
+  // 起動時自動全範囲表示 (= #1): コンテンツ + canvasSize 確定後、 drawingId ごとに 1 回。
+  // E-6f: 建物レス(立面のみ等)ページも対象にするためコンテンツ総数で判定・content 基準にフィット。
+  const contentCount = canvasData.buildings.length + (canvasData.elevationViews?.length ?? 0)
+    + canvasData.obstacles.length + canvasData.memos.length;
   useEffect(() => {
     if (!drawingId) return;
     if (canvasSize.width === 0 || canvasSize.height === 0) return;
-    if (canvasData.buildings.length === 0) return;
+    if (contentCount === 0) return;
     if (fittedForDrawingIdRef.current === drawingId) return;
-    zoomToFitBuildings(canvasSize.width, canvasSize.height, 3000);
+    zoomToFitContent(canvasSize.width, canvasSize.height, 3000);
     fittedForDrawingIdRef.current = drawingId;
-  }, [drawingId, canvasData.buildings.length, canvasSize.width, canvasSize.height, zoomToFitBuildings]);
+  }, [drawingId, contentCount, canvasSize.width, canvasSize.height, zoomToFitContent]);
 
 
   // 保存
@@ -504,30 +507,28 @@ export default function EditorPage() {
         )}
         <CompassWidget />
 
-        {/* スマホ用 全体表示ボタン */}
-        {canvasData.buildings.length > 0 && (
-          <button
-            onClick={() => {
-              const vw = canvasSize.width || window.innerWidth;
-              const vh = canvasSize.height || (window.innerHeight - 120);
-              zoomToFitBuildings(vw, vh, 3000);
-            }}
-            className="sm:hidden absolute top-3 right-3 p-2 bg-dark-surface border border-dark-border rounded-lg shadow-lg text-dimension z-10"
-            title="全体表示"
-          >
-            🔍
-          </button>
-        )}
+        {/* スマホ用 全体表示ボタン (E-6f: 全ページ常時表示・コンテンツ基準にフィット) */}
+        <button
+          onClick={() => {
+            const vw = canvasSize.width || window.innerWidth;
+            const vh = canvasSize.height || (window.innerHeight - 120);
+            zoomToFitContent(vw, vh, 3000);
+          }}
+          className="sm:hidden absolute top-3 right-3 p-2 bg-dark-surface border border-dark-border rounded-lg shadow-lg text-dimension z-10"
+          title="全体表示"
+        >
+          🔍
+        </button>
 
         {/* 右上ボタン群（PC） */}
         <div className="hidden sm:flex absolute top-3 right-3 flex-col gap-2 z-10" style={{ display: showSettingsPanel ? undefined : 'none' }}>
-          {/* 全体表示ボタン */}
-          {canvasData.buildings.length > 0 && (
+          {/* 全体表示ボタン (E-6f: 全ページ常時表示・コンテンツ基準にフィット) */}
+          {(
             <button
               onClick={() => {
                 const vw = canvasSize.width || window.innerWidth;
                 const vh = canvasSize.height || (window.innerHeight - 120);
-                zoomToFitBuildings(vw, vh, 3000);
+                zoomToFitContent(vw, vh, 3000);
               }}
               className="w-10 h-10 bg-dark-surface border border-dark-border rounded-xl flex items-center justify-center text-dimension hover:text-canvas shadow-lg transition-colors"
               title="全体表示"

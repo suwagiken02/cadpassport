@@ -31,6 +31,7 @@ import {
   collectSelectionSubset, instantiateSubset, mergePayloadIntoCanvas, payloadCount, payloadIds,
   type CrossPagePayload,
 } from '@/lib/pages/crossPageCopy';
+import { computeContentBounds } from '@/lib/pages/contentBounds';
 
 const createEmptyCanvasData = (): CanvasData => ({
   version: '1.0',
@@ -440,6 +441,8 @@ type CanvasStore = {
   removeScaffoldStart1F: () => void;
   removeScaffoldStart2F: () => void;
   zoomToFitBuildings: (viewportWidth: number, viewportHeight: number, marginMm?: number) => void;
+  /** 全コンテンツ(建物・立面・メモ等)の bbox にフィット。空ページは原点・zoom=1 に戻す（E-6f）。 */
+  zoomToFitContent: (viewportWidth: number, viewportHeight: number, marginMm?: number) => void;
   zoomToFitPrintArea: (viewportWidth: number, viewportHeight: number, marginMm?: number) => void;
   resetCanvas: () => void;
 };
@@ -1571,6 +1574,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const newPanY = viewportHeight / 2 - centerGridY * INITIAL_GRID_PX * newZoom;
 
     set({ zoom: newZoom, panX: newPanX, panY: newPanY });
+  },
+  zoomToFitContent: (viewportWidth, viewportHeight, marginMm = 2000) => {
+    const { canvasData } = get();
+    const b = computeContentBounds(canvasData);
+    if (!b) {
+      // 空ページ: 原点(0,0)を画面中央・デフォルトズームに戻す。
+      set({ zoom: 1, panX: viewportWidth / 2, panY: viewportHeight / 2 });
+      return;
+    }
+    const w = b.maxX - b.minX, h = b.maxY - b.minY;
+    const marginGrid = marginMm / 10;
+    const fitW = Math.max(w, 1) + marginGrid * 2;
+    const fitH = Math.max(h, 1) + marginGrid * 2;
+    const zoomX = viewportWidth / (fitW * INITIAL_GRID_PX);
+    const zoomY = viewportHeight / (fitH * INITIAL_GRID_PX);
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.min(zoomX, zoomY)));
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    set({
+      zoom: newZoom,
+      panX: viewportWidth / 2 - cx * INITIAL_GRID_PX * newZoom,
+      panY: viewportHeight / 2 - cy * INITIAL_GRID_PX * newZoom,
+    });
   },
   zoomToFitPrintArea: (viewportWidth, viewportHeight, marginMm = 500) => {
     const { canvasData, printPaperSize, printScale, printAreaCenter } = get();
