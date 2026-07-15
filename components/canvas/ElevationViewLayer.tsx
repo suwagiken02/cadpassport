@@ -9,7 +9,7 @@
 //  ・グループ単位で native draggable（select）→ dragEnd で moveElevationView、タップで選択、
 //    消去ツールで削除。線幅/文字は px 一定（strokeScaleEnabled=false・group scale=1）。
 // ============================================================
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -88,6 +88,23 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 
   const listening = mode === 'select' || mode === 'erase' || mode === 'move-select';
 
+  // E-6e-perf 2/3: Group をビットマップ化。パン中は bitmap の平行移動だけで済む
+  // （Konva の per-shape 再描画を回避）。view/gridPx/mode 変化時にのみ再キャッシュ。
+  const groupRef = useRef<Konva.Group>(null);
+  useEffect(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    const box = g.getClientRect({ skipTransform: true });
+    if (box.width < 1 || box.height < 1) return;
+    const maxSide = Math.max(box.width, box.height);
+    const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    // ビットマップ最大辺 ~2600px にクランプ（高ズーム時のメモリ抑制）。
+    const pixelRatio = Math.max(0.3, Math.min(dpr, 2600 / maxSide));
+    g.cache({ pixelRatio });
+    g.getLayer()?.batchDraw();
+    return () => { g.clearCache(); };
+  }, [view, gridPx, mode]);
+
   const onClick = () => {
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
     setSelectedIds([view.id]);
@@ -101,8 +118,11 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 
   return (
     <>
-      <Group x={panX} y={panY} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} listening={listening}>
+      <Group ref={groupRef} x={panX} y={panY} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} listening={listening}>
         {children}
+        {/* cache 後の当たり判定用（cached hit canvas は listening=false 子を無視するため、
+            bbox を覆う透明 Rect を hit 領域にする。scene は opacity=0 で不可視・hit のみ有効）。 */}
+        {wbox && <Rect x={wbox.x} y={wbox.y} width={wbox.w} height={wbox.h} fill="#000" opacity={0} listening={listening} />}
       </Group>
       {selected && wbox && (
         <Rect x={wbox.x + panX - 4} y={wbox.y + panY - 4} width={wbox.w + 8} height={wbox.h + 8} stroke="#378ADD" strokeWidth={1} dash={[6, 4]} listening={false} />
