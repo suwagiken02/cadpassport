@@ -14,7 +14,8 @@ function sc(depthCoord: number, xStart: number, xEnd: number, railHeights: numbe
   } as unknown as ElevationScaffold;
 }
 const railsXs = (s: ElevationScaffold) => s.rails.map((r) => [r.x0, r.x1]);
-const run = (arr: ElevationScaffold[], face: Face) => applyOcclusionCut(arr, face);
+// 純粋な切断ロジック検証は gap=0 で（ギャップは別 describe で検証）。
+const run = (arr: ElevationScaffold[], face: Face) => applyOcclusionCut(arr, face, 0);
 
 describe('subtractIntervals (E-5)', () => {
   it('部分重なり → 残り小区間', () => {
@@ -79,5 +80,33 @@ describe('applyOcclusionCut: 入隅の前後で奥列の横線を切る (E-5)', 
     const [rBack, rFront] = run([back, front], 'north');
     expect(railsXs(rBack)).toEqual([[270, 450]]);
     expect(railsXs(rFront)).toEqual([[-90, 270]]);
+  });
+});
+
+describe('applyOcclusionCut: 視覚ギャップ (E-5-fix3)', () => {
+  it('既定 gap=5(50mm): 奥列の切断端が手前列端から離れる(275 から始まる)', () => {
+    const inner = sc(270, 90, 450, [1800]); // 奥
+    const outer = sc(450, -90, 270, [1800]); // 手前(端 x=270)
+    // 既定 gap で applyOcclusionCut（run は gap0 なので直接呼ぶ）。
+    const [rInner, rOuter] = applyOcclusionCut([inner, outer], 'south');
+    // 手前端 270 + gap5 = 275 から奥列が始まる → 270..275 が見える切れ目。
+    expect(railsXs(rInner)).toEqual([[275, 450]]);
+    expect(railsXs(rOuter)).toEqual([[-90, 270]]); // 手前は不変
+  });
+
+  it('gap=5: boards も手前端から離れる', () => {
+    const inner = sc(270, 90, 450, [], [400]);
+    const outer = sc(450, -90, 270, [], [400]);
+    const [rInner] = applyOcclusionCut([inner, outer], 'south');
+    expect(rInner.boards.map((b) => [b.x0, b.x1])).toEqual([[275, 450]]);
+  });
+
+  it('gap=5: 3列コの字は中央の奥列が両手前端から gap 分内側に残る', () => {
+    const back = sc(0, 0, 300, [1800]);
+    const midL = sc(10, 0, 100, [1800]);  // 手前左(端 100)
+    const midR = sc(20, 200, 300, [1800]);// 手前右(端 200)
+    const [rBack] = applyOcclusionCut([back, midL, midR], 'south');
+    // 105..195（左端100+5 〜 右端200-5）
+    expect(railsXs(rBack)).toEqual([[105, 195]]);
   });
 });

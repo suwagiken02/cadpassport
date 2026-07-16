@@ -77,6 +77,7 @@ describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)'
     const rails = prims.filter((p) => p.kind === 'line' && p.stroke === '#378ADD' && p.width === 0.7);
     const widths = new Set(rails.map((p) => (p.kind === 'line' ? Math.round(Math.abs(p.x2 - p.x1)) : 0)));
     expect(widths.has(360)).toBe(true); // 手前列 [-90,270] 幅360
-    expect(widths.has(180)).toBe(true); // 奥列(切断後) [270,450] 幅180
+    // E-5-fix3: 奥列は手前端(270)+gap5=275 から → [275,450] 幅175（見える切れ目）。
+    expect(widths.has(175)).toBe(true); // 奥列(切断+ギャップ後) 幅175
   });
 });

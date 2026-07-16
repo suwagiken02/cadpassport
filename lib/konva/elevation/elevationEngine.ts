@@ -592,20 +592,30 @@ export function subtractIntervals(
   return segs.filter(([a, b]) => b - a > 1e-6);
 }
 
+/** 奥列を手前列端から離す視覚ギャップ（グリッド）。1 grid=10mm なので 5=50mm（E-5-fix3）。 */
+const OCCLUSION_GAP_GRID = 5;
+
 /**
  * 入隅の前後（オクルージョン）で、奥列の横線（rails・boards）を手前列の x 区間で切る（pure・E-5）。
  * 手前 = 面の外向き法線方向で最も遠い列（視点に最も近い）。north/west→depthCoord 小、south/east→大。
- * 各列につき「自分より手前の全列の [xStart,xEnd] の和」を穴として横線を分割する。
- * 支柱・ジャッキ・spanRaises は現状維持（v1・要確認）。dims 基準（column.rails/postXs）は不変。
+ * 各列につき「自分より手前の全列の [xStart,xEnd]」を穴として横線を分割する。
+ * E-5-fix3: 穴を両側 gapGrid だけ広げ、奥列の切断端が手前列端から離れて「見える切れ目」を作る
+ *   （同一高さの隣接列が突き合って連続に見える問題の対策。既定 50mm）。
+ * 支柱・ジャッキ・spanRaises は現状維持（v1）。dims 基準（column.rails/postXs）は不変。
  */
-export function applyOcclusionCut(scaffolds: ElevationScaffold[], face: Face): ElevationScaffold[] {
+export function applyOcclusionCut(
+  scaffolds: ElevationScaffold[], face: Face, gapGrid: number = OCCLUSION_GAP_GRID,
+): ElevationScaffold[] {
   // 「手前度」= 大きいほど手前。north/west は depthCoord 小が手前なので符号反転。
   const frontness = (depthCoord: number) => (face === 'north' || face === 'west' ? -depthCoord : depthCoord);
   return scaffolds.map((sc) => {
     const myFront = frontness(sc.column.depthCoord);
     const holes: [number, number][] = scaffolds
       .filter((o) => o !== sc && frontness(o.column.depthCoord) > myFront + 1e-6)
-      .map((o) => [Math.min(o.column.xStart, o.column.xEnd), Math.max(o.column.xStart, o.column.xEnd)]);
+      .map((o) => [
+        Math.min(o.column.xStart, o.column.xEnd) - gapGrid,
+        Math.max(o.column.xStart, o.column.xEnd) + gapGrid,
+      ]);
     if (holes.length === 0) return sc;
     const rails = sc.rails.flatMap((r) => subtractIntervals(r.x0, r.x1, holes).map(([a, b]) => ({ ...r, x0: a, x1: b })));
     const boards = sc.boards.flatMap((b) => subtractIntervals(b.x0, b.x1, holes).map(([a, c]) => ({ ...b, x0: a, x1: c })));
