@@ -592,20 +592,43 @@ export function subtractIntervals(
   return segs.filter(([a, b]) => b - a > 1e-6);
 }
 
-/** 奥列を手前列端から離す視覚ギャップ（グリッド）。1 grid=10mm なので 5=50mm（E-5-fix3）。 */
-const OCCLUSION_GAP_GRID = 5;
+/** 視覚ギャップの下限（グリッド）＝50mm。小物件は描画スケールが大きく 50mm でも十分視認できる。 */
+const OCCLUSION_GAP_MIN_GRID = 5;
+/** 同上限（グリッド）＝400mm。巨大物件でギャップが実測(奥列)を食い過ぎないよう頭打ち。 */
+const OCCLUSION_GAP_MAX_GRID = 40;
+/**
+ * 面の変軸全幅に対するギャップ比（E-5-fix4）。
+ * scale-to-fit 描画では gap_px = gapGrid×10×scale、scale ∝ 1/全幅 なので、固定 mm だと
+ * 大物件でギャップが数 px に潰れて視認不能になる（E-5-fix3=50mm は 5400mm 面で約3.6px）。
+ * 「全幅の一定割合」にすれば px 幅が物件サイズに依らずほぼ一定（1.5%≒描画幅の1.5%≒8〜9px）に見える。
+ */
+const OCCLUSION_GAP_RATIO = 0.015;
+
+/** scaffolds の変軸全幅（グリッド）から視覚ギャップ（グリッド）を算出（E-5-fix4）。 */
+function occlusionGapGrid(scaffolds: ElevationScaffold[]): number {
+  let mn = Infinity, mx = -Infinity;
+  for (const sc of scaffolds) {
+    mn = Math.min(mn, sc.column.xStart, sc.column.xEnd);
+    mx = Math.max(mx, sc.column.xStart, sc.column.xEnd);
+  }
+  const span = Number.isFinite(mn) ? mx - mn : 0;
+  return Math.max(OCCLUSION_GAP_MIN_GRID, Math.min(OCCLUSION_GAP_MAX_GRID, Math.round(span * OCCLUSION_GAP_RATIO)));
+}
 
 /**
  * 入隅の前後（オクルージョン）で、奥列の横線（rails・boards）を手前列の x 区間で切る（pure・E-5）。
  * 手前 = 面の外向き法線方向で最も遠い列（視点に最も近い）。north/west→depthCoord 小、south/east→大。
  * 各列につき「自分より手前の全列の [xStart,xEnd]」を穴として横線を分割する。
  * E-5-fix3: 穴を両側 gapGrid だけ広げ、奥列の切断端が手前列端から離れて「見える切れ目」を作る
- *   （同一高さの隣接列が突き合って連続に見える問題の対策。既定 50mm）。
+ *   （同一高さの隣接列が突き合って連続に見える問題の対策）。
+ * E-5-fix4: gapGrid 未指定時は面の変軸全幅の比率で算出し、物件サイズに依らず切れ目が視認できる
+ *   px 幅になるようにする（固定 50mm は大物件で潰れて見えないのが実機の症状だった）。
  * 支柱・ジャッキ・spanRaises は現状維持（v1）。dims 基準（column.rails/postXs）は不変。
  */
 export function applyOcclusionCut(
-  scaffolds: ElevationScaffold[], face: Face, gapGrid: number = OCCLUSION_GAP_GRID,
+  scaffolds: ElevationScaffold[], face: Face, gapGrid?: number,
 ): ElevationScaffold[] {
+  const gap = gapGrid ?? occlusionGapGrid(scaffolds);
   // 「手前度」= 大きいほど手前。north/west は depthCoord 小が手前なので符号反転。
   const frontness = (depthCoord: number) => (face === 'north' || face === 'west' ? -depthCoord : depthCoord);
   return scaffolds.map((sc) => {
@@ -613,8 +636,8 @@ export function applyOcclusionCut(
     const holes: [number, number][] = scaffolds
       .filter((o) => o !== sc && frontness(o.column.depthCoord) > myFront + 1e-6)
       .map((o) => [
-        Math.min(o.column.xStart, o.column.xEnd) - gapGrid,
-        Math.max(o.column.xStart, o.column.xEnd) + gapGrid,
+        Math.min(o.column.xStart, o.column.xEnd) - gap,
+        Math.max(o.column.xStart, o.column.xEnd) + gap,
       ]);
     if (holes.length === 0) return sc;
     const rails = sc.rails.flatMap((r) => subtractIntervals(r.x0, r.x1, holes).map(([a, b]) => ({ ...r, x0: a, x1: b })));
