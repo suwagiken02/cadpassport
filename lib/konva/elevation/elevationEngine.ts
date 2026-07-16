@@ -573,9 +573,13 @@ function heightAtSeg(seg: BuildingOutlineSegment, x: number): number {
   return seg.heightStartMm + f * (seg.heightEndMm - seg.heightStartMm);
 }
 
-/** スパン区間[aG,bG](グリッド)と重なる屋根最高高さ(mm)。壁セグメント高さに加え、区間に掛かる棟
- *  (projectedRidges)の高さも算入する。重なり無しは null。R-1c: ②が RidgeLine の場合、壁 segments は
- *  軒高止まりで棟を取りこぼすため、投影棟を評価対象に含めて嵩上げ判定が棟基準になるようにする。 */
+/** スパン区間[aG,bG](グリッド)と重なる屋根最高高さ(mm)。壁セグメント高さに加え、区間に掛かる
+ *  「面に直交する棟」(projectedRidges の a≈b・点に潰れる=妻側から見ている棟)の高さのみ算入する。
+ *  重なり無しは null。
+ *  R-1c: ②が RidgeLine の妻面では壁 segments が軒高止まりで棟を取りこぼすため、点棟を算入して
+ *   嵩上げ判定を棟基準にする。R-1c-fix: 面に平行な棟(a≠b・樋面から水平線に見える棟)は建物奥に
+ *   あるだけで足場の作業対象ではない(嵩上げは妻面のためのもの)ので評価から除外する。
+ *   ※高さマーカー由来の妻の三角(への字)は壁 segments 自体が高いので従来どおり評価される。 */
 function roofMaxOverSpan(
   segments: BuildingOutlineSegment[], projectedRidges: ProjectedRidge[], aG: number, bG: number,
 ): number | null {
@@ -587,7 +591,8 @@ function roofMaxOverSpan(
     mx = Math.max(mx, heightAtSeg(s, lo), heightAtSeg(s, hi));
   }
   for (const r of projectedRidges) {
-    // 棟の変軸区間 [a,b] がスパン [aG,bG] に掛かれば棟高を算入（点棟 a==b もスパン内なら掛かる）。
+    // 面直交(点に潰れる a≈b=妻側)の棟のみ算入。面平行(a≠b=樋面の水平棟)は嵩上げ対象外。
+    if (Math.abs(r.b - r.a) > 1e-6) continue;
     if (r.b >= aG - 1e-6 && r.a <= bG + 1e-6) mx = Math.max(mx, r.heightMm);
   }
   return mx === -Infinity ? null : mx;

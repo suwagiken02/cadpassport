@@ -80,3 +80,29 @@ describe('妻面嵩上げが棟(RidgeLine)を取りこぼさない (R-1c・最�
     expect(fe.scaffolds[0].spanRaises.length).toBe(0);
   });
 });
+
+describe('R-1c-fix: 樋面の嵩上げ判定から平行棟を除外', () => {
+  const building: BuildingShape = { id: 'B', type: 'polygon', fill: '#000', floor: 1, points: RECT };
+  const col: FaceSpanColumn = {
+    face: 'south', floor: 1, depthCoord: 540, xStart: 0, xEnd: 360, rails: [1800, 1800], handrailIds: ['a', 'b'],
+  };
+
+  it('寄棟・樋面(面平行の棟): 棟を拾わず嵩上げなし(spanRaises 空) ← 症状の回帰', () => {
+    // 南面(樋面)に平行な棟(x軸沿い y=270)。投影 a=90,b=270 の水平棟(a≠b)→ 嵩上げ評価から除外。
+    // 壁は軒高5000のみ → 最上段3200 で gap1800 ≤ reach1900 → 嵩上げなし。
+    const ridge: RidgeLine = { id: 'r', buildingId: 'B', p1: { x: 90, y: 270 }, p2: { x: 270, y: 270 }, heightMm: 7000 };
+    const fe = buildFaceElevation([col], [building], { defaultHeightMm: 5000, ridgeLines: [ridge] });
+    expect(fe.scaffolds[0].spanRaises).toEqual([]);
+  });
+
+  it('切妻・妻面(マーカー三角): 壁 segments 自体が高いので従来どおり嵩上げ', () => {
+    // 南辺(edge2)中央に棟マーカー → への字。壁 segments が棟高7000を含むので棟ライン無関係に嵩上げ。
+    const gable: HeightMarker[] = [
+      { id: 's0', buildingId: 'B', edgeIndex: 2, t: 0, heightMm: 5000 },
+      { id: 'sm', buildingId: 'B', edgeIndex: 2, t: 0.5, heightMm: 7000 },
+      { id: 's1', buildingId: 'B', edgeIndex: 2, t: 1, heightMm: 5000 },
+    ];
+    const fe = buildFaceElevation([col], [building], { markers: gable });
+    expect(fe.scaffolds[0].spanRaises.length).toBeGreaterThan(0);
+  });
+});
