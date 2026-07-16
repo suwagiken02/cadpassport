@@ -525,14 +525,17 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     expect(fe.roofBands.length).toBe(1);
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(true);
-    expect(band.baseMm).toBe(5000);
+    // R-1c: 樋面の軒先下がり。軒高5000・棟7000・run2700(壁y=0→棟y=270)→slope=0.7407、
+    //   出幅600 → 軒先=5000−0.7407×600=4556。baseMm(軒)と両端が 5000→4556 に下がる。
+    expect(band.baseMm).toBe(4556);
     expect(band.ridgeMm).toBe(7000);
     // E-5-fix: 北立面は左右反転。x→-x で profile を反転（配列も逆順）。
     expect(band.xStart).toBe(-420);
     expect(band.xEnd).toBe(60);
+    // 軒先 4556 から棟 7000 へ立ち上がる包絡線（中間点は下がった軒基準で再計算 → 5534）。
     expect(band.profile).toEqual([
-      { x: -420, mm: 5000 }, { x: -360, mm: 5800 }, { x: -270, mm: 7000 },
-      { x: -90, mm: 7000 }, { x: 0, mm: 5800 }, { x: 60, mm: 5000 },
+      { x: -420, mm: 4556 }, { x: -360, mm: 5534 }, { x: -270, mm: 7000 },
+      { x: -90, mm: 7000 }, { x: 0, mm: 5534 }, { x: 60, mm: 4556 },
     ]);
   });
 
@@ -593,7 +596,8 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     const ridgeLines: RidgeLine[] = [{ id: 'r', buildingId: 'X', p1: { x: 90, y: 270 }, p2: { x: 270, y: 270 }, heightMm: 7000 }];
     const fe = buildFaceElevation([], buildings, { markers: heightMarkers, face: 'north', ridgeLines });
     expect(fe.roofBands.length).toBe(1);
-    expect(fe.roofBands[0].baseMm).toBe(5000);
+    // R-1c: 樋面の軒先下がりで baseMm(軒)は 5000→4556（slope0.7407×出幅600）。棟は不変。
+    expect(fe.roofBands[0].baseMm).toBe(4556);
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
     expect(fe.roofBands[0].profile.some((p) => p.mm === 7000)).toBe(true);
   });

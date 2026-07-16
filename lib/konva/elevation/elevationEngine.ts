@@ -395,13 +395,64 @@ function faceXRange(pts: Point[], face: Face): { xStart: number; xEnd: number } 
   return Number.isFinite(mn) ? { xStart: mn, xEnd: mx } : null;
 }
 
+/**
+ * 屋根勾配(mm/mm・無次元) = ①②の高さ差 ÷ 水平 run 距離（pure・R-1c）。
+ * ① eaveMm=軒高(水下・壁TOP)、② ridgeMm=棟高、runMm=樋面の壁から棟までの水平距離。
+ * ②が無い/run≤0/棟が軒高以下 → 0（フラット＝軒先下がりなし＝従来挙動）。
+ */
+export function roofSlopePerMm(eaveMm: number, ridgeMm: number, runMm: number): number {
+  if (runMm <= 1e-6 || ridgeMm <= eaveMm + 1e-6) return 0;
+  return (ridgeMm - eaveMm) / runMm;
+}
+
+/** 指定 face の壁の出幅(グリッド)＝その面の軒の出（depth 方向）。face の辺の最大出幅。 */
+function faceOverhangGrid(building: BuildingShape, face: Face, roofOverhangs: RoofOverhang[]): number {
+  const ohs = mergedRoofOverhangsGrid(building, roofOverhangs);
+  const ws = windingSign(building.points);
+  let mx = 0;
+  for (let i = 0; i < building.points.length; i++) {
+    if (outlineEdgeFace(building.points, i, ws) === face) mx = Math.max(mx, ohs[i] ?? 0);
+  }
+  return mx;
+}
+
+/**
+ * 樋面の軒先下がり(mm)を ①②から算出（R-1c）。軒先 = 軒高 − slope × 出幅。
+ * run = この面の壁から棟までの水平距離。棟位置は「面と平行な RidgeLine があればその垂直座標、
+ *   無ければ建物 bbox 中央（妻の棟マーカー＝中央想定）」。棟が軒高以下 or 出幅0 → 0。
+ * 面内で既に傾いている（への字＝妻面）ケースは呼び出し側が eaveMm=ridgeMm となり自然に 0。
+ */
+function faceEaveDropMm(
+  building: BuildingShape, face: Face, eaveMm: number, ridgeMm: number,
+  gutterOverhangGrid: number, ridgeLines: RidgeLine[],
+): number {
+  if (ridgeMm <= eaveMm + 1e-6 || gutterOverhangGrid <= 0) return 0;
+  const isHorizontal = face === 'north' || face === 'south';
+  const perp = building.points.map(p => (isHorizontal ? p.y : p.x));
+  const minP = Math.min(...perp), maxP = Math.max(...perp);
+  const wallPerp = (face === 'south' || face === 'east') ? maxP : minP; // 外向き側の壁
+  let ridgePerp = (minP + maxP) / 2; // 既定: bbox 中央（妻の棟マーカー想定）
+  for (const r of ridgeLines) {
+    if (r.buildingId !== building.id) continue;
+    const rp1 = isHorizontal ? r.p1.y : r.p1.x;
+    const rp2 = isHorizontal ? r.p2.y : r.p2.x;
+    if (Math.abs(rp1 - rp2) < 1e-6) { ridgePerp = rp1; break; } // 面と平行な棟の実位置
+  }
+  const runMm = Math.abs(ridgePerp - wallPerp) * 10;
+  return Math.round(roofSlopePerMm(eaveMm, ridgeMm, runMm) * gutterOverhangGrid * 10);
+}
+
 /** 外形上辺プロファイル（セグメント上辺の折れ線）を、両端セグメントの傾きを保存して
  *  延長 x 範囲 [extXStart, extXEnd] まで伸ばす。延長点高さ = 端点高さ − 傾き×出幅。GL(0) 下限。
- *  フラット(傾き0)→水平延長、妻の三角→斜辺(けらば)延長で軒先が勾配なり下がる。 */
+ *  フラット(傾き0)→水平延長、妻の三角→斜辺(けらば)延長で軒先が勾配なり下がる。
+ *  R-1c: eaveDropMm を渡すと全プロファイルをその分だけ下げる。樋面は面内傾き0で軒先が下がらない
+ *   ため、①②から算出した勾配×出幅の下がり(=軒先=軒高−slope×出幅)をここで一律に適用する。
+ *   妻面は面内傾き(への字)で既に下がるので eaveDropMm=0 で従来どおり。 */
 function extendedTopProfile(
   segments: BuildingOutlineSegment[],
   extXStart: number,
   extXEnd: number,
+  eaveDropMm = 0,
 ): { x: number; mm: number }[] {
   const wall: { x: number; mm: number }[] = [];
   segments.forEach((s, k) => {
@@ -422,6 +473,7 @@ function extendedTopProfile(
     const slope = (last.mm - lastPrev.mm) / ((last.x - lastPrev.x) || 1);
     out.push({ x: extXEnd, mm: Math.max(0, Math.round(last.mm + slope * (extXEnd - last.x))) });
   }
+  if (eaveDropMm > 1e-6) return out.map(p => ({ x: p.x, mm: Math.max(0, Math.round(p.mm - eaveDropMm)) }));
   return out;
 }
 
@@ -521,15 +573,22 @@ function heightAtSeg(seg: BuildingOutlineSegment, x: number): number {
   return seg.heightStartMm + f * (seg.heightEndMm - seg.heightStartMm);
 }
 
-/** スパン区間[aG,bG](グリッド)と重なる全セグメントの最高高さ(mm)。重なり無しは null。
- *  各セグメントは線形なので区間端(クリップ後)で最大になる。 */
-function roofMaxOverSpan(segments: BuildingOutlineSegment[], aG: number, bG: number): number | null {
+/** スパン区間[aG,bG](グリッド)と重なる屋根最高高さ(mm)。壁セグメント高さに加え、区間に掛かる棟
+ *  (projectedRidges)の高さも算入する。重なり無しは null。R-1c: ②が RidgeLine の場合、壁 segments は
+ *  軒高止まりで棟を取りこぼすため、投影棟を評価対象に含めて嵩上げ判定が棟基準になるようにする。 */
+function roofMaxOverSpan(
+  segments: BuildingOutlineSegment[], projectedRidges: ProjectedRidge[], aG: number, bG: number,
+): number | null {
   let mx = -Infinity;
   for (const s of segments) {
     const lo = Math.max(aG, s.xStart);
     const hi = Math.min(bG, s.xEnd);
     if (hi < lo - 1e-6) continue;
     mx = Math.max(mx, heightAtSeg(s, lo), heightAtSeg(s, hi));
+  }
+  for (const r of projectedRidges) {
+    // 棟の変軸区間 [a,b] がスパン [aG,bG] に掛かれば棟高を算入（点棟 a==b もスパン内なら掛かる）。
+    if (r.b >= aG - 1e-6 && r.a <= bG + 1e-6) mx = Math.max(mx, r.heightMm);
   }
   return mx === -Infinity ? null : mx;
 }
@@ -541,6 +600,7 @@ function computeSpanRaises(
   postXs: number[],
   levels: ElevationLevels,
   buildingOutlines: BuildingOutline[],
+  projectedRidges: ProjectedRidge[],
   opts?: ElevationLevelsOpts,
 ): SpanRaise[] {
   const komaMm = opts?.komaMm ?? KOMA_PITCH_MM;
@@ -554,7 +614,7 @@ function computeSpanRaises(
     const x0 = postXs[si];
     const x1 = postXs[si + 1];
     if (x1 - x0 < 1e-6) continue;
-    const roofMax = roofMaxOverSpan(outline.segments, x0, x1);
+    const roofMax = roofMaxOverSpan(outline.segments, projectedRidges, x0, x1);
     if (roofMax == null) continue;
     const gap = roofMax - topFloorMm;
     if (gap <= REACH_MM) continue; // 届く → 嵩上げ不要
@@ -734,8 +794,22 @@ export function buildFaceElevation(
     }
     const hasOverhang = extXStart < xMin - 1e-6 || extXEnd > xMax + 1e-6;
     const hasRidge = Number.isFinite(markerMax) && markerMax > outlineMax + 1e-6;
-    const eaveProfile = extendedTopProfile(o.segments, extXStart, extXEnd);
     const ridges = (b && opts?.ridgeLines) ? projectRidgeLinesToFace(opts.ridgeLines, b, o.face) : [];
+    // R-1c: 樋面の軒先下がり。軒高(outlineMax)と棟(RidgeLine or 棟マーカー markerMax)の勾配 × この面の出幅で
+    //   軒先=軒高−slope×出幅 に下げる。適用は「樋面」のみ:
+    //    ・棟ラインが面と平行(投影 a≠b の水平棟)がある → 樋面。
+    //    ・棟ラインが無く markerMax>軒高(hasRidge) → 妻の棟マーカーが別面にある樋面。
+    //   妻面(への字＝outlineMax に棟が含まれる、または棟が面直交で点に潰れる a==b)は drop=0 で従来どおり
+    //   （けらばは extendedTopProfile の面内傾きで別途下がる）。
+    const hasParallelRidge = ridges.some(r => r.b > r.a + 1e-6);
+    const isGutterFace = ridges.length > 0 ? hasParallelRidge : hasRidge;
+    const ridgeMmForDrop = ridges.length > 0
+      ? ridges.reduce((m, r) => Math.max(m, r.heightMm), -Infinity)
+      : (Number.isFinite(markerMax) ? markerMax : outlineMax);
+    const eaveDropMm = (b && isGutterFace)
+      ? faceEaveDropMm(b, o.face, outlineMax, ridgeMmForDrop, faceOverhangGrid(b, o.face, opts?.roofOverhangs ?? []), opts?.ridgeLines ?? [])
+      : 0;
+    const eaveProfile = extendedTopProfile(o.segments, extXStart, extXEnd, eaveDropMm);
 
     // バンドを出す条件（優先度順）:
     //  ・棟ラインがある → 上端を上側包絡線（軒＋棟/隅棟の max）で生成し、軒まで塗る。
@@ -764,6 +838,12 @@ export function buildFaceElevation(
   }
   const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;
 
+  // R-1c: この面の投影棟（全建物分）。妻面嵩上げが棟高を取りこぼさないよう roofMaxOverSpan に渡す。
+  const faceRidges: ProjectedRidge[] = [];
+  if (opts?.ridgeLines) {
+    for (const b of buildings) faceRidges.push(...projectRidgeLinesToFace(opts.ridgeLines, b, face));
+  }
+
   // 足場（列ごとに別 scaffold）
   const scaffolds: ElevationScaffold[] = faceColumns.map(column => {
     const { postXs } = buildElevationColumns(column);
@@ -776,7 +856,7 @@ export function buildFaceElevation(
     const rails: ElevationRail[] = levels.komaGridMm.map(heightMmK => ({ heightMm: heightMmK, x0, x1 }));
 
     // 妻面のコマ嵩上げ: 各スパンで屋根最高点まで届かない分だけ 450 コマを追加。
-    const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, opts);
+    const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, faceRidges, opts);
 
     return { column, postXs, levels, boards, rails, spanRaises };
   });
