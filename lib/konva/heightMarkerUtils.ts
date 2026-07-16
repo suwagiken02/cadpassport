@@ -1,19 +1,14 @@
 import { BuildingShape, Point } from '@/types';
-import { getEdgeOverhangs, computeOffsetPolygon } from '@/lib/konva/roofUtils';
 
 /**
- * 建物の outline ポリゴンを取得する。
- * 屋根あり + 出幅 > 0 → computeOffsetPolygon (= 屋根破線)
- * それ以外 → building.points (= 建物外周)
- * どちらも辺数 n は同じため、 edgeIndex は両者で統一参照可能 (= Task #8 spec)。
+ * 建物の outline ポリゴン (= 高さマーカーの配置基準線) を取得する。
+ * R-1b: 常に building.points (= 壁外周線) を返す。
+ *   従来は「屋根あり + 出幅 > 0 → 屋根破線 (computeOffsetPolygon)」に載せていたが、
+ *   実建築図面には壁高さ (軒高) しか載らないため、マーカーの意味を「軒先高さ」→「壁位置の
+ *   軒高」に転換。置き場所も屋根破線 → 壁線上に変わる。軒先の下がりは勾配×出幅でシステムが
+ *   計算する (R-1c)。配置・ドラッグ・描画・補間・面積・範囲選択がこの一関数で一斉に壁基準へ。
  */
 export function getOutlinePolygon(building: BuildingShape): Point[] {
-  if (building.roof && building.roof.roofType !== 'none') {
-    const overhangs = getEdgeOverhangs(building, building.roof);
-    if (!overhangs.every((o) => o === 0)) {
-      return computeOffsetPolygon(building.points, overhangs);
-    }
-  }
   return building.points;
 }
 

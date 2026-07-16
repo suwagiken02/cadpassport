@@ -209,20 +209,22 @@ export type MagnetPin = {
 
 // === 高さマーカー (= Task #8) ===
 /**
- * 高さマーカー: 建物外周/屋根破線上の指定位置に立つ、 高さ (mm) 情報を持つマーカー。
- * 屋根あり → computeOffsetPolygon 上の辺、 屋根なし → building.points 上の辺、
- * どちらも辺数 n は同じなので edgeIndex で統一参照可能。
+ * 高さマーカー: 建物の壁外周線 (building.points) 上の指定位置に立つ、 高さ (mm) 情報を持つマーカー。
+ * R-1b: 常に building.points の辺を基準にする (getOutlinePolygon が壁線を返す)。
+ *   heightMm の意味は「壁位置の高さ (= 軒高)」。軒先の下がりは勾配×出幅でシステムが計算する (R-1c)。
+ *   ※旧データ (version <'2.0') のマーカーは屋根破線基準で置かれており、同じ t が壁の短い辺上では
+ *     別位置に着地する (角付近ほど差が大)。分岐再配置はせず再解釈のみ (canvasStore CANVAS_SCHEMA_VERSION)。
  * heightMm は 1mm 精度内部保持 (= 仕様通り、 UI 表示は m 換算)。
  */
 export type HeightMarker = {
   id: string;
   /** 紐づく建物 ID */
   buildingId: string;
-  /** 建物 outline 辺の index (= 0..n-1) */
+  /** 壁外周線 building.points の辺の index (= 0..n-1) */
   edgeIndex: number;
   /** 辺上の位置 (= 0.0 = p1 端、 1.0 = p2 端) */
   t: number;
-  /** 高さ (mm 単位) */
+  /** 高さ (mm 単位、 = 壁位置の軒高) */
   heightMm: number;
   /** 階指定 (= undefined は全階共通、 既存 MagnetPin と同パターン) */
   floor?: number;

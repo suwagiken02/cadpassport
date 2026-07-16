@@ -33,8 +33,12 @@ import {
 } from '@/lib/pages/crossPageCopy';
 import { computeContentBounds } from '@/lib/pages/contentBounds';
 
+/** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
+ *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
+const CANVAS_SCHEMA_VERSION = '2.0';
+
 const createEmptyCanvasData = (): CanvasData => ({
-  version: '1.0',
+  version: CANVAS_SCHEMA_VERSION,
   grid: { unitMm: 10, cols: DEFAULT_COLS, rows: DEFAULT_ROWS },
   buildings: [],
   roofOverhangs: [],
@@ -54,6 +58,7 @@ const createEmptyCanvasData = (): CanvasData => ({
 const normalizeCanvasData = (data: CanvasData): CanvasData => {
   const normalized: CanvasData = {
     ...data,
+    version: CANVAS_SCHEMA_VERSION, // R-1b: 壁線基準への再解釈の目印（分岐処理はしない）
     magnetPins: data.magnetPins ?? [],
     heightMarkers: data.heightMarkers ?? [],
     ridgeLines: data.ridgeLines ?? [],
