@@ -7,6 +7,7 @@ import NumInput from '@/components/ui/NumInput';
 import { getBuildingEdgesClockwise } from '@/lib/konva/autoLayoutUtils';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import RoofShapeSelector, { type RoofShape } from './RoofShapeSelector';
+import { DEFAULT_ROOF_SHAPE } from './roofDefaults';
 import { applyRoofShapeRidge } from './roofShapeApply';
 
 type Props = {
@@ -58,7 +59,7 @@ export default function RoofSettingsModal({ buildingId, buildingPoints, initialR
   });
 
   // 屋根形状 (= E-3.12)
-  const [roofShape, setRoofShape] = useState<RoofShape>(initialRoof?.roofShape ?? 'hip');
+  const [roofShape, setRoofShape] = useState<RoofShape>(initialRoof?.roofShape ?? DEFAULT_ROOF_SHAPE);
   const [hipMode, setHipMode] = useState<'auto' | 'manual'>('auto');
 
   const isMultiEdge = edges && edges.length > 4;

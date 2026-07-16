@@ -10,6 +10,7 @@ import NumInput from '@/components/ui/NumInput';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { nextBuildingFloor } from '@/lib/konva/floorLimits';
 import RoofShapeSelector, { type RoofShape } from './RoofShapeSelector';
+import { DEFAULT_ROOF_SHAPE } from './roofDefaults';
 import { applyRoofShapeRidge } from './roofShapeApply';
 
 type Props = { onClose: () => void; floor?: number; floor1Building?: import('@/types').BuildingShape };
@@ -194,7 +195,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
   const [unit, setUnit] = useState<'m' | 'mm'>('mm');
   const [uniformRoof, setUniformRoof] = useState(true);
   const [edgeOverhangs, setEdgeOverhangs] = useState<Record<number, number>>({});
-  const [roofShape, setRoofShape] = useState<RoofShape>('hip');
+  const [roofShape, setRoofShape] = useState<RoofShape>(DEFAULT_ROOF_SHAPE);
   const [hipMode, setHipMode] = useState<'auto' | 'manual'>('auto');
   const [anchorPoint, setAnchorPoint] = useState<'tl' | 'tr' | 'bl' | 'br' | 'center'>('tl');
 
