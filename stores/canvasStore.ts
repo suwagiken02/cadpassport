@@ -406,6 +406,9 @@ type CanvasStore = {
   setRidgeLineMode: (v: boolean) => void;
   ridgeInputLineId: string | null;
   setRidgeInputLineId: (id: string | null) => void;
+  /** 棟ライン配置の1点目ドラフト（2点目待ち状態）。操作ガイド(R-2)が段階を読むため store 管理。 */
+  ridgeDraft: { buildingId: string; p1: Point } | null;
+  setRidgeDraft: (d: { buildingId: string; p1: Point } | null) => void;
   /** 直前に入力した棟高 (mm) (= 次回棟ライン配置時の初期値、 セッション内のみ) */
   lastRidgeInputMm: number;
   addRidgeLine: (r: RidgeLine) => void;
@@ -520,6 +523,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     heightInputMarkerId: null,
     isRidgeLineMode: false,
     ridgeInputLineId: null,
+    ridgeDraft: null,
     pinAnchor: null,
     pinDraftOffset: null,
     pinDirectionInput: null,
@@ -1273,9 +1277,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   // === 棟ライン (= E-3.8) ===
   isRidgeLineMode: false,
-  setRidgeLineMode: (v) => set({ isRidgeLineMode: v }),
+  setRidgeLineMode: (v) => set(v ? { isRidgeLineMode: true } : { isRidgeLineMode: false, ridgeDraft: null }),
   ridgeInputLineId: null,
   setRidgeInputLineId: (id) => set({ ridgeInputLineId: id }),
+  ridgeDraft: null,
+  setRidgeDraft: (d) => set({ ridgeDraft: d }),
   lastRidgeInputMm: 5000,
   addRidgeLine: (r) => {
     const { canvasData, pushHistory } = get();

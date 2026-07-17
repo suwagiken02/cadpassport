@@ -25,12 +25,12 @@ export default function RidgeLineLayer() {
   const {
     canvasData, zoom, panX, panY, canvasSize,
     isRidgeLineMode, setRidgeInputLineId, addRidgeLine, moveRidgeLine,
+    ridgeDraft: draft, setRidgeDraft: setDraft,
   } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const ridgeLines = canvasData.ridgeLines ?? [];
 
   const layerRef = useRef<Konva.Layer>(null);
-  const [draft, setDraft] = useState<{ buildingId: string; p1: Point } | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
   const [cursorSnapped, setCursorSnapped] = useState(false);
 
