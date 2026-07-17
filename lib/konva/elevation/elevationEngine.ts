@@ -573,16 +573,12 @@ function heightAtSeg(seg: BuildingOutlineSegment, x: number): number {
   return seg.heightStartMm + f * (seg.heightEndMm - seg.heightStartMm);
 }
 
-/** スパン区間[aG,bG](グリッド)と重なる屋根最高高さ(mm)。壁セグメント高さに加え、区間に掛かる
- *  「面に直交する棟」(projectedRidges の a≈b・点に潰れる=妻側から見ている棟)の高さのみ算入する。
- *  重なり無しは null。
- *  R-1c: ②が RidgeLine の妻面では壁 segments が軒高止まりで棟を取りこぼすため、点棟を算入して
- *   嵩上げ判定を棟基準にする。R-1c-fix: 面に平行な棟(a≠b・樋面から水平線に見える棟)は建物奥に
- *   あるだけで足場の作業対象ではない(嵩上げは妻面のためのもの)ので評価から除外する。
- *   ※高さマーカー由来の妻の三角(への字)は壁 segments 自体が高いので従来どおり評価される。 */
-function roofMaxOverSpan(
-  segments: BuildingOutlineSegment[], projectedRidges: ProjectedRidge[], aG: number, bG: number,
-): number | null {
+/** スパン区間[aG,bG](グリッド)と重なる壁外形セグメントの最高高さ(mm)。重なり無しは null。
+ *  各セグメントは線形なので区間端(クリップ後)で最大になる。
+ *  嵩上げの基準は「屋根の形」ではなく「壁の形」(鮎澤氏確定・R-1c-fix2): 壁が高く立ち上がる面
+ *  (切妻の妻面・への字マーカーの三角壁)だけが評価対象。棟(RidgeLine 投影)は算入しない
+ *  ── 寄棟は壁が全周軒高で一定=全面水下=嵩上げゼロが正。 */
+function roofMaxOverSpan(segments: BuildingOutlineSegment[], aG: number, bG: number): number | null {
   let mx = -Infinity;
   for (const s of segments) {
     const lo = Math.max(aG, s.xStart);
@@ -590,22 +586,16 @@ function roofMaxOverSpan(
     if (hi < lo - 1e-6) continue;
     mx = Math.max(mx, heightAtSeg(s, lo), heightAtSeg(s, hi));
   }
-  for (const r of projectedRidges) {
-    // 面直交(点に潰れる a≈b=妻側)の棟のみ算入。面平行(a≠b=樋面の水平棟)は嵩上げ対象外。
-    if (Math.abs(r.b - r.a) > 1e-6) continue;
-    if (r.b >= aG - 1e-6 && r.a <= bG + 1e-6) mx = Math.max(mx, r.heightMm);
-  }
   return mx === -Infinity ? null : mx;
 }
 
-/** 妻面のコマ嵩上げを計算。各スパンで屋根最高点まで届かない(gap>REACH)分だけ 450 コマを
+/** 妻面のコマ嵩上げを計算。各スパンで壁最高点まで届かない(gap>REACH)分だけ 450 コマを
  *  必要最小数追加し、床を上げる。届く/フラットなスパンは対象外。 */
 function computeSpanRaises(
   column: FaceSpanColumn,
   postXs: number[],
   levels: ElevationLevels,
   buildingOutlines: BuildingOutline[],
-  projectedRidges: ProjectedRidge[],
   opts?: ElevationLevelsOpts,
 ): SpanRaise[] {
   const komaMm = opts?.komaMm ?? KOMA_PITCH_MM;
@@ -619,7 +609,7 @@ function computeSpanRaises(
     const x0 = postXs[si];
     const x1 = postXs[si + 1];
     if (x1 - x0 < 1e-6) continue;
-    const roofMax = roofMaxOverSpan(outline.segments, projectedRidges, x0, x1);
+    const roofMax = roofMaxOverSpan(outline.segments, x0, x1);
     if (roofMax == null) continue;
     const gap = roofMax - topFloorMm;
     if (gap <= REACH_MM) continue; // 届く → 嵩上げ不要
@@ -843,12 +833,6 @@ export function buildFaceElevation(
   }
   const ridgeMaxMm = roofBands.length > 0 ? Math.max(...roofBands.map(b => b.ridgeMm)) : null;
 
-  // R-1c: この面の投影棟（全建物分）。妻面嵩上げが棟高を取りこぼさないよう roofMaxOverSpan に渡す。
-  const faceRidges: ProjectedRidge[] = [];
-  if (opts?.ridgeLines) {
-    for (const b of buildings) faceRidges.push(...projectRidgeLinesToFace(opts.ridgeLines, b, face));
-  }
-
   // 足場（列ごとに別 scaffold）
   const scaffolds: ElevationScaffold[] = faceColumns.map(column => {
     const { postXs } = buildElevationColumns(column);
@@ -860,8 +844,8 @@ export function buildFaceElevation(
     const boards: ElevationBoard[] = levels.levels.map(levelMm => ({ levelMm, x0, x1 }));
     const rails: ElevationRail[] = levels.komaGridMm.map(heightMmK => ({ heightMm: heightMmK, x0, x1 }));
 
-    // 妻面のコマ嵩上げ: 各スパンで屋根最高点まで届かない分だけ 450 コマを追加。
-    const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, faceRidges, opts);
+    // 妻面のコマ嵩上げ: 各スパンで壁最高点まで届かない分だけ 450 コマを追加（基準=壁の形）。
+    const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, opts);
 
     return { column, postXs, levels, boards, rails, spanRaises };
   });
