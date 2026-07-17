@@ -22,6 +22,7 @@ function makeCanvas(): CanvasData {
     compass: { angle: 0 },
     heightMarkers: [{ id: 'HM1', buildingId: 'B1', edgeIndex: 0, t: 0.5, heightMm: 5000 }],
     ridgeLines: [{ id: 'RL1', buildingId: 'B1', p1: { x: 0, y: 50 }, p2: { x: 100, y: 50 }, heightMm: 6000 }],
+    roofs: [{ id: 'RF1', buildingId: 'B1', edgeRange: [0, 1, 2, 3], roofShape: 'gable', uniformMm: 600 }],
     elevationViews: [{ id: 'EV1', face: 'north', originGrid: { x: 200, y: 100 }, scale: 1, primitives: [] }],
   };
 }
@@ -46,6 +47,10 @@ describe('buildCrossPagePayload (E-6b)', () => {
     expect(payload.heightMarkers[0].buildingId).toBe(newBid);
     expect(payload.ridgeLines).toHaveLength(1);
     expect(payload.ridgeLines[0].buildingId).toBe(newBid);
+    // R-1d: 屋根オブジェクトも buildingId 追随で同梱
+    expect(payload.roofs).toHaveLength(1);
+    expect(payload.roofs[0].buildingId).toBe(newBid);
+    expect(payload.roofs[0].id).not.toBe('RF1');
     // 依存自身の id も振り直される
     expect(payload.heightMarkers[0].id).not.toBe('HM1');
     expect(payload.ridgeLines[0].id).not.toBe('RL1');
@@ -65,7 +70,7 @@ describe('buildCrossPagePayload (E-6b)', () => {
   it('sourceIds は選択建物＋自動同梱依存の元 id（移動削除対象）', () => {
     const cv = makeCanvas();
     const { sourceIds } = buildCrossPagePayload(cv, ['B1'], seqGen());
-    expect(sourceIds.sort()).toEqual(['B1', 'HM1', 'RL1', 'RO1'].sort());
+    expect(sourceIds.sort()).toEqual(['B1', 'HM1', 'RF1', 'RL1', 'RO1'].sort());
   });
 
   it('選択されていない建物(B2)の依存は運ばない', () => {
@@ -120,7 +125,7 @@ describe('mergePayloadIntoCanvas / payloadCount (E-6b)', () => {
   it('payloadCount は総数（依存含む）', () => {
     const cv = makeCanvas();
     const { payload } = buildCrossPagePayload(cv, ['B1'], seqGen());
-    // B1 + RO1 + HM1 + RL1 = 4
-    expect(payloadCount(payload)).toBe(4);
+    // B1 + RO1 + RF1 + HM1 + RL1 = 5
+    expect(payloadCount(payload)).toBe(5);
   });
 });

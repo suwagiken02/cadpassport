@@ -69,6 +69,7 @@ export default function ElevationPlaceDialog({
       defaultHeightMm: hasMarkers ? undefined : FALLBACK_HEIGHT_MM,
       pillarType, face: f,
       roofOverhangs: canvasData.roofOverhangs,
+      roofs: canvasData.roofs,
       ridgeLines: canvasData.ridgeLines ?? [],
     });
   };

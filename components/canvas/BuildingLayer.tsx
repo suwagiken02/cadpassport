@@ -5,7 +5,8 @@ import { Layer, Line } from 'react-konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { Point } from '@/types';
-import { getEdgeOverhangs, computeOffsetPolygon } from '@/lib/konva/roofUtils';
+import { computeOffsetPolygon } from '@/lib/konva/roofUtils';
+import { resolveBuildingOverhangsGrid } from '@/lib/konva/roofResolve';
 
 export default function BuildingLayer() {
   const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor } = useCanvasStore();
@@ -76,10 +77,9 @@ export default function BuildingLayer() {
         );
       })}
 
-      {/* 屋根の出幅（建物本体の上に描画、 mode='roof' で tap 再編集可) */}
+      {/* 屋根の出幅（建物本体の上に描画、 mode='roof' で tap 再編集可)。R-1d: roofs[] 優先で出幅解決。 */}
       {canvasData.buildings.map((building) => {
-        if (!building.roof || building.roof.roofType === 'none') return null;
-        const overhangs = getEdgeOverhangs(building, building.roof);
+        const overhangs = resolveBuildingOverhangsGrid(building, canvasData.roofs, canvasData.roofOverhangs);
         if (overhangs.every((o) => o === 0)) return null;
 
         const offsetPts = computeOffsetPolygon(building.points, overhangs);

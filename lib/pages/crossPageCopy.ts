@@ -1,16 +1,16 @@
 // ============================================================
 // ページまたぎコピー/移動・クリップボード貼り付けの pure ロジック（E-6b / E-6c）。
 //   ・collectSelectionSubset: 選択集合から「素の部分集合」を収集（id 振り直しなし）。
-//     建物を選ぶと buildingId 参照の roofOverhang/ridgeLine/heightMarker を自動同梱。
+//     建物を選ぶと buildingId 参照の roofOverhang/roof/ridgeLine/heightMarker を自動同梱。
 //     origin（bbox 左上）も返す＝貼り付け時のオフセット基準。
 //   ・instantiateSubset: 部分集合を deep clone し、新 id 採番・buildingId 追随・
-//     位置オフセット適用（heightMarker/roofOverhang は建物パラメトリックのため非オフセット）。
+//     位置オフセット適用（heightMarker/roofOverhang/roof は建物パラメトリックのため非オフセット）。
 //   ・buildCrossPagePayload: collect + instantiate(offset=0)（E-6b 後方互換）。
 //   ・mergePayloadIntoCanvas: 対象 canvas へ配列 append。
 // DB I/O は持たない。
 // ============================================================
 import type {
-  CanvasData, BuildingShape, RoofOverhang, Obstacle, Handrail, Post, Anti, Memo,
+  CanvasData, BuildingShape, RoofOverhang, Roof, Obstacle, Handrail, Post, Anti, Memo,
   HeightMarker, RidgeLine, ElevationView, MagnetPin, Point,
 } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 export type CrossPagePayload = {
   buildings: BuildingShape[];
   roofOverhangs: RoofOverhang[];
+  roofs: Roof[];
   obstacles: Obstacle[];
   handrails: Handrail[];
   posts: Post[];
@@ -32,7 +33,7 @@ export type CrossPagePayload = {
 
 function emptyPayload(): CrossPagePayload {
   return {
-    buildings: [], roofOverhangs: [], obstacles: [], handrails: [], posts: [],
+    buildings: [], roofOverhangs: [], roofs: [], obstacles: [], handrails: [], posts: [],
     antis: [], memos: [], heightMarkers: [], ridgeLines: [], elevationViews: [], magnetPins: [],
   };
 }
@@ -65,6 +66,10 @@ export function collectSelectionSubset(
   for (const r of canvasData.roofOverhangs) {
     if (!selBuildingIds.has(r.buildingId)) continue;
     subset.roofOverhangs.push(clone(r)); sourceIds.push(r.id);
+  }
+  for (const rf of canvasData.roofs ?? []) {
+    if (!selBuildingIds.has(rf.buildingId)) continue;
+    subset.roofs.push(clone(rf)); sourceIds.push(rf.id);
   }
   for (const m of canvasData.heightMarkers ?? []) {
     if (!selBuildingIds.has(m.buildingId)) continue;
@@ -110,7 +115,7 @@ function subsetOrigin(s: CrossPagePayload): Point {
 
 /**
  * 部分集合を新規オブジェクト列へ実体化。新 id 採番・buildingId 追随・位置オフセット適用。
- * heightMarker/roofOverhang は建物パラメトリックのため位置オフセットは掛けない（建物に自動追随）。
+ * heightMarker/roofOverhang/roof は建物パラメトリックのため位置オフセットは掛けない（建物に自動追随）。
  */
 export function instantiateSubset(
   subset: CrossPagePayload,
@@ -128,6 +133,9 @@ export function instantiateSubset(
   }
   for (const r of subset.roofOverhangs) {
     out.roofOverhangs.push({ ...clone(r), id: genId(), buildingId: buildingIdMap.get(r.buildingId) ?? r.buildingId });
+  }
+  for (const rf of subset.roofs) {
+    out.roofs.push({ ...clone(rf), id: genId(), buildingId: buildingIdMap.get(rf.buildingId) ?? rf.buildingId });
   }
   for (const m of subset.heightMarkers) {
     out.heightMarkers.push({ ...clone(m), id: genId(), buildingId: buildingIdMap.get(m.buildingId) ?? m.buildingId });
@@ -151,7 +159,7 @@ export function instantiateSubset(
 /** 全 top-level 新 id を列挙（貼り付け後に選択状態にする用）。 */
 export function payloadIds(p: CrossPagePayload): string[] {
   return [
-    ...p.buildings, ...p.roofOverhangs, ...p.obstacles, ...p.handrails, ...p.posts,
+    ...p.buildings, ...p.roofOverhangs, ...p.roofs, ...p.obstacles, ...p.handrails, ...p.posts,
     ...p.antis, ...p.memos, ...p.heightMarkers, ...p.ridgeLines, ...p.elevationViews, ...p.magnetPins,
   ].map((o) => o.id);
 }
@@ -175,6 +183,7 @@ export function mergePayloadIntoCanvas(canvasData: CanvasData, payload: CrossPag
     ...canvasData,
     buildings: [...canvasData.buildings, ...payload.buildings],
     roofOverhangs: [...canvasData.roofOverhangs, ...payload.roofOverhangs],
+    roofs: [...(canvasData.roofs ?? []), ...payload.roofs],
     obstacles: [...canvasData.obstacles, ...payload.obstacles],
     handrails: [...canvasData.handrails, ...payload.handrails],
     posts: [...canvasData.posts, ...payload.posts],

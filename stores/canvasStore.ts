@@ -11,6 +11,7 @@ import {
   Obstacle,
   Memo,
   RoofOverhang,
+  Roof,
   AntiWidth,
   HandrailLengthMm,
   HandrailDirection,
@@ -32,6 +33,7 @@ import {
   type CrossPagePayload,
 } from '@/lib/pages/crossPageCopy';
 import { computeContentBounds } from '@/lib/pages/contentBounds';
+import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -42,6 +44,7 @@ const createEmptyCanvasData = (): CanvasData => ({
   grid: { unitMm: 10, cols: DEFAULT_COLS, rows: DEFAULT_ROWS },
   buildings: [],
   roofOverhangs: [],
+  roofs: [],
   obstacles: [],
   handrails: [],
   posts: [],
@@ -59,6 +62,9 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
   const normalized: CanvasData = {
     ...data,
     version: CANVAS_SCHEMA_VERSION, // R-1b: 壁線基準への再解釈の目印（分岐処理はしない）
+    // R-1d: roofs 未定義の旧データは building.roof / roofOverhangs[] から Roof へ lift（1回のみ）。
+    //   既に roofs があれば尊重（再 lift しない）。building.roof は当面残す（R-1g で削除予定）。
+    roofs: data.roofs ?? liftLegacyRoofs(data.buildings, data.roofOverhangs ?? []),
     magnetPins: data.magnetPins ?? [],
     heightMarkers: data.heightMarkers ?? [],
     ridgeLines: data.ridgeLines ?? [],
@@ -417,6 +423,10 @@ type CanvasStore = {
   /** 指定建物の棟ラインを全削除（屋根形状変更時の置換/削除・1 history）。 */
   removeRidgeLinesForBuilding: (buildingId: string) => void;
   moveRidgeLine: (id: string, p1: import('@/types').Point, p2: import('@/types').Point) => void;
+  // 屋根オブジェクト (= R-1d)
+  addRoof: (roof: Roof) => void;
+  updateRoof: (id: string, patch: Partial<Roof>) => void;
+  removeRoof: (id: string) => void;
   // 立面ビュー (= E-4)
   addElevationView: (v: ElevationView) => void;
   /** 複数ビューを 1 回の pushHistory で追加（4面一括配置用。同一面は置換）。 */
@@ -1335,6 +1345,35 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
+  // === 屋根オブジェクト（R-1d） ===
+  addRoof: (roof) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, roofs: [...(canvasData.roofs ?? []), roof] },
+      isDirty: true,
+    });
+  },
+  updateRoof: (id, patch) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        roofs: (canvasData.roofs ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      },
+      isDirty: true,
+    });
+  },
+  removeRoof: (id) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, roofs: (canvasData.roofs ?? []).filter((r) => r.id !== id) },
+      isDirty: true,
+    });
+  },
+
   // === 立面ビュー (= E-4) ===
   addElevationView: (v) => {
     const { canvasData, pushHistory } = get();
@@ -1427,6 +1466,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id),
         heightMarkers: (canvasData.heightMarkers ?? []).filter((h) => h.id !== id),
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id),
+        // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
+        roofs: (canvasData.roofs ?? []).filter((r) => r.id !== id && r.buildingId !== id),
       },
       isDirty: true,
     });
@@ -1449,6 +1490,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => !idSet.has(r.id)),
         heightMarkers: (canvasData.heightMarkers ?? []).filter((h) => !idSet.has(h.id)),
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => !idSet.has(e.id)),
+        // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
+        roofs: (canvasData.roofs ?? []).filter((r) => !idSet.has(r.id) && !idSet.has(r.buildingId)),
       },
       selectedIds: [],
       isDirty: true,

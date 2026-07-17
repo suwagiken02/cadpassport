@@ -51,6 +51,30 @@ export type RoofOverhang = {
   overhangMm: number;
 };
 
+// === 屋根（独立オブジェクト・R-1d） ===
+/**
+ * 独立した屋根オブジェクト。1 建物に複数（大屋根＋下屋）持てる。
+ * edgeRange = 対象の壁辺 index 列（building.points の辺 index。全周なら全辺）。
+ * 出幅は全辺共通 uniformMm、辺別は edgeOverhangsMm（指定辺は uniform より優先）。
+ * 旧 BuildingShape.roof(RoofConfig) は normalize 時に本型へ lift される（R-1d）。
+ */
+export type Roof = {
+  id: string;
+  buildingId: string;
+  /** 対象壁辺の index 列（building.points の辺 index）。 */
+  edgeRange: number[];
+  /** 屋根形状（立面の見え方ヒント）。 */
+  roofShape: 'hip' | 'gable' | 'flat' | 'shed';
+  /** 全辺共通の出幅(mm)。 */
+  uniformMm: number;
+  /** 辺別の出幅(mm)。指定辺は uniformMm より優先。 */
+  edgeOverhangsMm?: Record<number, number>;
+  /** 片流れの軒側（表示ヒント）。 */
+  katanagareDirection?: 'north' | 'south' | 'east' | 'west';
+  /** 切妻の妻面方向（表示ヒント）。 */
+  kirizumaGableFace?: 'ew' | 'ns';
+};
+
 // === 障害物 ===
 export type ObstacleType = 'ecocute' | 'aircon' | 'bay_window' | 'carport' | 'sunroom' | 'balcony' | 'custom_rect' | 'custom_circle';
 
@@ -296,6 +320,8 @@ export type CanvasData = {
   };
   buildings: BuildingShape[];
   roofOverhangs: RoofOverhang[];
+  /** 独立屋根オブジェクト（R-1d）。undefined は旧データ互換 → normalize で building.roof から lift。 */
+  roofs?: Roof[];
   obstacles: Obstacle[];
   handrails: Handrail[];
   posts: Post[];

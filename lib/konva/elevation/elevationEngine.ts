@@ -13,12 +13,13 @@
 //   floors = 段数 = floor((H-1)/1800)、startMm = H − 1800×floors（スタート端数）。
 //   整合をテストで固定（5000 → スタート1400・2段・1800下がり）。
 // ============================================================
-import type { BuildingShape, HeightMarker, Point, RoofOverhang, RidgeLine } from '@/types';
+import type { BuildingShape, HeightMarker, Point, RoofOverhang, RidgeLine, Roof } from '@/types';
 import { getFloor } from '@/types';
 import { projectRidgeLinesToFace, type ProjectedRidge } from './ridgeProjection';
 import { heightToFloors, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM, type PillarType } from '../calculator';
 import { mmToGrid } from '../gridUtils';
-import { getEdgeOverhangs, computeOffsetPolygon } from '../roofUtils';
+import { computeOffsetPolygon } from '../roofUtils';
+import { resolveBuildingOverhangsGrid } from '../roofResolve';
 import { getHeightAtPosition } from '../heightInterpolation';
 import type { Face, FaceSpanColumn } from './faceReconstruction';
 
@@ -356,27 +357,19 @@ export type FaceElevationOpts = ElevationLevelsOpts & {
   face?: Face;
   /** faceColumns が空のときに使う階（既定 1）。 */
   floor?: number;
-  /** 旧式 roofOverhangs[]（軒の出）。RoofConfig(building.roof) 優先で補完的に読む。 */
+  /** 旧式 roofOverhangs[]（軒の出）。roofs[] 無し時に building.roof と併せてフォールバック。 */
   roofOverhangs?: RoofOverhang[];
+  /** 独立屋根オブジェクト（R-1d）。渡すと出幅解決を roofs[] 優先で行う。 */
+  roofs?: Roof[];
   /** 棟ライン（E-3.8）。ある建物は屋根バンド上端を上側包絡線で生成。既定 undefined=従来挙動。 */
   ridgeLines?: RidgeLine[];
 };
 
-/** 建物の辺ごと出幅(グリッド)を、RoofConfig(building.roof・優先)＋旧式 roofOverhangs[] から統合。 */
-function mergedRoofOverhangsGrid(building: BuildingShape, roofOverhangs: RoofOverhang[]): number[] {
-  const n = building.points.length;
-  const base = (building.roof && building.roof.roofType !== 'none')
-    ? getEdgeOverhangs(building, building.roof)
-    : new Array(n).fill(0);
-  const result = base.slice(0, n);
-  while (result.length < n) result.push(0);
-  // RoofConfig が 0 の辺のみ旧式 roofOverhangs[] で補完（RoofConfig 優先）。
-  for (const ro of roofOverhangs) {
-    if (ro.buildingId !== building.id) continue;
-    if (ro.faceIndex < 0 || ro.faceIndex >= n) continue;
-    if (result[ro.faceIndex] === 0 && ro.overhangMm > 0) result[ro.faceIndex] = mmToGrid(ro.overhangMm);
-  }
-  return result;
+/** 建物の辺ごと出幅(グリッド)を解決。roofs[] 優先、無ければ旧 building.roof＋roofOverhangs[]（R-1d 互換）。 */
+function mergedRoofOverhangsGrid(
+  building: BuildingShape, roofOverhangs: RoofOverhang[], roofs?: Roof[],
+): number[] {
+  return resolveBuildingOverhangsGrid(building, roofs, roofOverhangs);
 }
 
 /** ポリゴンの、指定 face の辺の変軸範囲(グリッド)。該当辺なしは null。 */
@@ -406,8 +399,8 @@ export function roofSlopePerMm(eaveMm: number, ridgeMm: number, runMm: number): 
 }
 
 /** 指定 face の壁の出幅(グリッド)＝その面の軒の出（depth 方向）。face の辺の最大出幅。 */
-function faceOverhangGrid(building: BuildingShape, face: Face, roofOverhangs: RoofOverhang[]): number {
-  const ohs = mergedRoofOverhangsGrid(building, roofOverhangs);
+function faceOverhangGrid(building: BuildingShape, face: Face, roofOverhangs: RoofOverhang[], roofs?: Roof[]): number {
+  const ohs = mergedRoofOverhangsGrid(building, roofOverhangs, roofs);
   const ws = windingSign(building.points);
   let mx = 0;
   for (let i = 0; i < building.points.length; i++) {
@@ -781,7 +774,7 @@ export function buildFaceElevation(
     let extXStart = xMin, extXEnd = xMax;
     const b = buildings.find(bb => bb.id === o.buildingId);
     if (b) {
-      const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? []);
+      const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? [], opts?.roofs);
       if (ohs.some(v => v > 0)) {
         const range = faceXRange(computeOffsetPolygon(b.points, ohs), o.face);
         if (range) { extXStart = range.xStart; extXEnd = range.xEnd; }
@@ -802,7 +795,7 @@ export function buildFaceElevation(
       ? ridges.reduce((m, r) => Math.max(m, r.heightMm), -Infinity)
       : (Number.isFinite(markerMax) ? markerMax : outlineMax);
     const eaveDropMm = (b && isGutterFace)
-      ? faceEaveDropMm(b, o.face, outlineMax, ridgeMmForDrop, faceOverhangGrid(b, o.face, opts?.roofOverhangs ?? []), opts?.ridgeLines ?? [])
+      ? faceEaveDropMm(b, o.face, outlineMax, ridgeMmForDrop, faceOverhangGrid(b, o.face, opts?.roofOverhangs ?? [], opts?.roofs), opts?.ridgeLines ?? [])
       : 0;
     const eaveProfile = extendedTopProfile(o.segments, extXStart, extXEnd, eaveDropMm);
 

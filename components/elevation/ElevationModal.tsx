@@ -54,6 +54,7 @@ export default function ElevationModal() {
       pillarType,
       face,
       roofOverhangs: canvasData.roofOverhangs,
+      roofs: canvasData.roofs,
       ridgeLines: canvasData.ridgeLines ?? [],
     });
   }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, canvasData.roofOverhangs, canvasData.ridgeLines, hasMarkers]);
