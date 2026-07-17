@@ -427,6 +427,13 @@ type CanvasStore = {
   addRoof: (roof: Roof) => void;
   updateRoof: (id: string, patch: Partial<Roof>) => void;
   removeRoof: (id: string) => void;
+  // 屋根なぞり入力 (= R-1e)
+  /** なぞり中の選択辺（同一建物内の辺 index 集合）。roof モード外では null。 */
+  roofDraftEdges: { buildingId: string; edges: number[] } | null;
+  setRoofDraftEdges: (d: { buildingId: string; edges: number[] } | null) => void;
+  /** 屋根設定モーダルの対象。roofId 有=既存編集、無=新規追加。 */
+  roofSettingsTarget: { buildingId: string; edgeRange: number[]; roofId?: string } | null;
+  setRoofSettingsTarget: (t: { buildingId: string; edgeRange: number[]; roofId?: string } | null) => void;
   // 立面ビュー (= E-4)
   addElevationView: (v: ElevationView) => void;
   /** 複数ビューを 1 回の pushHistory で追加（4面一括配置用。同一面は置換）。 */
@@ -534,6 +541,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     isRidgeLineMode: false,
     ridgeInputLineId: null,
     ridgeDraft: null,
+    roofDraftEdges: null,
+    roofSettingsTarget: null,
     pinAnchor: null,
     pinDraftOffset: null,
     pinDirectionInput: null,
@@ -562,7 +571,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   }),
 
   mode: 'view',  // 図面を開いた直後は閲覧モード (= 何も触れない)、 ユーザが明示的にボタン押下で遷移
-  setMode: (mode) => set({ mode, selectedIds: [] }),
+  setMode: (mode) => set({ mode, selectedIds: [], roofDraftEdges: null }),
   buildingInputMethod: 'template',
   setBuildingInputMethod: (m) => set({ buildingInputMethod: m }),
   isMagnetPinMode: false,
@@ -1373,6 +1382,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  roofDraftEdges: null,
+  setRoofDraftEdges: (d) => set({ roofDraftEdges: d }),
+  roofSettingsTarget: null,
+  setRoofSettingsTarget: (t) => set({ roofSettingsTarget: t }),
 
   // === 立面ビュー (= E-4) ===
   addElevationView: (v) => {

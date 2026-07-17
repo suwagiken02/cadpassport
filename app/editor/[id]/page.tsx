@@ -16,6 +16,7 @@ import FloorSelector from '@/components/toolbar/FloorSelector';
 import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofSettingsModal from '@/components/building/RoofSettingsModal';
+import RoofObjectModal from '@/components/canvas/RoofObjectModal';
 import UdekiModal from '@/components/scaffold/UdekiModal';
 import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
 import AlertDialog from '@/components/ui/AlertDialog';
@@ -157,6 +158,7 @@ export default function EditorPage() {
   // bothmode から⭐設定を開いた場合の固定階(2F誘導)。通常起動は undefined。
   const [scaffoldStartLockFloor, setScaffoldStartLockFloor] = useState<number | undefined>(undefined);
   const [showRoofModal, setShowRoofModal] = useState(false);
+  const roofDraftEdges = useCanvasStore((s) => s.roofDraftEdges); // R-1e: 屋根なぞり確定ボタンの表示判定
   const [showUdekiModal, setShowUdekiModal] = useState(false);
   const [showAutoLayoutModal, setShowAutoLayoutModal] = useState(false);
   const [showBackConfirm, setShowBackConfirm] = useState(false);
@@ -725,7 +727,7 @@ export default function EditorPage() {
                   setPendingObstacleType(null);
                 } else {
                   addBuilding({ id: newId, type: 'polygon', points: pts, fill: '#3d3d3a', floor: pendingBuildingFloor });
-                  useCanvasStore.getState().setAutoOpenRoofForBuildingId(newId);
+                  // R-1e: 屋根は「屋根モード」で別作業。作成直後の屋根モーダル自動オープンは廃止（押し付けない）。
                   setPendingBuildingFloor(1);
                 }
                 setLastCompletedDirectionSession({ points: pts });
@@ -741,10 +743,32 @@ export default function EditorPage() {
         </div>
       )}
 
+      {/* 屋根なぞり入力の確定ボタン (R-1e) */}
+      {mode === 'roof' && roofDraftEdges && roofDraftEdges.edges.length > 0 && (
+        <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50 flex gap-1 sm:gap-3 px-2 sm:px-0">
+          <button
+            onClick={() => useCanvasStore.getState().setRoofDraftEdges(null)}
+            className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-dark-surface border border-dark-border rounded-xl text-sm text-dimension font-bold shadow-lg whitespace-nowrap"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={() => {
+              const d = useCanvasStore.getState().roofDraftEdges;
+              if (d) useCanvasStore.getState().setRoofSettingsTarget({ buildingId: d.buildingId, edgeRange: d.edges });
+            }}
+            className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-accent text-white rounded-xl text-sm font-bold shadow-lg whitespace-nowrap"
+          >
+            屋根を確定（{roofDraftEdges.edges.length}辺）
+          </button>
+        </div>
+      )}
+
       {/* モーダル */}
       {showDirectionInputModal && (
         <DirectionInputModal onClose={() => setShowDirectionInputModal(false)} />
       )}
+      <RoofObjectModal />
       <PinDistanceInputModal />
       {(showBuildingModal || showBuildingModalStore) && (
         <BuildingTemplateModal onClose={() => { setShowBuildingModal(false); setShowBuildingModalStore(false); }} />

@@ -6,7 +6,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { Point } from '@/types';
 import { computeOffsetPolygon } from '@/lib/konva/roofUtils';
-import { resolveBuildingOverhangsGrid } from '@/lib/konva/roofResolve';
+import { roofToEdgeOverhangsGrid } from '@/lib/konva/roofResolve';
 
 export default function BuildingLayer() {
   const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor } = useCanvasStore();
@@ -77,9 +77,11 @@ export default function BuildingLayer() {
         );
       })}
 
-      {/* 屋根の出幅（建物本体の上に描画、 mode='roof' で tap 再編集可)。R-1d: roofs[] 優先で出幅解決。 */}
-      {canvasData.buildings.map((building) => {
-        const overhangs = resolveBuildingOverhangsGrid(building, canvasData.roofs, canvasData.roofOverhangs);
+      {/* 屋根の出幅点線（R-1e: roofs[] を屋根ごとに別々の点線で描画。mode='roof' で tap 編集）。 */}
+      {(canvasData.roofs ?? []).map((roof) => {
+        const building = canvasData.buildings.find((b) => b.id === roof.buildingId);
+        if (!building) return null;
+        const overhangs = roofToEdgeOverhangsGrid(building, roof);
         if (overhangs.every((o) => o === 0)) return null;
 
         const offsetPts = computeOffsetPolygon(building.points, overhangs);
@@ -89,12 +91,11 @@ export default function BuildingLayer() {
         ]);
 
         const handleRoofTap = () => {
-          useCanvasStore.getState().setSelectedIds([building.id]);
-          useCanvasStore.getState().setAutoOpenRoofForBuildingId(building.id);
+          useCanvasStore.getState().setRoofSettingsTarget({ buildingId: roof.buildingId, edgeRange: roof.edgeRange, roofId: roof.id });
         };
         return (
           <Line
-            key={`roof-${building.id}`}
+            key={`roof-${roof.id}`}
             points={flatPoints}
             closed
             stroke="#888780"

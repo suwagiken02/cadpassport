@@ -18,6 +18,7 @@ const base: GuideState = {
   buildingInputMethod: 'template',
   directionPointCount: 0,
   selectActive: true,
+  roofDraftEdgeCount: 0,
 };
 const g = (o: Partial<GuideState>) => getOperationGuide({ ...base, ...o });
 
@@ -66,10 +67,13 @@ describe('getOperationGuide: mode 系', () => {
   it('消去', () => {
     expect(g({ mode: 'erase' })).toBe('削除するオブジェクトをタップ、またはドラッグで範囲選択してください');
   });
-  it('障害物 / メモ / 屋根', () => {
+  it('障害物 / メモ', () => {
     expect(g({ mode: 'obstacle' })).toBe('障害物を配置する位置をタップしてください');
     expect(g({ mode: 'memo' })).toBe('メモを配置する位置をタップしてください');
-    expect(g({ mode: 'roof' })).toBe('屋根をかける建物をタップしてください');
+  });
+  it('屋根: なぞり開始前 / 辺選択中', () => {
+    expect(g({ mode: 'roof', roofDraftEdgeCount: 0 })).toContain('屋根をかける壁をなぞって');
+    expect(g({ mode: 'roof', roofDraftEdgeCount: 2 })).toContain('確定');
   });
   it('選択: 有効なら案内・無効なら null', () => {
     expect(g({ mode: 'select', selectActive: true })).toContain('オブジェクトをタップ');

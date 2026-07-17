@@ -24,6 +24,7 @@ import PinDirectionPad from './PinDirectionPad';
 import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
+import RoofDrawLayer from './RoofDrawLayer';
 import ElevationViewLayer from './ElevationViewLayer';
 import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
@@ -634,6 +635,9 @@ export default function GridCanvas({ width, height }: Props) {
 
       {/* 棟ラインレイヤー (= E-3.8d、 2点入力・編集・ドラッグ移動) */}
       <RidgeLineLayer />
+
+      {/* 屋根なぞり入力レイヤー (= R-1e、 壁をなぞって屋根の対象辺を選択) */}
+      <RoofDrawLayer />
 
       {/* 足場開始 ★ アイコン (= 起点角、 #FFD700 ゴールド) */}
       <ScaffoldStartLayer />

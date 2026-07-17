@@ -4,14 +4,12 @@ import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { BUILDING_TEMPLATES, buildFromTemplate } from '@/lib/konva/buildingBuilder';
-import { BuildingTemplateId, BuildingInputMethod, RoofType, RoofConfig, Point } from '@/types';
+import { BuildingTemplateId, BuildingInputMethod, Point } from '@/types';
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@/lib/konva/gridUtils';
 import NumInput from '@/components/ui/NumInput';
 import { computeEdgeLabelPosition } from '@/lib/konva/buildingLabelUtils';
 import { nextBuildingFloor } from '@/lib/konva/floorLimits';
-import RoofShapeSelector, { type RoofShape } from './RoofShapeSelector';
-import { DEFAULT_ROOF_SHAPE } from './roofDefaults';
-import { applyRoofShapeRidge } from './roofShapeApply';
+// R-1e: 屋根はこのモーダルでは設定しない（屋根モードで別作業）。屋根関連 import は撤去。
 
 type Props = { onClose: () => void; floor?: number; floor1Building?: import('@/types').BuildingShape };
 
@@ -188,15 +186,8 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
   const [dims, setDims] = useState<Record<string, number>>({});
   const [step, setStep] = useState<'select' | 'dims'>('select');
   const [focusedDimKey, setFocusedDimKey] = useState<string | null>(null);
-  const [roofNone, setRoofNone] = useState(false);
-  const [roofOverhangMm, setRoofOverhangMm] = useState(600);
-  const FIXED_ROOF_TYPE: RoofType = 'yosemune';  // 種類概念廃止、 内部固定値
   const [autoCalc, setAutoCalc] = useState(true);
   const [unit, setUnit] = useState<'m' | 'mm'>('mm');
-  const [uniformRoof, setUniformRoof] = useState(true);
-  const [edgeOverhangs, setEdgeOverhangs] = useState<Record<number, number>>({});
-  const [roofShape, setRoofShape] = useState<RoofShape>(DEFAULT_ROOF_SHAPE);
-  const [hipMode, setHipMode] = useState<'auto' | 'manual'>('auto');
   const [anchorPoint, setAnchorPoint] = useState<'tl' | 'tr' | 'bl' | 'br' | 'center'>('tl');
 
   const template = BUILDING_TEMPLATES.find(t => t.id === selectedTemplate);
@@ -261,18 +252,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
     const points = buildFromTemplate(selectedTemplate, dims, centerX, centerY);
     if (points.length === 0) { onClose(); return; }
 
-    // 屋根なし時も roof データは生成 (= overhang 全 0、 後で 高さマーカー設置 + 再編集可)
-    const roof: RoofConfig = roofNone ? {
-      roofType: FIXED_ROOF_TYPE,
-      uniformMm: 0,
-      northMm: null, southMm: null, eastMm: null, westMm: null,
-    } : {
-      roofType: FIXED_ROOF_TYPE,
-      uniformMm: uniformRoof ? roofOverhangMm : 600,
-      northMm: null, southMm: null, eastMm: null, westMm: null,
-      edgeOverhangsMm: uniformRoof ? undefined : edgeOverhangs,
-      roofShape,
-    };
+    // R-1e: 屋根はこのモーダルでは付けない（壁だけ作る）。屋根は「屋根モード」で別途かける。
 
     // 2F建物は仮配置モードで配置
     if (floor === 2) {
@@ -294,7 +274,6 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
         anchorPoint,
         floor: 2,
         fill: '#5a5a7a',
-        roof,
         templateId: selectedTemplate,
         templateDims: { ...dims },
       });
@@ -302,11 +281,9 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
       return;
     }
 
-    // 1F建物は即配置
+    // 1F建物は即配置（屋根なし）
     const newId = uuidv4();
-    addBuilding({ id: newId, type: 'polygon', points, fill: '#3d3d3a', floor: 1, roof, templateId: selectedTemplate, templateDims: { ...dims } });
-    // 屋根形状に応じて棟線を用意/削除（寄棟自動→生成＋高さ入力、手動→棟ツール、他→削除）
-    if (!roofNone) applyRoofShapeRidge(newId, points, roofShape, hipMode);
+    addBuilding({ id: newId, type: 'polygon', points, fill: '#3d3d3a', floor: 1, templateId: selectedTemplate, templateDims: { ...dims } });
     requestAnimationFrame(() => {
       zoomToFitBuildings(window.innerWidth, window.innerHeight - 120);
     });
@@ -489,68 +466,7 @@ export default function BuildingTemplateModal({ onClose, floor, floor1Building }
               )}
             </div>
 
-            {/* Roof config (= 種類概念廃止、 「屋根なし」 チェックで内部 overhang 0 化) */}
-            <div className="mt-4 pt-3 border-t border-dark-border">
-              <p className="text-sm text-dimension mb-2">屋根</p>
-              <div className="flex items-center gap-4 mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={roofNone}
-                    onChange={(e) => setRoofNone(e.target.checked)}
-                    className="w-4 h-4 rounded border-dark-border accent-accent"
-                  />
-                  <span className="text-xs text-dimension">屋根なし</span>
-                </label>
-                {!roofNone && (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={uniformRoof}
-                      onChange={(e) => setUniformRoof(e.target.checked)}
-                      className="w-4 h-4 rounded border-dark-border accent-accent"
-                    />
-                    <span className="text-xs text-dimension">全面同じ出幅</span>
-                  </label>
-                )}
-              </div>
-              {!roofNone && (
-                <div className="space-y-2 mt-2">
-
-                  {uniformRoof ? (
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-dimension shrink-0">出幅</span>
-                      <NumInput value={mmToDisplay(roofOverhangMm)}
-                        onChange={(v) => setRoofOverhangMm(displayToMm(v))}
-                        min={0} step={unit === 'm' ? 0.05 : 50}
-                        className="flex-1 bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm"
-                      />
-                      <span className="text-xs text-dimension">{unit}</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {buildRows().map(row => {
-                        const val = edgeOverhangs[row.edgeIdx] ?? roofOverhangMm;
-                        return (
-                          <div key={row.edgeIdx} className="flex items-center gap-2">
-                            <span className="shrink-0 px-1.5 h-6 flex items-center justify-center rounded text-xs font-bold bg-dark-bg text-dimension">
-                              {row.letter}
-                            </span>
-                            <NumInput value={mmToDisplay(val)}
-                              onChange={(v) => setEdgeOverhangs(prev => ({ ...prev, [row.edgeIdx]: displayToMm(v) }))}
-                              min={0} step={unit === 'm' ? 0.05 : 50}
-                              className="flex-1 px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-canvas text-right font-mono text-sm focus:outline-none focus:border-accent"
-                            />
-                            <span className="text-xs text-dimension w-6">{unit}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-              {!roofNone && (
-                <div className="mt-3">
-                  <RoofShapeSelector shape={roofShape} onShapeChange={setRoofShape} hipMode={hipMode} onHipModeChange={setHipMode} />
-                </div>
-              )}
-            </div>
+            {/* R-1e: 屋根欄は撤去。屋根は「屋根モード」で壁をなぞって別作業でかける。 */}
 
             {floor === 2 && (
               <div className="mt-3 pt-3 border-t border-dark-border">
