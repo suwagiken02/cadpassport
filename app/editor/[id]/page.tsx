@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 import ModeToolbar from '@/components/toolbar/ModeToolbar';
 import PartSelector from '@/components/toolbar/PartSelector';
 import CompassWidget from '@/components/canvas/CompassWidget';
+import OperationGuideBar from '@/components/canvas/OperationGuideBar';
 import BuildingTemplateModal from '@/components/building/BuildingTemplateModal';
 import FloorSelector from '@/components/toolbar/FloorSelector';
 import ExportModal from '@/components/output/ExportModal';
@@ -506,6 +507,7 @@ export default function EditorPage() {
           <GridCanvas width={canvasSize.width} height={canvasSize.height} />
         )}
         <CompassWidget />
+        <OperationGuideBar />
 
         {/* スマホ用 全体表示ボタン (E-6f: 全ページ常時表示・コンテンツ基準にフィット) */}
         <button
