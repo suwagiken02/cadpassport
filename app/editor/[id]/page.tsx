@@ -18,6 +18,7 @@ import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofSettingsModal from '@/components/building/RoofSettingsModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
 import { buildingForRoofPolygon } from '@/lib/konva/roofRegion';
+import { directionInputLabels } from '@/lib/directionInputLabels';
 import UdekiModal from '@/components/scaffold/UdekiModal';
 import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
 import AlertDialog from '@/components/ui/AlertDialog';
@@ -712,7 +713,7 @@ export default function EditorPage() {
             onClick={() => setShowDirectionInputModal(true)}
             className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-accent/80 text-white rounded-xl text-sm font-bold shadow-lg whitespace-nowrap"
           >
-            壁を追加
+            {directionInputLabels(pendingTargetType === 'roof').addSegment}
           </button>
           {directionPoints.length >= 3 && (
             <button
@@ -743,7 +744,7 @@ export default function EditorPage() {
               }}
               className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-accent text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg whitespace-nowrap"
             >
-              作図確定（{directionPoints.length}点）
+              {directionInputLabels(pendingTargetType === 'roof').confirm}（{directionPoints.length}点）
             </button>
           )}
         </div>

@@ -5,6 +5,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import NumInput from '@/components/ui/NumInput';
 import { GRID_UNIT_MM } from '@/lib/konva/gridUtils';
 import { buildingForRoofPolygon } from '@/lib/konva/roofRegion';
+import { directionInputLabels } from '@/lib/directionInputLabels';
 
 type Props = { onClose: () => void };
 
@@ -23,7 +24,9 @@ export default function DirectionInputModal({ onClose }: Props) {
     directionCursor, setDirectionCursor,
     noWallMode, setNoWallMode,
     directionDistanceHistory, addDirectionDistanceHistory,
+    pendingTargetType,
   } = useCanvasStore();
+  const L = directionInputLabels(pendingTargetType === 'roof'); // R-1e-fix8: 屋根時は「辺」表記
 
   // 交点タップ時はターゲットから距離を算出して初期値にする
   // last = directionCursor 優先 (= キャラのみモード中の位置)、 fallback で polygon の最終頂点
@@ -133,7 +136,7 @@ export default function DirectionInputModal({ onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={handleClose}>
       <div className="bg-dark-surface border border-dark-border rounded-2xl p-5 max-w-xs w-full mx-4 space-y-4" onClick={e => e.stopPropagation()}>
-        <h2 className="font-bold text-lg">壁の長さ</h2>
+        <h2 className="font-bold text-lg">{L.segmentNoun}の長さ</h2>
         <p className="text-sm text-accent font-bold">{DIR_LABEL[pendingDirection]}</p>
         <p className="text-xs text-dimension">
           {directionPoints.length}点入力済み
@@ -147,7 +150,7 @@ export default function DirectionInputModal({ onClose }: Props) {
             checked={noWallMode}
             onChange={(e) => setNoWallMode(e.target.checked)}
           />
-          <span>壁を作らずキャラのみ移動</span>
+          <span>{L.moveOnly}</span>
         </label>
 
         {/* 距離入力 */}
@@ -177,7 +180,7 @@ export default function DirectionInputModal({ onClose }: Props) {
           </button>
           <button onClick={handleConfirm} data-tutorial-id="building-add-wall"
             className="flex-1 py-2.5 bg-accent text-white rounded-xl text-sm font-bold">
-            {noWallMode ? 'キャラを移動' : '壁を追加'}
+            {noWallMode ? 'キャラを移動' : L.addSegment}
           </button>
         </div>
       </div>

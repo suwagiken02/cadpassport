@@ -25,6 +25,7 @@ import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
 import DirectionPad from './DirectionPad';
+import { directionInputColors } from '@/lib/directionInputLabels';
 import ElevationViewLayer from './ElevationViewLayer';
 import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
@@ -43,6 +44,7 @@ type Props = {
 export default function GridCanvas({ width, height }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const { zoom, panX, panY, setZoom, setPan, mode, canvasData, handrailPreview, snapPoint, obstaclePreview, isMeasuring, measurePoint1, measurePoint2, measureCursor, measureResultMm, buildingInputMethod, showGridGuide, showPrintArea, printPaperSize, printScale, printAreaCenter, setPrintAreaCenter, isDarkMode, building2FDraft, memoDraft, directionPoints, directionCursor, lastMoveDirection, showDirectionGuide, showDimensionLines, isHeightMarkerMode } = useCanvasStore();
+  const pendingTargetType = useCanvasStore((s) => s.pendingTargetType); // R-1e-fix8: 屋根描き着せ替え判定
 
   const colorCanvasBg = isDarkMode ? '#0a0a0a' : '#ffffff';
   const colorGridMinor = isDarkMode ? 'rgba(0,255,65,0.15)' : '#e5e4e0';
@@ -862,6 +864,8 @@ export default function GridCanvas({ width, height }: Props) {
               }));
               const flatPts = screenPts.flatMap(p => [p.x, p.y]);
               const first = screenPts[0];
+              // R-1e-fix8: 屋根領域描き中は輪郭・頂点色を屋根用（琥珀）に着せ替え、躯体（青）と区別。
+              const c = directionInputColors(pendingTargetType === 'roof');
               return (
                 <>
                   {/* ガイド線（全頂点のユニークX/Yから） */}
@@ -875,24 +879,24 @@ export default function GridCanvas({ width, height }: Props) {
                     if (sy < -10 || sy > height + 10) return null;
                     return <Line key={`gy-${i}`} points={[0, sy, width, sy]} stroke="#F97316" strokeWidth={1} opacity={0.5} dash={[6, 6]} listening={false} />;
                   })}
-                  <Line points={flatPts} stroke="#3B82F6" strokeWidth={5} opacity={1} />
+                  <Line points={flatPts} stroke={c.line} strokeWidth={5} opacity={1} />
                   {screenPts.length >= 3 && (
                     <Line
                       points={[screenPts[screenPts.length - 1].x, screenPts[screenPts.length - 1].y, first.x, first.y]}
-                      stroke="#3B82F6" strokeWidth={3} opacity={0.4} dash={[6, 4]}
+                      stroke={c.line} strokeWidth={3} opacity={0.4} dash={[6, 4]}
                     />
                   )}
                   {screenPts.map((p, i) => (
                     <Circle key={i} x={p.x} y={p.y} radius={i === 0 ? 9 : 7}
-                      fill={i === 0 ? '#EF4444' : '#3B82F6'}
+                      fill={i === 0 ? c.start : c.vertex}
                       stroke="#fff"
                       strokeWidth={2.5}
                     />
                   ))}
                   <Text x={first.x + 10} y={first.y - 10}
-                    text="始点" fontSize={12} fill="#EF4444" />
+                    text="始点" fontSize={12} fill={c.start} />
                   <Text x={screenPts[screenPts.length - 1].x + 10} y={screenPts[screenPts.length - 1].y - 10}
-                    text={`${screenPts.length}点`} fontSize={11} fill="#378ADD" />
+                    text={`${screenPts.length}点`} fontSize={11} fill={c.count} />
                 </>
               );
             })()}
