@@ -9,7 +9,7 @@
 //  ・歩いた弧をハイライト。確定は editor の「確定」ボタン。既存屋根点線のタップ編集は BuildingLayer。
 // ============================================================
 import React from 'react';
-import { Layer, Line, Rect } from 'react-konva';
+import { Layer, Line, Rect, Circle } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
@@ -21,7 +21,9 @@ import { walkToSpan } from '@/lib/konva/roofDraw';
 import DirectionPad, { type PadDir } from './DirectionPad';
 import type { Point } from '@/types';
 
-const HILITE_COLOR = '#F59E0B';
+// 軌跡ハイライトは交点ガイド(オレンジ)やキャラ(琥珀)と被らない緑系の太い半透明線にする(R-1e-fix4)。
+const HILITE_COLOR = '#22C55E';
+const START_COLOR = '#16A34A';
 const GUIDE_COLOR = '#F97316';
 const EDGE_HIT_PX = 18;
 const VERTEX_SNAP_PX = 22;
@@ -83,6 +85,7 @@ export default function RoofDrawLayer() {
     ? spanPolylinePoints(walkBuilding, walkToSpan(walkBuilding, Math.min(roofWalk.startArc, roofWalk.endArc), Math.max(roofWalk.startArc, roofWalk.endArc)))
     : [];
   const charPt = roofWalk && walkBuilding ? pointAtArc(walkBuilding, roofWalk.endArc) : null;
+  const startPt = roofWalk && walkBuilding ? pointAtArc(walkBuilding, roofWalk.startArc) : null;
   const enabled = roofWalk && walkBuilding ? walkDirectionsAt(walkBuilding, roofWalk.endArc) : [];
   const facing: PadDir = enabled.find((d) => d.arcDir === 1)?.compass ?? 'up';
 
@@ -113,9 +116,17 @@ export default function RoofDrawLayer() {
         );
       })()}
 
-      {/* 歩いた区間のハイライト */}
+      {/* 歩いた区間のハイライト（太い半透明の緑・壁の上に重なる・ズームに依らず一定太さ）R-1e-fix4 */}
       {covered.length >= 2 && (
-        <Line points={covered.flatMap((p) => [sx(p.x), sy(p.y)])} stroke={HILITE_COLOR} strokeWidth={4} lineCap="round" lineJoin="round" listening={false} />
+        <Line points={covered.flatMap((p) => [sx(p.x), sy(p.y)])} stroke={HILITE_COLOR} strokeWidth={10} opacity={0.55} lineCap="round" lineJoin="round" listening={false} />
+      )}
+
+      {/* 始点マーカー（どこから歩き始めたか。キャラ＝琥珀と区別できる緑リングの小印） */}
+      {startPt && (
+        <>
+          <Circle x={sx(startPt.x)} y={sy(startPt.y)} radius={7} fill="#fff" stroke={START_COLOR} strokeWidth={3} listening={false} />
+          <Circle x={sx(startPt.x)} y={sy(startPt.y)} radius={2.5} fill={START_COLOR} listening={false} />
+        </>
       )}
 
       {/* キャラ＋方向キー（壁が続く方向のみ有効・DirectionPad 流用） */}
