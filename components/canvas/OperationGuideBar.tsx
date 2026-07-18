@@ -29,7 +29,6 @@ export default function OperationGuideBar() {
       buildingInputMethod: s.buildingInputMethod,
       directionPointCount: s.directionPoints.length,
       selectActive: s.selectActive,
-      roofWalkActive: s.roofWalk != null,
     };
     return getOperationGuide(state);
   });

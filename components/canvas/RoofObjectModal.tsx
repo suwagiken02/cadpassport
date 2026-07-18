@@ -12,11 +12,15 @@ import NumInput from '@/components/ui/NumInput';
 import RoofShapeSelector, { type RoofShape } from '@/components/building/RoofShapeSelector';
 import { DEFAULT_ROOF_SHAPE } from '@/components/building/roofDefaults';
 import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
-import { spanEquals, spanCoveredEdges } from '@/lib/konva/roofSpan';
+import type { Point } from '@/types';
+
+/** 2 つの polygon が同一頂点列か（順同）。 */
+const polygonEquals = (a: Point[], b: Point[]) =>
+  a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6);
 
 export default function RoofObjectModal() {
   const {
-    canvasData, roofSettingsTarget, setRoofSettingsTarget, setRoofWalk,
+    canvasData, roofSettingsTarget, setRoofSettingsTarget,
     addRoof, updateRoof, removeRoof,
   } = useCanvasStore();
   const target = roofSettingsTarget;
@@ -39,17 +43,17 @@ export default function RoofObjectModal() {
   const building = canvasData.buildings.find((b) => b.id === target.buildingId);
   if (!building) return null;
 
-  const close = () => { setRoofSettingsTarget(null); setRoofWalk(null); };
+  const close = () => setRoofSettingsTarget(null);
 
   const handleConfirm = () => {
-    const span = target.span;
+    const polygon = target.polygon;
     const mm = Math.max(0, Math.min(9900, Math.round(uniformMm)));
-    // 既存編集 or 同一建物・同一 span があれば置換、無ければ追加（upsertRoof と同規則）。
-    const dup = existing ?? roofs.find((r) => r.buildingId === target.buildingId && r.span != null && spanEquals(building, r.span, span));
+    // 既存編集 or 同一建物・同一 polygon があれば置換、無ければ追加（重複置換）。
+    const dup = existing ?? roofs.find((r) => r.buildingId === target.buildingId && r.polygon != null && polygonEquals(r.polygon, polygon));
     if (dup) {
-      updateRoof(dup.id, { span, roofShape, uniformMm: mm });
+      updateRoof(dup.id, { polygon, roofShape, uniformMm: mm });
     } else {
-      addRoof({ id: uuidv4(), buildingId: target.buildingId, span, roofShape, uniformMm: mm });
+      addRoof({ id: uuidv4(), buildingId: target.buildingId, polygon, roofShape, uniformMm: mm });
     }
     // hip は中央棟を自動生成（gable/flat/shed は既存棟に触れない＝複数屋根の棟を壊さない・R-1f で整理）。
     if (roofShape === 'hip') applyRoofShapeRidge(target.buildingId, building.points, 'hip', hipMode);
@@ -61,17 +65,14 @@ export default function RoofObjectModal() {
     close();
   };
 
-  const isWhole = !!target.span.full;
-  const coveredCount = spanCoveredEdges(building, target.span).length;
+  const vertexCount = target.polygon.length;
 
   return (
     <div className="fixed inset-0 modal-overlay z-50 flex items-center justify-center">
       <div className="bg-dark-surface border border-dark-border rounded-2xl p-5 max-w-sm mx-4 w-full">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base text-canvas font-bold">{existing ? '屋根を編集' : '屋根を作成'}</h2>
-          <span className="text-[10px] text-dimension">
-            {isWhole ? '外周一周' : `壁 ${coveredCount} 面ぶん`}
-          </span>
+          <span className="text-[10px] text-dimension">屋根領域（{vertexCount}頂点）</span>
         </div>
 
         <div className="mb-3">

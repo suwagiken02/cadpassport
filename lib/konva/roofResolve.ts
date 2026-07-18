@@ -1,14 +1,14 @@
 // ============================================================
-// 屋根の独立オブジェクト化・互換レイヤー (R-1d)。
-//  ・resolveBuildingOverhangsGrid: 建物の辺別出幅(グリッド)を roofs[] 優先で解決。
+// 屋根の独立オブジェクト化・互換レイヤー (R-1d / R-1e-fix7)。
+//  ・resolveBuildingOverhangsGrid: 建物の辺別出幅(グリッド)を roofs[] 優先で解決（polygon の壁重なり辺）。
 //    roofs[] にその建物の屋根が無ければ 旧 building.roof(RoofConfig) + roofOverhangs[] へフォールバック。
-//  ・liftLegacyRoof(s): 旧 building.roof / roofOverhangs[] を Roof オブジェクトへ変換（読み込み時 lift）。
+//  ・liftLegacyRoof(s): 旧 building.roof / roofOverhangs[] を Roof（建物外周 polygon）へ変換（読み込み時 lift）。
 //  消費側（平面の出幅点線・立面の出幅）はこの1経路を通す。
 // ============================================================
 import type { BuildingShape, Roof, RoofOverhang } from '@/types';
 import { mmToGrid } from './gridUtils';
 import { getEdgeOverhangs } from './roofUtils';
-import { roofSpanEdgeOverhangsGrid, fullSpan } from './roofSpan';
+import { buildingEdgeOverhangsFromRoofs } from './roofRegion';
 
 /** 旧経路（building.roof + roofOverhangs[]）の辺別出幅(グリッド)。従来の mergedRoofOverhangsGrid と同一。 */
 function legacyOverhangsGrid(building: BuildingShape, legacyRoofOverhangs: RoofOverhang[]): number[] {
@@ -27,13 +27,8 @@ function legacyOverhangsGrid(building: BuildingShape, legacyRoofOverhangs: RoofO
   return result;
 }
 
-/** 1 つの Roof の辺別出幅(グリッド)。span の被覆辺のみ、edgeOverhangsMm 優先・無ければ uniformMm。 */
-export function roofToEdgeOverhangsGrid(building: BuildingShape, roof: Roof): number[] {
-  return roofSpanEdgeOverhangsGrid(building, roof);
-}
-
 /**
- * 建物の辺別出幅(グリッド)を解決する。roofs[] にその建物の屋根があればそれらの max を採用（複数屋根対応）、
+ * 建物の辺別出幅(グリッド)を解決する。roofs[] にその建物の屋根があれば polygon の壁重なり辺から辺別 max、
  * 無ければ旧 building.roof + roofOverhangs[] へフォールバック。長さ = building.points.length。
  */
 export function resolveBuildingOverhangsGrid(
@@ -41,20 +36,14 @@ export function resolveBuildingOverhangsGrid(
   roofs: Roof[] | undefined,
   legacyRoofOverhangs: RoofOverhang[],
 ): number[] {
-  const n = building.points.length;
   const mine = (roofs ?? []).filter((r) => r.buildingId === building.id);
   if (mine.length === 0) return legacyOverhangsGrid(building, legacyRoofOverhangs);
-  const out = new Array(n).fill(0);
-  for (const roof of mine) {
-    const eo = roofSpanEdgeOverhangsGrid(building, roof);
-    for (let i = 0; i < n; i++) out[i] = Math.max(out[i], eo[i]);
-  }
-  return out;
+  return buildingEdgeOverhangsFromRoofs(building, mine);
 }
 
 /**
- * 旧 building.roof / roofOverhangs[] を Roof（全周 edgeRange）へ lift する。読み込み時の1回変換用。
- * 辺別出幅は旧経路の解決結果（grid→mm）を edgeOverhangsMm に畳み込む（roofOverhangs[] も取り込む）。
+ * 旧 building.roof / roofOverhangs[] を Roof（建物外周 polygon の全周屋根）へ lift する。読み込み時の1回変換用。
+ * 出幅は旧経路の最大出幅を uniformMm に採用（per-face の細部は単純化）。
  * building.roof も roofOverhangs[] も無ければ null（屋根なし建物）。
  */
 export function liftLegacyRoof(building: BuildingShape, legacyRoofOverhangs: RoofOverhang[]): Roof | null {
@@ -62,17 +51,17 @@ export function liftLegacyRoof(building: BuildingShape, legacyRoofOverhangs: Roo
   const hasLegacyOverhang = legacyRoofOverhangs.some((ro) => ro.buildingId === building.id);
   if (!hasRoofConfig && !hasLegacyOverhang) return null;
 
-  const n = building.points.length;
   const grid = legacyOverhangsGrid(building, legacyRoofOverhangs);
-  const edgeOverhangsMm: Record<number, number> = {};
-  for (let i = 0; i < n; i++) edgeOverhangsMm[i] = Math.round(grid[i] * 10); // grid→mm（1grid=10mm）
+  const maxGrid = grid.reduce((m, v) => Math.max(m, v), 0);
+  const uniformMm = building.roof?.uniformMm && building.roof.uniformMm > 0
+    ? building.roof.uniformMm
+    : Math.round(maxGrid * 10); // grid→mm（1grid=10mm）
   return {
     id: `roof-lift-${building.id}`,
     buildingId: building.id,
-    span: fullSpan(), // 旧 building.roof は全周屋根として lift（R-1e-fix）
+    polygon: building.points.map((p) => ({ x: p.x, y: p.y })), // 全周屋根として lift（R-1e-fix7）
     roofShape: building.roof?.roofShape ?? 'gable',
-    uniformMm: building.roof?.uniformMm ?? 0,
-    edgeOverhangsMm,
+    uniformMm,
     katanagareDirection: building.roof?.katanagareDirection,
     kirizumaGableFace: building.roof?.kirizumaGableFace,
   };

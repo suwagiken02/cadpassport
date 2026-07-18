@@ -5,7 +5,8 @@ import { Layer, Line } from 'react-konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { Point } from '@/types';
-import { getRoofSpan, roofSpanEdgeOverhangsGrid, offsetSpanPolyline } from '@/lib/konva/roofSpan';
+import { computeOffsetPolygon } from '@/lib/konva/roofUtils';
+import { getRoofPolygon, roofPolygonOffsetsGrid } from '@/lib/konva/roofRegion';
 
 export default function BuildingLayer() {
   const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor } = useCanvasStore();
@@ -76,26 +77,24 @@ export default function BuildingLayer() {
         );
       })}
 
-      {/* 屋根の出幅点線（R-1e-fix: roofs[] を屋根ごとに span のオフセット折れ線で描画。辺の途中で切れる）。 */}
+      {/* 屋根の出幅点線（R-1e-fix7: 屋根領域 polygon を、壁重なり辺だけ出幅ぶん外へオフセットして描画）。 */}
       {(canvasData.roofs ?? []).map((roof) => {
         const building = canvasData.buildings.find((b) => b.id === roof.buildingId);
         if (!building) return null;
-        const overhangs = roofSpanEdgeOverhangsGrid(building, roof);
-        if (overhangs.every((o) => o === 0)) return null;
-        const span = getRoofSpan(building, roof);
-        const { points, closed } = offsetSpanPolyline(building, span, overhangs);
-        if (points.length < 2) return null;
-
-        const flatPoints = points.flatMap((p) => [p.x * gridPx + panX, p.y * gridPx + panY]);
+        const poly = getRoofPolygon(building, roof);
+        if (poly.length < 3) return null;
+        const offsets = roofPolygonOffsetsGrid(building, roof);
+        const eave = computeOffsetPolygon(poly, offsets);
+        const flatPoints = eave.flatMap((p) => [p.x * gridPx + panX, p.y * gridPx + panY]);
 
         const handleRoofTap = () => {
-          useCanvasStore.getState().setRoofSettingsTarget({ buildingId: roof.buildingId, span, roofId: roof.id });
+          useCanvasStore.getState().setRoofSettingsTarget({ buildingId: roof.buildingId, polygon: poly, roofId: roof.id });
         };
         return (
           <Line
             key={`roof-${roof.id}`}
             points={flatPoints}
-            closed={closed}
+            closed
             stroke="#888780"
             strokeWidth={8 * zoom}
             dash={[48 * zoom, 32 * zoom]}

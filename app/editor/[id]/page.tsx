@@ -17,7 +17,6 @@ import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofSettingsModal from '@/components/building/RoofSettingsModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
-import { walkToSpan } from '@/lib/konva/roofDraw';
 import UdekiModal from '@/components/scaffold/UdekiModal';
 import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
 import AlertDialog from '@/components/ui/AlertDialog';
@@ -159,8 +158,6 @@ export default function EditorPage() {
   // bothmode から⭐設定を開いた場合の固定階(2F誘導)。通常起動は undefined。
   const [scaffoldStartLockFloor, setScaffoldStartLockFloor] = useState<number | undefined>(undefined);
   const [showRoofModal, setShowRoofModal] = useState(false);
-  const roofWalk = useCanvasStore((s) => s.roofWalk); // R-1e-fix2: 屋根キャラ歩きの確定バー表示判定
-  const roofWalkStepMm = useCanvasStore((s) => s.roofWalkStepMm); // 1歩の距離(0=頂点まで)
   const [showUdekiModal, setShowUdekiModal] = useState(false);
   const [showAutoLayoutModal, setShowAutoLayoutModal] = useState(false);
   const [showBackConfirm, setShowBackConfirm] = useState(false);
@@ -744,40 +741,6 @@ export default function EditorPage() {
           )}
         </div>
       )}
-
-      {/* 屋根キャラ歩きの確定バー (R-1e-fix2): 方向キーは画面のキャラ周囲。ここは1歩の距離＋確定/キャンセル。 */}
-      {mode === 'roof' && roofWalk && (() => {
-        const b = canvasData.buildings.find((bb) => bb.id === roofWalk.buildingId);
-        if (!b) return null;
-        const hasSpan = Math.abs(roofWalk.endArc - roofWalk.startArc) > 1e-6;
-        return (
-          <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50 flex items-center gap-1 sm:gap-2 px-2 sm:px-0">
-            <button
-              onClick={() => useCanvasStore.getState().setRoofWalk(null)}
-              className="h-11 sm:h-auto px-2 sm:px-3 sm:py-2.5 bg-dark-surface border border-dark-border rounded-xl text-xs text-dimension font-bold shadow-lg whitespace-nowrap"
-            >
-              キャンセル
-            </button>
-            <span className="text-[10px] text-dimension whitespace-nowrap">1歩</span>
-            <input
-              type="number" value={roofWalkStepMm} min={0} step={50}
-              onChange={(e) => useCanvasStore.getState().setRoofWalkStepMm(Number(e.target.value) || 0)}
-              className="w-16 h-11 sm:h-auto sm:py-2 px-2 bg-dark-bg border border-dark-border rounded-xl text-canvas text-right font-mono text-sm"
-            />
-            <span className="text-[10px] text-dimension whitespace-nowrap">mm(0=頂点)</span>
-            <button
-              disabled={!hasSpan}
-              onClick={() => useCanvasStore.getState().setRoofSettingsTarget({
-                buildingId: roofWalk.buildingId,
-                span: walkToSpan(b, Math.min(roofWalk.startArc, roofWalk.endArc), Math.max(roofWalk.startArc, roofWalk.endArc)),
-              })}
-              className="h-11 sm:h-auto px-2 sm:px-4 sm:py-2.5 bg-accent text-white rounded-xl text-sm font-bold shadow-lg whitespace-nowrap disabled:opacity-40"
-            >
-              確定
-            </button>
-          </div>
-        );
-      })()}
 
       {/* モーダル */}
       {showDirectionInputModal && (

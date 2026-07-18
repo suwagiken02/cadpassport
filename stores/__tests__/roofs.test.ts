@@ -17,21 +17,21 @@ const legacyData = (): CanvasData => ({
 });
 
 const roofs = (): Roof[] => useCanvasStore.getState().canvasData.roofs ?? [];
-const roof = (id: string, edgeRange: number[]): Roof =>
-  ({ id, buildingId: 'B', edgeRange, roofShape: 'gable', uniformMm: 600 });
+const roof = (id: string): Roof =>
+  ({ id, buildingId: 'B', polygon: RECT.points.map((p) => ({ ...p })), roofShape: 'gable', uniformMm: 600 });
 
-describe('canvasStore: roofs lift (R-1d)', () => {
-  it('roofs 未定義の旧データは building.roof から全周 Roof へ lift される', () => {
+describe('canvasStore: roofs lift (R-1e-fix7)', () => {
+  it('roofs 未定義の旧データは building.roof から建物外周 polygon の全周屋根へ lift される', () => {
     useCanvasStore.getState().setCanvasData(legacyData());
     const rs = roofs();
     expect(rs).toHaveLength(1);
     expect(rs[0].buildingId).toBe('B');
-    expect(rs[0].span?.full).toBe(true); // 全周屋根として lift
-    expect(rs[0].edgeOverhangsMm).toEqual({ 0: 600, 1: 600, 2: 600, 3: 600 });
+    expect(rs[0].polygon).toEqual(RECT.points); // 建物外周
+    expect(rs[0].uniformMm).toBe(600);
   });
 
   it('lift は冪等: 既に roofs があれば再 lift しない（尊重）', () => {
-    const data = { ...legacyData(), roofs: [roof('keep', [0])] };
+    const data = { ...legacyData(), roofs: [roof('keep')] };
     useCanvasStore.getState().setCanvasData(data);
     expect(roofs()).toHaveLength(1);
     expect(roofs()[0].id).toBe('keep'); // lift されず元のまま
@@ -51,7 +51,7 @@ describe('canvasStore: roofs CRUD + undo (R-1d)', () => {
 
   it('add → undo で戻る', () => {
     reset();
-    useCanvasStore.getState().addRoof(roof('r1', [0, 1]));
+    useCanvasStore.getState().addRoof(roof('r1'));
     expect(roofs()).toHaveLength(1);
     useCanvasStore.getState().undo();
     expect(roofs()).toHaveLength(0);
@@ -59,7 +59,7 @@ describe('canvasStore: roofs CRUD + undo (R-1d)', () => {
 
   it('update → patch 反映・undo で戻る', () => {
     reset();
-    useCanvasStore.getState().addRoof(roof('r1', [0]));
+    useCanvasStore.getState().addRoof(roof('r1'));
     useCanvasStore.getState().updateRoof('r1', { uniformMm: 900 });
     expect(roofs()[0].uniformMm).toBe(900);
     useCanvasStore.getState().undo();
@@ -68,7 +68,7 @@ describe('canvasStore: roofs CRUD + undo (R-1d)', () => {
 
   it('remove → undo で戻る', () => {
     reset();
-    useCanvasStore.getState().addRoof(roof('r1', [0]));
+    useCanvasStore.getState().addRoof(roof('r1'));
     useCanvasStore.getState().removeRoof('r1');
     expect(roofs()).toHaveLength(0);
     useCanvasStore.getState().undo();
@@ -77,7 +77,7 @@ describe('canvasStore: roofs CRUD + undo (R-1d)', () => {
 
   it('建物削除でその子屋根も除去（孤児防止）', () => {
     reset();
-    useCanvasStore.getState().addRoof(roof('r1', [0]));
+    useCanvasStore.getState().addRoof(roof('r1'));
     useCanvasStore.getState().removeElement('B'); // building id = 'B'
     expect(roofs()).toEqual([]);
   });

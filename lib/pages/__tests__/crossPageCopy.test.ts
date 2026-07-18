@@ -22,7 +22,7 @@ function makeCanvas(): CanvasData {
     compass: { angle: 0 },
     heightMarkers: [{ id: 'HM1', buildingId: 'B1', edgeIndex: 0, t: 0.5, heightMm: 5000 }],
     ridgeLines: [{ id: 'RL1', buildingId: 'B1', p1: { x: 0, y: 50 }, p2: { x: 100, y: 50 }, heightMm: 6000 }],
-    roofs: [{ id: 'RF1', buildingId: 'B1', edgeRange: [0, 1, 2, 3], roofShape: 'gable', uniformMm: 600 }],
+    roofs: [{ id: 'RF1', buildingId: 'B1', polygon: RECT.map((p) => ({ ...p })), roofShape: 'gable', uniformMm: 600 }],
     elevationViews: [{ id: 'EV1', face: 'north', originGrid: { x: 200, y: 100 }, scale: 1, primitives: [] }],
   };
 }

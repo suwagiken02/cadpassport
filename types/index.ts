@@ -68,16 +68,18 @@ export type WallSpan = {
 
 /**
  * 独立した屋根オブジェクト。1 建物に複数（大屋根＋下屋）持てる。
- * span = 対象の壁外周区間（辺の途中対応・R-1e-fix）。旧 edgeRange は normalize で span へ変換。
- * 出幅は全辺共通 uniformMm、辺別は edgeOverhangsMm（指定辺は uniform より優先）。
- * 旧 BuildingShape.roof(RoofConfig) は normalize 時に本型へ lift される（R-1d）。
+ * polygon = 閉じた屋根領域（グリッド座標の頂点列。2F 作成と同じ領域描き入力の結果・R-1e-fix7）。
+ * 出幅は「polygon の辺のうち建物の壁と重なる辺」にのみ uniformMm を適用（建物内部を横切る境界辺は
+ * 出幅なし）。旧 BuildingShape.roof(RoofConfig)/span/edgeRange は normalize 時に polygon へ変換。
  */
 export type Roof = {
   id: string;
   buildingId: string;
-  /** 対象の壁外周区間（R-1e-fix）。未設定の旧データは edgeRange から変換される。 */
+  /** 閉じた屋根領域（グリッド座標）。未設定の旧データは normalize で建物外周へ変換。 */
+  polygon?: Point[];
+  /** @deprecated R-1e-fix の壁外周区間。R-1e-fix7 で polygon に統合。読み込み互換のため残置。 */
   span?: WallSpan;
-  /** @deprecated R-1e の辺 index 列。R-1e-fix で span に統合。読み込み互換のため残置。 */
+  /** @deprecated R-1e の辺 index 列。読み込み互換のため残置。 */
   edgeRange?: number[];
   /** 屋根形状（立面の見え方ヒント）。 */
   roofShape: 'hip' | 'gable' | 'flat' | 'shed';
