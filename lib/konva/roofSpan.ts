@@ -72,6 +72,51 @@ export function arcToPos(building: BuildingShape, arc: number): { edge: number; 
   return { edge: len.length - 1, t: 1 };
 }
 
+export type Compass = 'up' | 'down' | 'left' | 'right';
+
+/** 画面座標（y 下向き）のベクトル → 上下左右。 */
+function toCompass(vx: number, vy: number): Compass {
+  return Math.abs(vx) >= Math.abs(vy) ? (vx > 0 ? 'right' : 'left') : (vy > 0 ? 'down' : 'up');
+}
+
+/** arc-length 位置の壁上の点。 */
+export function pointAtArc(building: BuildingShape, arc: number): Point {
+  const { edge, t } = arcToPos(building, arc);
+  const n = building.points.length;
+  return lerp(building.points[edge], building.points[(edge + 1) % n], t);
+}
+
+/** 現在位置から dir 方向（+1=周方向 forward / -1=backward）の、次の頂点までの距離（グリッド）。 */
+export function stepToVertex(building: BuildingShape, arc: number, dir: 1 | -1): number {
+  const len = edgeLengthsGrid(building);
+  const n = len.length;
+  const { edge, t } = arcToPos(building, arc);
+  if (dir > 0) return t < 1 - EPS ? len[edge] * (1 - t) : len[(edge + 1) % n];
+  return t > EPS ? len[edge] * t : len[(edge - 1 + n) % n];
+}
+
+/**
+ * 現在位置(arc)から壁沿いに進める2方向を上下左右へ写像（R-1e-fix2）。
+ * forward(周方向 arc 増加, arcDir=+1) と backward(arcDir=-1)。角では2辺の向き＝別方向に曲がる。
+ * 外周ループなので行き止まりは無く常に2方向。
+ */
+export function walkDirectionsAt(building: BuildingShape, arc: number): { compass: Compass; arcDir: 1 | -1 }[] {
+  const p = building.points, n = p.length;
+  const { edge, t } = arcToPos(building, arc);
+  const edgeDir = (e: number) => {
+    const a = p[e], b = p[(e + 1) % n];
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+  };
+  const fwd = edgeDir(edge);
+  // 辺の途中は逆向き＝-fwd、頂点(t~0)は前の辺に沿って戻る。
+  const back = t > EPS ? { x: -fwd.x, y: -fwd.y } : (() => { const d = edgeDir((edge - 1 + n) % n); return { x: -d.x, y: -d.y }; })();
+  return [
+    { compass: toCompass(fwd.x, fwd.y), arcDir: 1 },
+    { compass: toCompass(back.x, back.y), arcDir: -1 },
+  ];
+}
+
 /** 全周 span。 */
 export function fullSpan(): WallSpan {
   return { startEdge: 0, startT: 0, endEdge: 0, endT: 0, full: true };

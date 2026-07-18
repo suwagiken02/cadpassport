@@ -1,22 +1,23 @@
 'use client';
 
 // ============================================================
-// 屋根「キャラ歩き」入力（R-1e-fix）: mode==='roof' で壁の上を歩いて屋根区間を決める。
-//  ・壁の上をタップ → 始点（頂点・辺中点スナップは findClosestOutlineEdge の t、辺途中も可）。
-//    roofWalk = {startArc, endArc=startArc} を張る。以降は編集画面の 進む/戻る/確定 で伸縮。
+// 屋根「キャラ歩き」入力（R-1e-fix2）: mode==='roof' で壁の上をキャラで歩いて屋根区間を決める。
+//  ・壁の上をタップ → 始点（辺途中も可）。その位置にキャラ＋方向キー（壁方向入力と同じ DirectionPad）。
+//  ・方向キー押下 → その方向に壁が続いていれば次の頂点まで（距離入力があればその距離）進む。
+//    壁の無い方向のキーは非表示（walkDirectionsAt で判定）。◀方向に戻ると区間が縮む。
 //  ・建物内部（辺から離れた所）タップ かつ 未歩行 → 外周一周ワンタップ → 設定モーダル。
-//  ・歩いた弧（start→end）をハイライト表示。
-// 進む/戻る/確定ボタンは editor 側（walk の arc を更新）。既存屋根点線のタップ編集は BuildingLayer。
+//  ・歩いた弧をハイライト。確定は editor の「確定」ボタン。既存屋根点線のタップ編集は BuildingLayer。
 // ============================================================
 import React from 'react';
-import { Layer, Line, Rect, Circle } from 'react-konva';
+import { Layer, Line, Rect } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
 import { findClosestOutlineEdge } from '@/lib/konva/heightMarkerUtils';
-import { posToArc, arcToPos, spanPolylinePoints, fullSpan } from '@/lib/konva/roofSpan';
+import { posToArc, pointAtArc, spanPolylinePoints, fullSpan, walkDirectionsAt, stepToVertex, perimeterGrid } from '@/lib/konva/roofSpan';
 import { walkToSpan } from '@/lib/konva/roofDraw';
+import DirectionPad, { type PadDir } from './DirectionPad';
 import type { Point } from '@/types';
 
 const HILITE_COLOR = '#F59E0B';
@@ -25,7 +26,7 @@ const EDGE_HIT_PX = 18;
 export default function RoofDrawLayer() {
   const {
     canvasData, zoom, panX, panY, canvasSize, mode,
-    roofWalk, setRoofWalk, setRoofSettingsTarget,
+    roofWalk, setRoofWalk, roofWalkStepMm, setRoofSettingsTarget,
   } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const active = mode === 'roof';
@@ -48,29 +49,38 @@ export default function RoofDrawLayer() {
       const b = canvasData.buildings.find((bb) => bb.id === edgeHit.buildingId);
       if (!b) return;
       const arc = posToArc(b, edgeHit.edgeIndex, edgeHit.t);
-      setRoofWalk({ buildingId: b.id, startArc: arc, endArc: arc }); // 始点（ゼロ長）で歩行開始
+      setRoofWalk({ buildingId: b.id, startArc: arc, endArc: arc }); // 始点（キャラ出現）
       return;
     }
-    // 辺から離れた建物内部タップ：未歩行ならワンタップ外周一周。
     if (!roofWalk) {
       const b = canvasData.buildings.find((bb) => isPointInPolygon(g.x, g.y, bb.points));
       if (b) setRoofSettingsTarget({ buildingId: b.id, span: fullSpan() });
     }
   };
 
+  const walkBuilding = roofWalk ? canvasData.buildings.find((b) => b.id === roofWalk.buildingId) : undefined;
+
+  const handleWalk = (compass: PadDir) => {
+    if (!roofWalk || !walkBuilding) return;
+    const dirs = walkDirectionsAt(walkBuilding, roofWalk.endArc);
+    const match = dirs.find((d) => d.compass === compass);
+    if (!match) return; // その方向に壁は続かない
+    const perim = perimeterGrid(walkBuilding);
+    const step = roofWalkStepMm > 0 ? roofWalkStepMm / 10 : stepToVertex(walkBuilding, roofWalk.endArc, match.arcDir);
+    let newEnd = roofWalk.endArc + match.arcDir * step;
+    newEnd = Math.max(roofWalk.startArc - perim, Math.min(roofWalk.startArc + perim, newEnd)); // ±全周にクランプ
+    setRoofWalk({ ...roofWalk, endArc: newEnd });
+  };
+
   if (!active) return null;
 
-  const walkBuilding = roofWalk ? canvasData.buildings.find((b) => b.id === roofWalk.buildingId) : undefined;
+  // ハイライト区間（start と end の間・forward）。
   const covered = roofWalk && walkBuilding
-    ? spanPolylinePoints(walkBuilding, walkToSpan(walkBuilding, roofWalk.startArc, roofWalk.endArc))
+    ? spanPolylinePoints(walkBuilding, walkToSpan(walkBuilding, Math.min(roofWalk.startArc, roofWalk.endArc), Math.max(roofWalk.startArc, roofWalk.endArc)))
     : [];
-  const startPt = roofWalk && walkBuilding ? (() => {
-    const pos = arcToPos(walkBuilding, roofWalk.startArc);
-    const n = walkBuilding.points.length;
-    const a = walkBuilding.points[pos.edge], b = walkBuilding.points[(pos.edge + 1) % n];
-    return { x: a.x + (b.x - a.x) * pos.t, y: a.y + (b.y - a.y) * pos.t };
-  })() : null;
-  const r = Math.max(4, 5 * zoom);
+  const charPt = roofWalk && walkBuilding ? pointAtArc(walkBuilding, roofWalk.endArc) : null;
+  const enabled = roofWalk && walkBuilding ? walkDirectionsAt(walkBuilding, roofWalk.endArc) : [];
+  const facing: PadDir = enabled.find((d) => d.arcDir === 1)?.compass ?? 'up';
 
   return (
     <Layer>
@@ -88,8 +98,11 @@ export default function RoofDrawLayer() {
       {covered.length >= 2 && (
         <Line points={covered.flatMap((p) => [sx(p.x), sy(p.y)])} stroke={HILITE_COLOR} strokeWidth={4} lineCap="round" lineJoin="round" listening={false} />
       )}
-      {/* 始点マーカー */}
-      {startPt && <Circle x={sx(startPt.x)} y={sy(startPt.y)} radius={r} fill={HILITE_COLOR} listening={false} />}
+
+      {/* キャラ＋方向キー（壁が続く方向のみ有効・DirectionPad 流用） */}
+      {charPt && (
+        <DirectionPad x={sx(charPt.x)} y={sy(charPt.y)} facing={facing} enabled={enabled.map((d) => d.compass)} onDirection={handleWalk} />
+      )}
     </Layer>
   );
 }

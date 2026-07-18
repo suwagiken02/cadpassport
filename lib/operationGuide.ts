@@ -84,7 +84,7 @@ export function getOperationGuide(s: GuideState): string | null {
     case 'roof':
       return !s.roofWalkActive
         ? '屋根の始点を壁の上でタップしてください（建物をタップで全体に屋根）'
-        : '方向と距離で壁沿いに進み、「確定」で屋根を設定してください';
+        : '方向キーで壁沿いに歩き、「確定」で屋根を設定してください';
     case 'select': return s.selectActive ? 'オブジェクトをタップ、またはドラッグで範囲選択してください' : null;
     case 'move-select': return null; // moveSelectActive 側で扱う
     case 'view': return null;        // 閲覧中（ツール未選択）はガイド非表示

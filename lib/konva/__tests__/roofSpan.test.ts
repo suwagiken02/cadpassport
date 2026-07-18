@@ -3,6 +3,7 @@ import type { BuildingShape, WallSpan } from '@/types';
 import {
   perimeterGrid, posToArc, arcToPos, fullSpan, edgeRangeToSpan,
   spanSegments, spanCoveredEdges, spanPolylinePoints, offsetSpanPolyline, spanEquals,
+  walkDirectionsAt, stepToVertex,
 } from '../roofSpan';
 
 // RECT: e0 (0,0)->(360,0) len360, e1 ->(360,540) len540, e2 ->(0,540) len360, e3 ->(0,0) len540。
@@ -70,6 +71,25 @@ describe('offsetSpanPolyline', () => {
     // 辺0の外向き法線は北(y-)なので y=-60 へ平行移動
     expect(points[0]).toEqual({ x: 0, y: -60 });
     expect(points[points.length - 1]).toEqual({ x: 360, y: -60 });
+  });
+});
+
+describe('walkDirectionsAt / stepToVertex (R-1e-fix2)', () => {
+  // RECT の辺: e0=右, e1=下, e2=左, e3=上。
+  it('辺0の中央は 右(+arc)/左(-arc)', () => {
+    expect(walkDirectionsAt(RECT, 180)).toEqual([{ compass: 'right', arcDir: 1 }, { compass: 'left', arcDir: -1 }]);
+  });
+  it('角(辺0→辺1)は 下(+arc)へ曲がり、戻り(-arc)は 左', () => {
+    expect(walkDirectionsAt(RECT, 360)).toEqual([{ compass: 'down', arcDir: 1 }, { compass: 'left', arcDir: -1 }]);
+  });
+  it('外周ループなので常に2方向（行き止まりなし）', () => {
+    expect(walkDirectionsAt(RECT, 900)).toHaveLength(2);
+  });
+  it('stepToVertex: 中央から±で辺途中まで / 角からは次辺長・前辺長', () => {
+    expect(stepToVertex(RECT, 180, 1)).toBeCloseTo(180, 6);
+    expect(stepToVertex(RECT, 180, -1)).toBeCloseTo(180, 6);
+    expect(stepToVertex(RECT, 360, 1)).toBeCloseTo(540, 6); // 辺1の長さ
+    expect(stepToVertex(RECT, 360, -1)).toBeCloseTo(360, 6); // 辺0の長さ
   });
 });
 

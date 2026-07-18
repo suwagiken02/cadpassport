@@ -435,9 +435,12 @@ type CanvasStore = {
   updateRoof: (id: string, patch: Partial<Roof>) => void;
   removeRoof: (id: string) => void;
   // 屋根なぞり入力 (= R-1e-fix: キャラ歩き方式)
-  /** 壁の上を歩く途中の状態。start→end(周方向 forward) の弧が屋根区間。roof モード外では null。 */
+  /** 壁の上を歩く途中の状態。start と現在位置 end の間の弧が屋根区間。roof モード外では null。 */
   roofWalk: { buildingId: string; startArc: number; endArc: number } | null;
   setRoofWalk: (w: { buildingId: string; startArc: number; endArc: number } | null) => void;
+  /** 屋根歩きの1歩の距離(mm)。0=次の頂点まで。方向キーが参照。 */
+  roofWalkStepMm: number;
+  setRoofWalkStepMm: (mm: number) => void;
   /** 屋根設定モーダルの対象。roofId 有=既存編集、無=新規追加。span=対象の壁区間。 */
   roofSettingsTarget: { buildingId: string; span: WallSpan; roofId?: string } | null;
   setRoofSettingsTarget: (t: { buildingId: string; span: WallSpan; roofId?: string } | null) => void;
@@ -1391,6 +1394,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
   roofWalk: null,
   setRoofWalk: (w) => set({ roofWalk: w }),
+  roofWalkStepMm: 0,
+  setRoofWalkStepMm: (mm) => set({ roofWalkStepMm: Math.max(0, Math.round(mm) || 0) }),
   roofSettingsTarget: null,
   setRoofSettingsTarget: (t) => set({ roofSettingsTarget: t }),
 

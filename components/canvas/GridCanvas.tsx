@@ -2,7 +2,7 @@
 
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Stage, Layer, Line, Rect, Circle, Text, Path, Group, Ellipse, Arc } from 'react-konva';
+import { Stage, Layer, Line, Rect, Circle, Text, Path, Group } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
@@ -25,6 +25,7 @@ import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
 import RoofDrawLayer from './RoofDrawLayer';
+import DirectionPad from './DirectionPad';
 import ElevationViewLayer from './ElevationViewLayer';
 import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
@@ -907,49 +908,13 @@ export default function GridCanvas({ width, height }: Props) {
               const last = directionCursor ?? directionPoints[directionPoints.length - 1];
               const px = last.x * gridPx + panX;
               const py = last.y * gridPx + panY;
-              const btnSize = 36;
-              const btnDist = 50;
 
               const handleDirection = (dir: 'up' | 'down' | 'left' | 'right') => {
                 useCanvasStore.getState().setPendingDirection(dir);
                 useCanvasStore.getState().setShowDirectionInputModal(true);
               };
 
-              return (
-                <>
-                  {/* トップダウン視点キャラ */}
-                  <Group x={px} y={py} rotation={{ down: 180, left: 270, up: 0, right: 90 }[lastMoveDirection]} listening={false}>
-                    <Circle x={0} y={0} radius={14} fill="#F59E0B" />
-                    <Circle x={0} y={0} radius={10} fill="#FBBF77" />
-                    <Arc x={0} y={0} innerRadius={0} outerRadius={10} angle={180} rotation={180} fill="#78350F" />
-                    <Circle x={-9} y={5} radius={6} fill="#3B82F6" />
-                    <Circle x={9} y={5} radius={6} fill="#3B82F6" />
-                    <Ellipse x={0} y={6} radiusX={10} radiusY={7} fill="#3B82F6" />
-                    <Circle x={-3.5} y={0} radius={1.2} fill="#000" />
-                    <Circle x={3.5} y={0} radius={1.2} fill="#000" />
-                  </Group>
-                  {/* ↑ */}
-                  <Rect x={px - btnSize/2} y={py - btnDist - btnSize} width={btnSize} height={btnSize}
-                    fill="#378ADD" cornerRadius={8} shadowBlur={5} shadowOpacity={0.3}
-                    onClick={() => handleDirection('up')} onTap={() => handleDirection('up')} />
-                  <Text x={px - 10} y={py - btnDist - btnSize + 8} text="↑" fontSize={20} fill="white" fontStyle="bold" listening={false} />
-                  {/* ↓ */}
-                  <Rect x={px - btnSize/2} y={py + btnDist} width={btnSize} height={btnSize}
-                    fill="#378ADD" cornerRadius={8} shadowBlur={5} shadowOpacity={0.3}
-                    onClick={() => handleDirection('down')} onTap={() => handleDirection('down')} />
-                  <Text x={px - 10} y={py + btnDist + 8} text="↓" fontSize={20} fill="white" fontStyle="bold" listening={false} />
-                  {/* ← */}
-                  <Rect x={px - btnDist - btnSize} y={py - btnSize/2} width={btnSize} height={btnSize}
-                    fill="#378ADD" cornerRadius={8} shadowBlur={5} shadowOpacity={0.3}
-                    onClick={() => handleDirection('left')} onTap={() => handleDirection('left')} />
-                  <Text x={px - btnDist - btnSize + 10} y={py - 10} text="←" fontSize={20} fill="white" fontStyle="bold" listening={false} />
-                  {/* → */}
-                  <Rect x={px + btnDist} y={py - btnSize/2} width={btnSize} height={btnSize}
-                    fill="#378ADD" cornerRadius={8} shadowBlur={5} shadowOpacity={0.3}
-                    onClick={() => handleDirection('right')} onTap={() => handleDirection('right')} />
-                  <Text x={px + btnDist + 10} y={py - 10} text="→" fontSize={20} fill="white" fontStyle="bold" listening={false} />
-                </>
-              );
+              return <DirectionPad x={px} y={py} facing={lastMoveDirection} onDirection={handleDirection} />;
             })()}
           </Layer>
           {/* グリッド交点マーカー */}
