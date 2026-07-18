@@ -17,7 +17,7 @@ import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
 import { findClosestOutlineEdge } from '@/lib/konva/heightMarkerUtils';
 import { getAllExistingVertices } from '@/lib/konva/snapUtils';
 import { posToArc, pointAtArc, spanPolylinePoints, fullSpan, walkDirectionsAt, stepToVertex, perimeterGrid, snapArcToVertex } from '@/lib/konva/roofSpan';
-import { walkToSpan } from '@/lib/konva/roofDraw';
+import { walkToSpan, retargetWalkEnd } from '@/lib/konva/roofDraw';
 import DirectionPad, { type PadDir } from './DirectionPad';
 import type { Point } from '@/types';
 
@@ -55,7 +55,13 @@ export default function RoofDrawLayer() {
       if (!b) return;
       // 角付近タップは頂点へ吸着（角で正しい2方向を出す・R-1e-fix3）。辺の中央付近はそのまま辺途中に置ける。
       const arc = snapArcToVertex(b, posToArc(b, edgeHit.edgeIndex, edgeHit.t), VERTEX_SNAP_PX / gridPx);
-      setRoofWalk({ buildingId: b.id, startArc: arc, endArc: arc }); // 始点（キャラ出現）
+      if (!roofWalk) {
+        setRoofWalk({ buildingId: b.id, startArc: arc, endArc: arc }); // 始点（キャラ出現）
+      } else if (roofWalk.buildingId === b.id) {
+        // R-1e-fix5: 歩行中は始点を保ち、タップ点へキャラを移動（最短 arc で延長/短縮）。
+        setRoofWalk({ ...roofWalk, endArc: retargetWalkEnd(b, roofWalk, arc) });
+      }
+      // 別建物の壁タップは無視（歩行中の建物を固定）。
       return;
     }
     if (!roofWalk) {

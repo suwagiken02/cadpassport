@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, Roof, WallSpan } from '@/types';
-import { walkToSpan, upsertRoof } from '../roofDraw';
+import { walkToSpan, upsertRoof, retargetWalkEnd } from '../roofDraw';
 
 // RECT: e0 len360, e1 len540, e2 len360, e3 len540, perim 1800。
 const RECT: BuildingShape = {
@@ -47,5 +47,22 @@ describe('upsertRoof（span 単位の重複置換）', () => {
     expect(next).toHaveLength(1);
     expect(next[0].id).toBe('full1');
     expect(next[0].uniformMm).toBe(700);
+  });
+});
+
+describe('retargetWalkEnd（壁上タップでキャラ移動・R-1e-fix5）', () => {
+  // RECT perim=1800。walk={start,end}。タップ点は mod perim の arc。
+  const walk = (s: number, e: number) => ({ startArc: s, endArc: e });
+  it('歩行方向へ延長（右下角900→下辺1080）', () => {
+    expect(retargetWalkEnd(RECT, walk(360, 900), 1080)).toBeCloseTo(1080, 6);
+  });
+  it('手前タップで短縮（900→720）', () => {
+    expect(retargetWalkEnd(RECT, walk(360, 900), 720)).toBeCloseTo(720, 6);
+  });
+  it('最短経路で逆回りにも移動（end0から arc1700 は -100＝backward）', () => {
+    expect(retargetWalkEnd(RECT, walk(0, 0), 1700)).toBeCloseTo(-100, 6);
+  });
+  it('±全周にクランプ（half=900 は +900 側）', () => {
+    expect(retargetWalkEnd(RECT, walk(0, 0), 900)).toBeCloseTo(900, 6);
   });
 });

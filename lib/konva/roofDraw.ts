@@ -21,6 +21,21 @@ export function walkToSpan(building: BuildingShape, startArc: number, endArc: nu
 }
 
 /**
+ * 歩行中に壁上の点（targetArcMod = mod perim の arc）をタップしたときの新しい endArc（R-1e-fix5）。
+ * 現在位置 endArc からの最短 arc でタップ点へ移動（始点は維持・延長/短縮が自然）。±全周にクランプ。
+ */
+export function retargetWalkEnd(
+  building: BuildingShape, walk: { startArc: number; endArc: number }, targetArcMod: number,
+): number {
+  const perim = perimeterGrid(building);
+  const mod = (a: number, m: number) => ((a % m) + m) % m;
+  const delta = mod(targetArcMod - walk.endArc, perim);
+  const signed = delta > perim / 2 ? delta - perim : delta; // 最短（近い方）へ
+  const t = walk.endArc + signed;
+  return Math.max(walk.startArc - perim, Math.min(walk.startArc + perim, t));
+}
+
+/**
  * 屋根を追加または置換する。同一 buildingId かつ同一 span（arc 区間一致）の既存屋根があれば
  * その内容を置換（id は既存維持）、無ければ末尾に追加。
  */
