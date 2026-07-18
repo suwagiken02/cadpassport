@@ -8,6 +8,16 @@
 // ============================================================
 import type { BuildingShape, Point, Roof } from '@/types';
 import { mmToGrid } from './gridUtils';
+import { isPointInPolygon } from './autoLayoutUtils';
+
+/** 屋根領域 polygon が乗っている建物 id（polygon 重心を含む建物）。無ければ null。 */
+export function buildingForRoofPolygon(polygon: Point[], buildings: BuildingShape[]): string | null {
+  if (polygon.length < 3) return null;
+  const cx = polygon.reduce((s, p) => s + p.x, 0) / polygon.length;
+  const cy = polygon.reduce((s, p) => s + p.y, 0) / polygon.length;
+  const b = buildings.find((bb) => isPointInPolygon(cx, cy, bb.points));
+  return b ? b.id : null;
+}
 
 /** 壁重なり判定の許容差（グリッド）。1grid=10mm。スナップ揺れを見て 1.5grid。 */
 const WALL_TOL = 1.5;

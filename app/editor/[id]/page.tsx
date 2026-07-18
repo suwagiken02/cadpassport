@@ -17,6 +17,7 @@ import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofSettingsModal from '@/components/building/RoofSettingsModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
+import { buildingForRoofPolygon } from '@/lib/konva/roofRegion';
 import UdekiModal from '@/components/scaffold/UdekiModal';
 import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
 import AlertDialog from '@/components/ui/AlertDialog';
@@ -692,6 +693,7 @@ export default function EditorPage() {
             onClick={() => {
               clearDirectionPoints();
               setBuildingInputMethod('template');
+              setPendingTargetType('building'); // R-1e-fix7b: 屋根描き中断時も target をリセット
               setMode('select');
             }}
             className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-dark-surface border border-dark-border rounded-xl text-sm text-dimension font-bold shadow-lg whitespace-nowrap"
@@ -717,7 +719,12 @@ export default function EditorPage() {
               onClick={() => {
                 const newId = uuidv4();
                 const pts = [...directionPoints];
-                if (pendingTargetType === 'obstacle' && pendingObstacleType) {
+                if (pendingTargetType === 'roof') {
+                  // R-1e-fix7b: 屋根領域を描き終えた → 乗る建物に紐づけて設定モーダルへ。
+                  const buildingId = buildingForRoofPolygon(pts, canvasData.buildings);
+                  if (buildingId) useCanvasStore.getState().setRoofSettingsTarget({ buildingId, polygon: pts });
+                  setPendingTargetType('building');
+                } else if (pendingTargetType === 'obstacle' && pendingObstacleType) {
                   const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
                   const minX = Math.min(...xs), minY = Math.min(...ys);
                   const maxX = Math.max(...xs), maxY = Math.max(...ys);

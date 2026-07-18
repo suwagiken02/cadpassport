@@ -36,6 +36,8 @@ export type GuideState = {
   directionPointCount: number;
   /** 選択モードが有効か（mode==='select' のとき）。 */
   selectActive: boolean;
+  /** 屋根領域を描画中か（建物方向入力を pendingTargetType='roof' で流用・R-1e-fix7b）。 */
+  isRoofDraw: boolean;
 };
 
 /**
@@ -68,6 +70,11 @@ export function getOperationGuide(s: GuideState): string | null {
   switch (s.mode) {
     case 'building':
       if (s.buildingInputMethod === 'direction') {
+        if (s.isRoofDraw) {
+          return s.directionPointCount === 0
+            ? '屋根の始点をタップしてください'
+            : '方向と距離で屋根の輪郭を描き、始点に戻って閉じてください';
+        }
         return s.directionPointCount === 0
           ? '壁の始点をタップしてください'
           : '次の壁の方向と距離を入力してください（始点の近くをタップで閉じる）';

@@ -98,8 +98,8 @@ export default function BuildingLayer() {
             stroke="#888780"
             strokeWidth={8 * zoom}
             dash={[48 * zoom, 32 * zoom]}
-            hitStrokeWidth={mode === 'roof' ? 12 : 0}
-            listening={mode === 'roof'}
+            hitStrokeWidth={mode === 'select' ? 14 : 0}
+            listening={mode === 'select'}
             onClick={handleRoofTap}
             onTap={handleRoofTap}
           />

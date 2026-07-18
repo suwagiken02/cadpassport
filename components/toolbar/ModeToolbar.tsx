@@ -209,7 +209,11 @@ export default function ModeToolbar() {
             <button
               data-tutorial-id="kutai-roof"
               onClick={() => {
-                setMode('roof');
+                // R-1e-fix7b: 屋根は「2F 作成と同じ領域描き」。壁方向入力の turtle を pendingTargetType='roof' で起動。
+                const s = useCanvasStore.getState();
+                s.setPendingTargetType('roof');
+                s.setBuildingInputMethod('direction');
+                s.setMode('building');
                 setShowKutaiMenu(false);
               }}
               className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"

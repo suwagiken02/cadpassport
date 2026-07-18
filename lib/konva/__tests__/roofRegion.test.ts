@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, Point, Roof } from '@/types';
-import { edgeOnWall, roofEdgeToBuildingEdge, roofPolygonOffsetsGrid, buildingEdgeOverhangsFromRoofs, getRoofPolygon } from '../roofRegion';
+import { edgeOnWall, roofEdgeToBuildingEdge, roofPolygonOffsetsGrid, buildingEdgeOverhangsFromRoofs, getRoofPolygon, buildingForRoofPolygon } from '../roofRegion';
 
 // RECT: e0=上辺(0,0)-(360,0), e1=右(360,0)-(360,540), e2=下(360,540)-(0,540), e3=左(0,540)-(0,0)。
 const P: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
@@ -36,6 +36,17 @@ describe('buildingEdgeOverhangsFromRoofs', () => {
     const a = roof([{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 180, y: 270 }], 600); // e0=60
     const b = { ...roof([{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 180, y: 270 }], 1000), id: 'b' }; // e0,e1=100
     expect(buildingEdgeOverhangsFromRoofs(RECT, [a, b])).toEqual([100, 100, 0, 0]);
+  });
+});
+
+describe('buildingForRoofPolygon（領域が乗る建物・R-1e-fix7b）', () => {
+  it('重心を含む建物 id を返す', () => {
+    const tri = [{ x: 10, y: 10 }, { x: 350, y: 10 }, { x: 180, y: 300 }];
+    expect(buildingForRoofPolygon(tri, [RECT])).toBe('B');
+  });
+  it('どの建物にも乗らなければ null', () => {
+    const far = [{ x: 1000, y: 1000 }, { x: 1100, y: 1000 }, { x: 1050, y: 1100 }];
+    expect(buildingForRoofPolygon(far, [RECT])).toBeNull();
   });
 });
 

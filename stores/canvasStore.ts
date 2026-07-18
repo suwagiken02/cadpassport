@@ -174,8 +174,8 @@ type CanvasStore = {
   setAutoOpenRoofForBuildingId: (id: string | null) => void;
   pendingBuildingFloor: number;
   setPendingBuildingFloor: (f: number) => void;
-  pendingTargetType: 'building' | 'obstacle';
-  setPendingTargetType: (t: 'building' | 'obstacle') => void;
+  pendingTargetType: 'building' | 'obstacle' | 'roof';
+  setPendingTargetType: (t: 'building' | 'obstacle' | 'roof') => void;
   pendingObstacleType: import('@/types').ObstacleType | null;
   setPendingObstacleType: (t: import('@/types').ObstacleType | null) => void;
   showDirectionInputModal: boolean;
