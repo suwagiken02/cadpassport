@@ -1,31 +1,31 @@
 'use client';
 
 // ============================================================
-// 屋根なぞり入力ツール（R-1e）: mode==='roof' で壁をなぞって屋根の対象辺を選ぶ。
-//  ・全画面キャプチャ Rect でタップを受ける（RidgeLineLayer 式）。
-//  ・壁の辺付近タップ → その辺を選択にトグル（同一建物のみ・別建物タップで選び直し）。
-//  ・建物内部（辺から離れた所）タップ かつ 未選択 → 外周一周のワンタップ → 設定モーダル。
-//  ・選択中の辺はハイライト表示。確定は編集画面の「確定」ボタン（roofDraftEdges を見て表示）。
-// 既存屋根点線のタップ編集は BuildingLayer 側。
+// 屋根「キャラ歩き」入力（R-1e-fix）: mode==='roof' で壁の上を歩いて屋根区間を決める。
+//  ・壁の上をタップ → 始点（頂点・辺中点スナップは findClosestOutlineEdge の t、辺途中も可）。
+//    roofWalk = {startArc, endArc=startArc} を張る。以降は編集画面の 進む/戻る/確定 で伸縮。
+//  ・建物内部（辺から離れた所）タップ かつ 未歩行 → 外周一周ワンタップ → 設定モーダル。
+//  ・歩いた弧（start→end）をハイライト表示。
+// 進む/戻る/確定ボタンは editor 側（walk の arc を更新）。既存屋根点線のタップ編集は BuildingLayer。
 // ============================================================
 import React from 'react';
-import { Layer, Line, Rect } from 'react-konva';
+import { Layer, Line, Rect, Circle } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
 import { findClosestOutlineEdge } from '@/lib/konva/heightMarkerUtils';
-import { toggleEdgeInRange, fullPerimeterEdgeRange } from '@/lib/konva/roofDraw';
+import { posToArc, arcToPos, spanPolylinePoints, fullSpan } from '@/lib/konva/roofSpan';
+import { walkToSpan } from '@/lib/konva/roofDraw';
 import type { Point } from '@/types';
 
-const ROOF_COLOR = '#888780';
 const HILITE_COLOR = '#F59E0B';
 const EDGE_HIT_PX = 18;
 
 export default function RoofDrawLayer() {
   const {
     canvasData, zoom, panX, panY, canvasSize, mode,
-    roofDraftEdges, setRoofDraftEdges, setRoofSettingsTarget,
+    roofWalk, setRoofWalk, setRoofSettingsTarget,
   } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const active = mode === 'roof';
@@ -43,65 +43,53 @@ export default function RoofDrawLayer() {
     e.cancelBubble = true;
     const g = pointerGrid(e);
     if (!g) return;
-    // 壁の辺付近か？（building.points 基準・R-1b の getOutlinePolygon＝壁線）
     const edgeHit = findClosestOutlineEdge(g, canvasData.buildings, EDGE_HIT_PX / gridPx);
     if (edgeHit) {
-      const cur = roofDraftEdges;
-      if (!cur || cur.buildingId !== edgeHit.buildingId) {
-        setRoofDraftEdges({ buildingId: edgeHit.buildingId, edges: [edgeHit.edgeIndex] });
-      } else {
-        const edges = toggleEdgeInRange(cur.edges, edgeHit.edgeIndex);
-        setRoofDraftEdges(edges.length ? { buildingId: cur.buildingId, edges } : null);
-      }
+      const b = canvasData.buildings.find((bb) => bb.id === edgeHit.buildingId);
+      if (!b) return;
+      const arc = posToArc(b, edgeHit.edgeIndex, edgeHit.t);
+      setRoofWalk({ buildingId: b.id, startArc: arc, endArc: arc }); // 始点（ゼロ長）で歩行開始
       return;
     }
-    // 辺から離れた建物内部タップ：未選択ならワンタップ外周一周。
-    if (!roofDraftEdges) {
+    // 辺から離れた建物内部タップ：未歩行ならワンタップ外周一周。
+    if (!roofWalk) {
       const b = canvasData.buildings.find((bb) => isPointInPolygon(g.x, g.y, bb.points));
-      if (b) setRoofSettingsTarget({ buildingId: b.id, edgeRange: fullPerimeterEdgeRange(b) });
+      if (b) setRoofSettingsTarget({ buildingId: b.id, span: fullSpan() });
     }
   };
 
   if (!active) return null;
 
-  const draftBuilding = roofDraftEdges
-    ? canvasData.buildings.find((b) => b.id === roofDraftEdges.buildingId)
-    : undefined;
+  const walkBuilding = roofWalk ? canvasData.buildings.find((b) => b.id === roofWalk.buildingId) : undefined;
+  const covered = roofWalk && walkBuilding
+    ? spanPolylinePoints(walkBuilding, walkToSpan(walkBuilding, roofWalk.startArc, roofWalk.endArc))
+    : [];
+  const startPt = roofWalk && walkBuilding ? (() => {
+    const pos = arcToPos(walkBuilding, roofWalk.startArc);
+    const n = walkBuilding.points.length;
+    const a = walkBuilding.points[pos.edge], b = walkBuilding.points[(pos.edge + 1) % n];
+    return { x: a.x + (b.x - a.x) * pos.t, y: a.y + (b.y - a.y) * pos.t };
+  })() : null;
+  const r = Math.max(4, 5 * zoom);
 
   return (
     <Layer>
       {canvasSize.width > 0 && (
-        <Rect
-          x={0} y={0} width={canvasSize.width} height={canvasSize.height}
-          fill="transparent"
-          onClick={handleTap}
-          onTap={handleTap}
-        />
+        <Rect x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="transparent" onClick={handleTap} onTap={handleTap} />
       )}
 
-      {/* 選択候補の全建物の壁を薄くなぞり可能に見せる（うっすら） */}
+      {/* 選択候補の壁を薄く見せる */}
       {canvasData.buildings.map((b) => (
-        <Line
-          key={`roofdraw-outline-${b.id}`}
-          points={b.points.flatMap((p) => [sx(p.x), sy(p.y)])}
-          closed stroke={ROOF_COLOR} strokeWidth={1} dash={[4, 4]} opacity={0.3} listening={false}
-        />
+        <Line key={`roofdraw-outline-${b.id}`} points={b.points.flatMap((p) => [sx(p.x), sy(p.y)])}
+          closed stroke="#888780" strokeWidth={1} dash={[4, 4]} opacity={0.3} listening={false} />
       ))}
 
-      {/* 選択中の辺のハイライト */}
-      {draftBuilding && roofDraftEdges?.edges.map((ei) => {
-        const n = draftBuilding.points.length;
-        const p1 = draftBuilding.points[ei];
-        const p2 = draftBuilding.points[(ei + 1) % n];
-        if (!p1 || !p2) return null;
-        return (
-          <Line
-            key={`roofdraw-sel-${ei}`}
-            points={[sx(p1.x), sy(p1.y), sx(p2.x), sy(p2.y)]}
-            stroke={HILITE_COLOR} strokeWidth={4} lineCap="round" listening={false}
-          />
-        );
-      })}
+      {/* 歩いた区間のハイライト */}
+      {covered.length >= 2 && (
+        <Line points={covered.flatMap((p) => [sx(p.x), sy(p.y)])} stroke={HILITE_COLOR} strokeWidth={4} lineCap="round" lineJoin="round" listening={false} />
+      )}
+      {/* 始点マーカー */}
+      {startPt && <Circle x={sx(startPt.x)} y={sy(startPt.y)} radius={r} fill={HILITE_COLOR} listening={false} />}
     </Layer>
   );
 }

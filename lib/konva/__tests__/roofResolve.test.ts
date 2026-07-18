@@ -14,7 +14,7 @@ describe('liftLegacyRoof (R-1d)', () => {
   it('building.roof を全周 Roof へ lift（出幅を忠実に mm で保持）', () => {
     const roof = liftLegacyRoof(RECT, [])!;
     expect(roof.buildingId).toBe('B');
-    expect(roof.edgeRange).toEqual([0, 1, 2, 3]);
+    expect(roof.span?.full).toBe(true); // 全周屋根として lift
     expect(roof.roofShape).toBe('hip'); // building.roof.roofShape を継承
     expect(roof.edgeOverhangsMm).toEqual({ 0: 600, 1: 600, 2: 600, 3: 600 });
   });
@@ -54,8 +54,9 @@ describe('resolveBuildingOverhangsGrid (R-1d 互換レイヤー)', () => {
     expect(resolveBuildingOverhangsGrid(RECT, [big, shed], [])).toEqual([100, 100, 0, 0]);
   });
 
-  it('roofToEdgeOverhangsGrid: edgeOverhangsMm 優先・範囲外は 0', () => {
-    const roof: Roof = { id: 'r', buildingId: 'B', edgeRange: [0, 2], roofShape: 'gable', uniformMm: 600, edgeOverhangsMm: { 0: 300 } };
-    expect(roofToEdgeOverhangsGrid(RECT, roof)).toEqual([30, 0, 60, 0]); // 辺0=300/10, 辺2=uniform600/10
+  it('roofToEdgeOverhangsGrid: 被覆辺は edgeOverhangsMm 優先・uniform 補完、範囲外は 0', () => {
+    // span=辺0..辺1（連続）。辺0は edgeOverhangsMm 300、辺1は uniform 600、辺2/3 は範囲外=0。
+    const roof: Roof = { id: 'r', buildingId: 'B', edgeRange: [0, 1], roofShape: 'gable', uniformMm: 600, edgeOverhangsMm: { 0: 300 } };
+    expect(roofToEdgeOverhangsGrid(RECT, roof)).toEqual([30, 60, 0, 0]);
   });
 });

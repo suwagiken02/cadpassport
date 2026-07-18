@@ -18,7 +18,7 @@ const base: GuideState = {
   buildingInputMethod: 'template',
   directionPointCount: 0,
   selectActive: true,
-  roofDraftEdgeCount: 0,
+  roofWalkActive: false,
 };
 const g = (o: Partial<GuideState>) => getOperationGuide({ ...base, ...o });
 
@@ -71,9 +71,9 @@ describe('getOperationGuide: mode 系', () => {
     expect(g({ mode: 'obstacle' })).toBe('障害物を配置する位置をタップしてください');
     expect(g({ mode: 'memo' })).toBe('メモを配置する位置をタップしてください');
   });
-  it('屋根: なぞり開始前 / 辺選択中', () => {
-    expect(g({ mode: 'roof', roofDraftEdgeCount: 0 })).toContain('屋根をかける壁をなぞって');
-    expect(g({ mode: 'roof', roofDraftEdgeCount: 2 })).toContain('確定');
+  it('屋根: 始点タップ前 / 歩行中', () => {
+    expect(g({ mode: 'roof', roofWalkActive: false })).toContain('始点を壁の上でタップ');
+    expect(g({ mode: 'roof', roofWalkActive: true })).toContain('確定');
   });
   it('選択: 有効なら案内・無効なら null', () => {
     expect(g({ mode: 'select', selectActive: true })).toContain('オブジェクトをタップ');

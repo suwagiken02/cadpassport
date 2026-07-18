@@ -1,41 +1,37 @@
 // ============================================================
-// 屋根なぞり入力の pure ロジック (R-1e)。
-//  ・fullPerimeterEdgeRange: 建物の全辺 index（建物タップ＝外周一周のワンタップ用）。
-//  ・toggleEdgeInRange: 壁辺のタップで edgeRange にトグル追加/除去（昇順維持）。
-//  ・upsertRoof: 同一建物・同一 edgeRange の屋根は置換、無ければ追加（重複置換）。
+// 屋根「キャラ歩き」入力の pure ロジック (R-1e-fix)。
+//  ・walkToSpan: 壁の上を歩いた弧 [startArc, endArc] を WallSpan へ変換（全周は full）。
+//  ・upsertRoof: 同一建物・同一 span の屋根は置換、無ければ追加（重複置換）。
+// 歩行の幾何（arc↔位置・被覆・オフセット）は roofSpan.ts。
 // ============================================================
-import type { BuildingShape, Roof } from '@/types';
+import type { BuildingShape, Roof, WallSpan } from '@/types';
+import { arcToPos, perimeterGrid, fullSpan, spanEquals } from './roofSpan';
 
-/** 建物の全辺 index（0..n-1）。ワンタップ「外周一周」屋根用。 */
-export function fullPerimeterEdgeRange(building: BuildingShape): number[] {
-  return Array.from({ length: building.points.length }, (_, i) => i);
-}
-
-/** edgeIndex を edgeRange にトグル（含めば除去・無ければ追加）。昇順を維持。 */
-export function toggleEdgeInRange(range: number[], edgeIndex: number): number[] {
-  if (range.includes(edgeIndex)) return range.filter((e) => e !== edgeIndex);
-  return [...range, edgeIndex].sort((a, b) => a - b);
-}
-
-/** 2 つの edgeRange が集合として等しいか（順不同）。 */
-function sameEdgeSet(a: number[], b: number[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort((x, y) => x - y);
-  const sb = [...b].sort((x, y) => x - y);
-  return sa.every((v, i) => v === sb[i]);
+/**
+ * 歩いた弧 [startArc, endArc]（endArc = startArc + 被覆長, 周方向 forward）を WallSpan へ。
+ * 被覆長が全周以上なら full。ゼロ長は start==end の縮退 span（呼び出し側で作成抑止）。
+ */
+export function walkToSpan(building: BuildingShape, startArc: number, endArc: number): WallSpan {
+  const perim = perimeterGrid(building);
+  const len = endArc - startArc;
+  if (len >= perim - 1e-6) return fullSpan();
+  const s = arcToPos(building, startArc);
+  const e = arcToPos(building, endArc);
+  return { startEdge: s.edge, startT: s.t, endEdge: e.edge, endT: e.t };
 }
 
 /**
- * 屋根を追加または置換する。同一 buildingId かつ同一 edgeRange（順不同）の既存屋根があれば
- * それを新しい内容で置換（重複置換）、無ければ末尾に追加。
+ * 屋根を追加または置換する。同一 buildingId かつ同一 span（arc 区間一致）の既存屋根があれば
+ * その内容を置換（id は既存維持）、無ければ末尾に追加。
  */
-export function upsertRoof(roofs: Roof[], roof: Roof): Roof[] {
+export function upsertRoof(building: BuildingShape, roofs: Roof[], roof: Roof): Roof[] {
+  const span = roof.span ?? fullSpan();
   const idx = roofs.findIndex(
-    (r) => r.buildingId === roof.buildingId && sameEdgeSet(r.edgeRange, roof.edgeRange),
+    (r) => r.buildingId === roof.buildingId && r.span != null && spanEquals(building, r.span, span),
   );
   if (idx >= 0) {
     const next = roofs.slice();
-    next[idx] = { ...roof, id: roofs[idx].id }; // id は既存を維持（履歴/参照の安定）
+    next[idx] = { ...roof, id: roofs[idx].id };
     return next;
   }
   return [...roofs, roof];

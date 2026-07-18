@@ -8,6 +8,7 @@
 import type { BuildingShape, Roof, RoofOverhang } from '@/types';
 import { mmToGrid } from './gridUtils';
 import { getEdgeOverhangs } from './roofUtils';
+import { roofSpanEdgeOverhangsGrid, fullSpan } from './roofSpan';
 
 /** 旧経路（building.roof + roofOverhangs[]）の辺別出幅(グリッド)。従来の mergedRoofOverhangsGrid と同一。 */
 function legacyOverhangsGrid(building: BuildingShape, legacyRoofOverhangs: RoofOverhang[]): number[] {
@@ -26,16 +27,9 @@ function legacyOverhangsGrid(building: BuildingShape, legacyRoofOverhangs: RoofO
   return result;
 }
 
-/** 1 つの Roof の辺別出幅(グリッド)。edgeRange 内の辺のみ、edgeOverhangsMm 優先・無ければ uniformMm。 */
+/** 1 つの Roof の辺別出幅(グリッド)。span の被覆辺のみ、edgeOverhangsMm 優先・無ければ uniformMm。 */
 export function roofToEdgeOverhangsGrid(building: BuildingShape, roof: Roof): number[] {
-  const n = building.points.length;
-  const out = new Array(n).fill(0);
-  for (const i of roof.edgeRange) {
-    if (i < 0 || i >= n) continue;
-    const mm = roof.edgeOverhangsMm?.[i] ?? roof.uniformMm;
-    out[i] = mm > 0 ? mmToGrid(mm) : 0;
-  }
-  return out;
+  return roofSpanEdgeOverhangsGrid(building, roof);
 }
 
 /**
@@ -52,7 +46,7 @@ export function resolveBuildingOverhangsGrid(
   if (mine.length === 0) return legacyOverhangsGrid(building, legacyRoofOverhangs);
   const out = new Array(n).fill(0);
   for (const roof of mine) {
-    const eo = roofToEdgeOverhangsGrid(building, roof);
+    const eo = roofSpanEdgeOverhangsGrid(building, roof);
     for (let i = 0; i < n; i++) out[i] = Math.max(out[i], eo[i]);
   }
   return out;
@@ -75,7 +69,7 @@ export function liftLegacyRoof(building: BuildingShape, legacyRoofOverhangs: Roo
   return {
     id: `roof-lift-${building.id}`,
     buildingId: building.id,
-    edgeRange: Array.from({ length: n }, (_, i) => i),
+    span: fullSpan(), // 旧 building.roof は全周屋根として lift（R-1e-fix）
     roofShape: building.roof?.roofShape ?? 'gable',
     uniformMm: building.roof?.uniformMm ?? 0,
     edgeOverhangsMm,

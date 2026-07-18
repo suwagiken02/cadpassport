@@ -12,6 +12,7 @@ import {
   Memo,
   RoofOverhang,
   Roof,
+  WallSpan,
   AntiWidth,
   HandrailLengthMm,
   HandrailDirection,
@@ -34,6 +35,7 @@ import {
 } from '@/lib/pages/crossPageCopy';
 import { computeContentBounds } from '@/lib/pages/contentBounds';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
+import { edgeRangeToSpan, fullSpan } from '@/lib/konva/roofSpan';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -64,7 +66,12 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
     version: CANVAS_SCHEMA_VERSION, // R-1b: 壁線基準への再解釈の目印（分岐処理はしない）
     // R-1d: roofs 未定義の旧データは building.roof / roofOverhangs[] から Roof へ lift（1回のみ）。
     //   既に roofs があれば尊重（再 lift しない）。building.roof は当面残す（R-1g で削除予定）。
-    roofs: data.roofs ?? liftLegacyRoofs(data.buildings, data.roofOverhangs ?? []),
+    // R-1e-fix: span 未設定（旧 edgeRange 方式）の roof は span へ変換して backfill。
+    roofs: (data.roofs ?? liftLegacyRoofs(data.buildings, data.roofOverhangs ?? [])).map((r) => {
+      if (r.span) return r;
+      const b = data.buildings.find((bb) => bb.id === r.buildingId);
+      return { ...r, span: b && r.edgeRange ? edgeRangeToSpan(b, r.edgeRange) : fullSpan() };
+    }),
     magnetPins: data.magnetPins ?? [],
     heightMarkers: data.heightMarkers ?? [],
     ridgeLines: data.ridgeLines ?? [],
@@ -427,13 +434,13 @@ type CanvasStore = {
   addRoof: (roof: Roof) => void;
   updateRoof: (id: string, patch: Partial<Roof>) => void;
   removeRoof: (id: string) => void;
-  // 屋根なぞり入力 (= R-1e)
-  /** なぞり中の選択辺（同一建物内の辺 index 集合）。roof モード外では null。 */
-  roofDraftEdges: { buildingId: string; edges: number[] } | null;
-  setRoofDraftEdges: (d: { buildingId: string; edges: number[] } | null) => void;
-  /** 屋根設定モーダルの対象。roofId 有=既存編集、無=新規追加。 */
-  roofSettingsTarget: { buildingId: string; edgeRange: number[]; roofId?: string } | null;
-  setRoofSettingsTarget: (t: { buildingId: string; edgeRange: number[]; roofId?: string } | null) => void;
+  // 屋根なぞり入力 (= R-1e-fix: キャラ歩き方式)
+  /** 壁の上を歩く途中の状態。start→end(周方向 forward) の弧が屋根区間。roof モード外では null。 */
+  roofWalk: { buildingId: string; startArc: number; endArc: number } | null;
+  setRoofWalk: (w: { buildingId: string; startArc: number; endArc: number } | null) => void;
+  /** 屋根設定モーダルの対象。roofId 有=既存編集、無=新規追加。span=対象の壁区間。 */
+  roofSettingsTarget: { buildingId: string; span: WallSpan; roofId?: string } | null;
+  setRoofSettingsTarget: (t: { buildingId: string; span: WallSpan; roofId?: string } | null) => void;
   // 立面ビュー (= E-4)
   addElevationView: (v: ElevationView) => void;
   /** 複数ビューを 1 回の pushHistory で追加（4面一括配置用。同一面は置換）。 */
@@ -541,7 +548,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     isRidgeLineMode: false,
     ridgeInputLineId: null,
     ridgeDraft: null,
-    roofDraftEdges: null,
+    roofWalk: null,
     roofSettingsTarget: null,
     pinAnchor: null,
     pinDraftOffset: null,
@@ -571,7 +578,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   }),
 
   mode: 'view',  // 図面を開いた直後は閲覧モード (= 何も触れない)、 ユーザが明示的にボタン押下で遷移
-  setMode: (mode) => set({ mode, selectedIds: [], roofDraftEdges: null }),
+  setMode: (mode) => set({ mode, selectedIds: [], roofWalk: null }),
   buildingInputMethod: 'template',
   setBuildingInputMethod: (m) => set({ buildingInputMethod: m }),
   isMagnetPinMode: false,
@@ -1382,8 +1389,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
-  roofDraftEdges: null,
-  setRoofDraftEdges: (d) => set({ roofDraftEdges: d }),
+  roofWalk: null,
+  setRoofWalk: (w) => set({ roofWalk: w }),
   roofSettingsTarget: null,
   setRoofSettingsTarget: (t) => set({ roofSettingsTarget: t }),
 

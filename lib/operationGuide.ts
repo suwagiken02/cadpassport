@@ -36,8 +36,8 @@ export type GuideState = {
   directionPointCount: number;
   /** 選択モードが有効か（mode==='select' のとき）。 */
   selectActive: boolean;
-  /** 屋根なぞり入力で選択中の辺数（mode==='roof' のとき。0=なぞり開始前）。 */
-  roofDraftEdgeCount: number;
+  /** 屋根なぞり入力で壁の上を歩行中か（mode==='roof' のとき。false=始点タップ前）。 */
+  roofWalkActive: boolean;
 };
 
 /**
@@ -82,9 +82,9 @@ export function getOperationGuide(s: GuideState): string | null {
     case 'obstacle': return '障害物を配置する位置をタップしてください';
     case 'memo': return 'メモを配置する位置をタップしてください';
     case 'roof':
-      return s.roofDraftEdgeCount === 0
-        ? '屋根をかける壁をなぞってください（建物をタップで全体に屋根）'
-        : '続けて壁を選択し、「確定」ボタンで屋根を作成してください';
+      return !s.roofWalkActive
+        ? '屋根の始点を壁の上でタップしてください（建物をタップで全体に屋根）'
+        : '方向と距離で壁沿いに進み、「確定」で屋根を設定してください';
     case 'select': return s.selectActive ? 'オブジェクトをタップ、またはドラッグで範囲選択してください' : null;
     case 'move-select': return null; // moveSelectActive 側で扱う
     case 'view': return null;        // 閲覧中（ツール未選択）はガイド非表示

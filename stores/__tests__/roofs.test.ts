@@ -26,7 +26,7 @@ describe('canvasStore: roofs lift (R-1d)', () => {
     const rs = roofs();
     expect(rs).toHaveLength(1);
     expect(rs[0].buildingId).toBe('B');
-    expect(rs[0].edgeRange).toEqual([0, 1, 2, 3]);
+    expect(rs[0].span?.full).toBe(true); // 全周屋根として lift
     expect(rs[0].edgeOverhangsMm).toEqual({ 0: 600, 1: 600, 2: 600, 3: 600 });
   });
 

@@ -51,18 +51,34 @@ export type RoofOverhang = {
   overhangMm: number;
 };
 
-// === 屋根（独立オブジェクト・R-1d） ===
+// === 屋根（独立オブジェクト・R-1d / R-1e-fix） ===
+/**
+ * 壁外周上の連続区間（周方向 forward = 辺 index 増加・arc 増加方向に start→end）。
+ * 辺の途中で始まり/終われる（下屋が壁の途中で切れるケース）。R-1e-fix のキャラ歩き入力の結果。
+ * (startEdge,startT) から周方向に (endEdge,endT) までの弧を屋根区間とする。full=全周。
+ */
+export type WallSpan = {
+  startEdge: number;
+  startT: number;
+  endEdge: number;
+  endT: number;
+  /** 全周（start==end の縮退回避）。true のとき start/end は無視して外周一周。 */
+  full?: boolean;
+};
+
 /**
  * 独立した屋根オブジェクト。1 建物に複数（大屋根＋下屋）持てる。
- * edgeRange = 対象の壁辺 index 列（building.points の辺 index。全周なら全辺）。
+ * span = 対象の壁外周区間（辺の途中対応・R-1e-fix）。旧 edgeRange は normalize で span へ変換。
  * 出幅は全辺共通 uniformMm、辺別は edgeOverhangsMm（指定辺は uniform より優先）。
  * 旧 BuildingShape.roof(RoofConfig) は normalize 時に本型へ lift される（R-1d）。
  */
 export type Roof = {
   id: string;
   buildingId: string;
-  /** 対象壁辺の index 列（building.points の辺 index）。 */
-  edgeRange: number[];
+  /** 対象の壁外周区間（R-1e-fix）。未設定の旧データは edgeRange から変換される。 */
+  span?: WallSpan;
+  /** @deprecated R-1e の辺 index 列。R-1e-fix で span に統合。読み込み互換のため残置。 */
+  edgeRange?: number[];
   /** 屋根形状（立面の見え方ヒント）。 */
   roofShape: 'hip' | 'gable' | 'flat' | 'shed';
   /** 全辺共通の出幅(mm)。 */
