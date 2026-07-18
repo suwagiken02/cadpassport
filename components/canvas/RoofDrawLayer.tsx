@@ -15,13 +15,16 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
 import { findClosestOutlineEdge } from '@/lib/konva/heightMarkerUtils';
-import { posToArc, pointAtArc, spanPolylinePoints, fullSpan, walkDirectionsAt, stepToVertex, perimeterGrid } from '@/lib/konva/roofSpan';
+import { getAllExistingVertices } from '@/lib/konva/snapUtils';
+import { posToArc, pointAtArc, spanPolylinePoints, fullSpan, walkDirectionsAt, stepToVertex, perimeterGrid, snapArcToVertex } from '@/lib/konva/roofSpan';
 import { walkToSpan } from '@/lib/konva/roofDraw';
 import DirectionPad, { type PadDir } from './DirectionPad';
 import type { Point } from '@/types';
 
 const HILITE_COLOR = '#F59E0B';
+const GUIDE_COLOR = '#F97316';
 const EDGE_HIT_PX = 18;
+const VERTEX_SNAP_PX = 22;
 
 export default function RoofDrawLayer() {
   const {
@@ -48,7 +51,8 @@ export default function RoofDrawLayer() {
     if (edgeHit) {
       const b = canvasData.buildings.find((bb) => bb.id === edgeHit.buildingId);
       if (!b) return;
-      const arc = posToArc(b, edgeHit.edgeIndex, edgeHit.t);
+      // 角付近タップは頂点へ吸着（角で正しい2方向を出す・R-1e-fix3）。辺の中央付近はそのまま辺途中に置ける。
+      const arc = snapArcToVertex(b, posToArc(b, edgeHit.edgeIndex, edgeHit.t), VERTEX_SNAP_PX / gridPx);
       setRoofWalk({ buildingId: b.id, startArc: arc, endArc: arc }); // 始点（キャラ出現）
       return;
     }
@@ -93,6 +97,21 @@ export default function RoofDrawLayer() {
         <Line key={`roofdraw-outline-${b.id}`} points={b.points.flatMap((p) => [sx(p.x), sy(p.y)])}
           closed stroke="#888780" strokeWidth={1} dash={[4, 4]} opacity={0.3} listening={false} />
       ))}
+
+      {/* 交点ガイド（歩行中・壁方向入力と同じオレンジ破線。全頂点のユニーク X/Y の延長線）R-1e-fix3 */}
+      {roofWalk && (() => {
+        const verts = getAllExistingVertices(canvasData.buildings, canvasData.obstacles);
+        const xs = Array.from(new Set(verts.map((v) => v.x)));
+        const ys = Array.from(new Set(verts.map((v) => v.y)));
+        return (
+          <>
+            {xs.map((gx, i) => { const X = sx(gx); return (X < -10 || X > canvasSize.width + 10) ? null : (
+              <Line key={`rg-x-${i}`} points={[X, 0, X, canvasSize.height]} stroke={GUIDE_COLOR} strokeWidth={1} opacity={0.5} dash={[6, 6]} listening={false} />); })}
+            {ys.map((gy, i) => { const Y = sy(gy); return (Y < -10 || Y > canvasSize.height + 10) ? null : (
+              <Line key={`rg-y-${i}`} points={[0, Y, canvasSize.width, Y]} stroke={GUIDE_COLOR} strokeWidth={1} opacity={0.5} dash={[6, 6]} listening={false} />); })}
+          </>
+        );
+      })()}
 
       {/* 歩いた区間のハイライト */}
       {covered.length >= 2 && (

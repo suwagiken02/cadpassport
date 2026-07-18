@@ -61,6 +61,21 @@ export function posToArc(building: BuildingShape, edge: number, t: number): numb
   return cum[edge] + t * len[edge];
 }
 
+/**
+ * arc を最寄りの頂点 arc に吸着（周方向 wrap 考慮）。閾値(グリッド)内に頂点があればその arc、
+ * 無ければ元の arc（辺の途中）を返す。角タップを頂点に載せ、角で正しい2方向を出すため（R-1e-fix3）。
+ */
+export function snapArcToVertex(building: BuildingShape, arc: number, thresholdGrid: number): number {
+  const { cum, perim } = arcTable(building);
+  const a = mod(arc, perim);
+  let best = a, bestD = Infinity;
+  for (const v of cum) {
+    const d = Math.min(Math.abs(a - v), perim - Math.abs(a - v));
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  return bestD <= thresholdGrid ? best : a;
+}
+
 /** arc-length → 辺位置(edge,t)。境界は次辺 t=0 に寄せる。 */
 export function arcToPos(building: BuildingShape, arc: number): { edge: number; t: number } {
   const { cum, perim } = arcTable(building);

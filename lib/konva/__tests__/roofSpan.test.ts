@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, WallSpan } from '@/types';
+import type { BuildingShape as BS } from '@/types';
 import {
   perimeterGrid, posToArc, arcToPos, fullSpan, edgeRangeToSpan,
   spanSegments, spanCoveredEdges, spanPolylinePoints, offsetSpanPolyline, spanEquals,
-  walkDirectionsAt, stepToVertex,
+  walkDirectionsAt, stepToVertex, snapArcToVertex,
 } from '../roofSpan';
 
 // RECT: e0 (0,0)->(360,0) len360, e1 ->(360,540) len540, e2 ->(0,540) len360, e3 ->(0,0) len540。
@@ -90,6 +91,46 @@ describe('walkDirectionsAt / stepToVertex (R-1e-fix2)', () => {
     expect(stepToVertex(RECT, 180, -1)).toBeCloseTo(180, 6);
     expect(stepToVertex(RECT, 360, 1)).toBeCloseTo(540, 6); // 辺1の長さ
     expect(stepToVertex(RECT, 360, -1)).toBeCloseTo(360, 6); // 辺0の長さ
+  });
+});
+
+describe('walkDirectionsAt: 4つの角で正しい2方向のみ (R-1e-fix3)', () => {
+  // 座標系: 画面 y は下向き（点の y が大きいほど下）。RECT は時計回り。
+  // 角では「その角に集まる2つの壁」の向き＝互いに直交する2方向だけが出る。
+  const dirs = (arc: number) => walkDirectionsAt(RECT, arc).map((d) => d.compass).sort();
+  it('左上角(0,0): 右(辺0)と下(辺3を戻る)', () => {
+    expect(dirs(0)).toEqual(['down', 'right']);
+  });
+  it('右上角(360,0): 下(辺1)と左(辺0を戻る)', () => {
+    expect(dirs(360)).toEqual(['down', 'left']);
+  });
+  it('右下角(360,540): 左(辺2)と上(辺1を戻る) ← 症状の角。↑が出る', () => {
+    expect(dirs(900)).toEqual(['left', 'up']);
+  });
+  it('左下角(0,540): 上(辺3)と右(辺2を戻る)', () => {
+    expect(dirs(1260)).toEqual(['right', 'up']);
+  });
+});
+
+describe('walkDirectionsAt: L字の入隅角 (R-1e-fix3)', () => {
+  // L字(時計回り): (0,0)-(360,0)-(360,180)-(180,180)-(180,360)-(0,360)。
+  //   e0右, e1下, e2左, e3下, e4左, e5上。入隅=(180,180)（凹角）。
+  const L: BS = { id: 'L', type: 'polygon', fill: '#000',
+    points: [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 180 }, { x: 180, y: 180 }, { x: 180, y: 360 }, { x: 0, y: 360 }] };
+  const arcAt = (edge: number, t: number) => posToArc(L, edge, t);
+  it('入隅(180,180)=辺3始点: 下(辺3)と右(辺2を戻る)の2方向', () => {
+    // 辺2は(360,180)→(180,180)で左向き。入隅で戻る＝右。辺3は(180,180)→(180,360)で下向き。
+    expect(walkDirectionsAt(L, arcAt(3, 0)).map((d) => d.compass).sort()).toEqual(['down', 'right']);
+  });
+});
+
+describe('snapArcToVertex (R-1e-fix3)', () => {
+  it('角付近(下辺 t=0.02 → arc 907.2)は右下頂点 arc 900 へ吸着', () => {
+    expect(snapArcToVertex(RECT, posToArc(RECT, 2, 0.02), 22)).toBe(900);
+  });
+  it('辺の中央付近は吸着しない（辺途中を維持）', () => {
+    const mid = posToArc(RECT, 2, 0.5); // 1080
+    expect(snapArcToVertex(RECT, mid, 22)).toBe(mid);
   });
 });
 
