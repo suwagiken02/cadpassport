@@ -244,7 +244,8 @@ export default function EditorPage() {
         .single();
 
       if (drawing) {
-        setCanvasData(drawing.canvas_data as CanvasData);
+        // E-7-fix2: このデータがどの図面のものかを宣言（保存時の取り違えガード）。
+        setCanvasData(drawing.canvas_data as CanvasData, drawingId);
         setProjectId(drawing.project_id);
         setDrawingTitle(drawing.title);
         if (drawing.projects) {
@@ -276,25 +277,24 @@ export default function EditorPage() {
   const handleSave = useCallback(async () => {
     if (!drawingId) return;
     setSaveStatus('saving');
-    const { error } = await supabase
-      .from('drawings')
-      .update({
-        canvas_data: canvasData as unknown as Record<string, unknown>,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', drawingId);
+    // E-7-fix2: ページ遷移中(id とデータが不一致)や、空データでの上書きはガードで中断する。
+    const { saveDrawingCanvas } = await import('@/lib/pages/pageSave');
+    const res = await saveDrawingCanvas(
+      drawingId, canvasData, useCanvasStore.getState().loadedDrawingId,
+    );
 
     // プロジェクトのupdated_atも更新
     const projectId = useCanvasStore.getState().projectId;
-    if (projectId) {
+    if (res.ok && projectId) {
       await supabase
         .from('projects')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', projectId);
     }
 
-    setSaveStatus(error ? 'error' : 'saved');
-    if (!error) useCanvasStore.setState({ isDirty: false });
+    setSaveStatus(res.ok ? 'saved' : 'error');
+    if (res.ok) useCanvasStore.setState({ isDirty: false });
+    else useCanvasStore.getState().setAlertMessage(`保存できませんでした\n\n${res.message}`);
     setTimeout(() => setSaveStatus('idle'), 2000);
   }, [drawingId, canvasData, setSaveStatus]);
 

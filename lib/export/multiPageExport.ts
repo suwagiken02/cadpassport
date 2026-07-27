@@ -57,6 +57,9 @@ export async function exportAllPagesToPdf(opts: {
   const savedDirty = s0.isDirty;
   const savedSelectedIds = s0.selectedIds;
   const currentDrawingId = s0.drawingId;
+  // E-7-fix2: 差し替え中は「メモリ上のデータは表示中ページのものではない」状態になるため、
+  //   所属図面 id を退避して finally で戻す（出力中に保存が走っても取り違えない）。
+  const savedLoadedId = s0.loadedDrawingId;
 
   const pdfDoc = await PDFDocument.create();
   try {
@@ -70,7 +73,7 @@ export async function exportAllPagesToPdf(opts: {
       const isCurrent = p.id === currentDrawingId;
       if (isCurrent) {
         // 表示中ページ: 画面に出ているものをそのまま出す（未保存の編集を落とさない）。
-        useCanvasStore.setState({ canvasData: savedCanvasData });
+        useCanvasStore.setState({ canvasData: savedCanvasData, loadedDrawingId: savedLoadedId });
       } else {
         useCanvasStore.getState().setCanvasData(p.canvas_data as CanvasData);
       }
@@ -96,6 +99,7 @@ export async function exportAllPagesToPdf(opts: {
       canvasData: savedCanvasData,
       isDirty: savedDirty,
       selectedIds: savedSelectedIds,
+      loadedDrawingId: savedLoadedId,
     });
     await nextPaint();
   }

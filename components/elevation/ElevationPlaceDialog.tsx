@@ -17,6 +17,7 @@ import { buildFaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import { faceElevationToPrimitives, initialPlacementOrigin } from '@/lib/konva/elevation/elevationToObjects';
 import { computeQuadLayout, elevationPrimitivesBounds, type FaceKey } from '@/lib/pages/quadLayout';
 import { sortPages, nextPageTitle, type PageMeta } from '@/lib/pages/pageOps';
+import { saveCurrentPageIfDirty } from '@/lib/pages/pageSave';
 import type { CanvasData, ElevationView, Point } from '@/types';
 import type { PillarType } from '@/lib/konva/calculator';
 
@@ -117,6 +118,14 @@ export default function ElevationPlaceDialog({
           .insert({ project_id: projectId, title: newTitle.trim() || '立面図', canvas_data: merged as unknown as Record<string, unknown> })
           .select('id').single();
         if (error || !data) { alert(`ページ作成エラー: ${error?.message ?? '不明'}`); return; }
+        // E-7-fix2: 新ページへ移る前に現ページの未保存変更を保存する。
+        //   タブ切替(handleSwitch)は保存してから遷移していたが、この経路だけ抜けていたため
+        //   「新ページはできるが、元いたページの編集内容が消える」データ消失になっていた。
+        const saved = await saveCurrentPageIfDirty();
+        if (!saved.ok) {
+          alert(`元のページを保存できませんでした。配置を中止します。\n${saved.message}`);
+          return;
+        }
         router.push(`/editor/${data.id}`);
       } else {
         const views = buildViews(baseOther);

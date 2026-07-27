@@ -22,6 +22,7 @@ import {
   nextActiveAfterDelete,
   type PageMeta,
 } from '@/lib/pages/pageOps';
+import { saveCurrentPageIfDirty } from '@/lib/pages/pageSave';
 
 /** 新規空ページの canvas_data（projects の blankCanvasData と同一テンプレ）。 */
 function blankPageCanvasData() {
@@ -58,15 +59,11 @@ export default function PageTabsContainer() {
     if (projectId) loadPages(projectId);
   }, [projectId, loadPages]);
 
-  /** 現ページに未保存変更があれば保存（切替前に呼ぶ）。 */
+  /** 現ページに未保存変更があれば保存（切替前に呼ぶ）。
+   *  E-7-fix2: 保存は pageSave の1経路へ集約（ページ遷移中の取り違え・空上書きをガード）。 */
   const saveCurrent = useCallback(async () => {
-    const s = useCanvasStore.getState();
-    if (!s.drawingId || !s.isDirty) return;
-    await supabase
-      .from('drawings')
-      .update({ canvas_data: s.canvasData as unknown as Record<string, unknown>, updated_at: new Date().toISOString() })
-      .eq('id', s.drawingId);
-    useCanvasStore.setState({ isDirty: false });
+    const res = await saveCurrentPageIfDirty();
+    if (!res.ok) alert(`保存できませんでした: ${res.message}`);
   }, []);
 
   const goToPage = useCallback((id: string) => router.push(`/editor/${id}`), [router]);

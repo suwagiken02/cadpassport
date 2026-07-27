@@ -103,7 +103,14 @@ type CanvasStore = {
 
   // Canvas data
   canvasData: CanvasData;
-  setCanvasData: (data: CanvasData) => void;
+  setCanvasData: (data: CanvasData, loadedDrawingId?: string | null) => void;
+  /**
+   * いま canvasData に入っているデータがどの図面のものか (E-7-fix2)。
+   * ページ遷移直後は drawingId だけ先に新ページへ変わり、canvasData は非同期ロードが終わるまで
+   * 前ページのものが残る。その窓で保存すると別ページの内容を書き込んでしまうため、
+   * 保存側はこれと drawingId の一致を確認する。null = どの図面のものか不明(保存禁止)。
+   */
+  loadedDrawingId: string | null;
   /** 寸法線オフセット mm 更新 (= 寸法線移動、 種別ごと相対 delta) */
   setDimensionOffsetMm: (key: DimensionLineKey, mm: number) => void;
   /** 現場切替時の作業 state 一括リセット (= #5、 modal/mode/selection/preview/history 等を初期化、 表示トグル/部材選択値/zoom 等は維持) */
@@ -486,7 +493,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setProjectId: (id) => set({ projectId: id }),
 
   canvasData: createEmptyCanvasData(),
-  setCanvasData: (data) => set({ canvasData: normalizeCanvasData(data), isDirty: false }),
+  loadedDrawingId: null,
+  // E-7-fix2: 第2引数でこのデータの所属図面を宣言する。省略時は null=所属不明(保存ガードが働く)。
+  setCanvasData: (data, loadedDrawingId = null) => set({
+    canvasData: normalizeCanvasData(data), isDirty: false, loadedDrawingId,
+  }),
   setDimensionOffsetMm: (key, mm) => {
     const { canvasData, pushHistory } = get();
     pushHistory();
@@ -497,6 +508,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   resetForDrawingChange: () => set({
+    // E-7-fix2: 遷移を始めた時点で「メモリ上のデータは新ページのものではない」と宣言する。
+    //   ロード完了(setCanvasData)まで保存が走っても別ページの内容を書き込まない。
+    loadedDrawingId: null,
     // modal フラグ
     showAreaCalcModal: false,
     showMemoCreateModal: false,
