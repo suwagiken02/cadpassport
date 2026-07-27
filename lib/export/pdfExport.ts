@@ -43,9 +43,16 @@ export function getPrintAreaGrid(
   };
 }
 
+/** PDF のファイル名（E-7: 全ページ出力は「図面一式」）。 */
+export function pdfFileName(siteName?: string, allPages = false): string {
+  const base = siteName || '図面';
+  return allPages ? `${base}_図面一式.pdf` : `${base}_平面図.pdf`;
+}
+
 /**
  * 表題欄をCanvas で画像化して PNG ArrayBuffer を返す。
  * 平米計算 PDF 出力 (= Phase E-4b) でも共用するため named export。
+ * pageLabel (= E-7、 多ページ出力時のページ名) は右上に小さく入れる。未指定なら従来表示のまま。
  */
 export function renderTitleBlock(
   siteName: string,
@@ -54,6 +61,7 @@ export function renderTitleBlock(
   scaleLabel: string,
   width: number,
   height: number,
+  pageLabel?: string,
 ): ArrayBuffer {
   const dpr = 2;
   const canvas = document.createElement('canvas');
@@ -75,6 +83,7 @@ export function renderTitleBlock(
 
   ctx.fillStyle = '#000';
   ctx.font = 'bold 14px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'left';
   ctx.fillText(siteName || '', 8, 22);
 
   ctx.fillStyle = '#555';
@@ -84,6 +93,14 @@ export function renderTitleBlock(
   ctx.fillStyle = '#888';
   ctx.font = '10px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif';
   ctx.fillText(date || '', 8, height - 8);
+
+  if (pageLabel) {
+    // ページ名は表題欄の右上（現場名の行の右端）。長い名前は省略せず small font で収める。
+    ctx.fillStyle = '#555';
+    ctx.font = '10px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(pageLabel, width - 8, 20);
+  }
 
   if (scaleLabel) {
     ctx.fillStyle = '#888';
@@ -101,15 +118,26 @@ export function renderTitleBlock(
   return bytes.buffer;
 }
 
-export const exportToPdf = async (
-  canvasData: CanvasData,
-  settings: ExportSettings,
-  printAreaCenter: { x: number; y: number } | null,
-  zoom: number,
-  panX: number,
-  panY: number,
-): Promise<void> => {
-  const pdfDoc = await PDFDocument.create();
+/** 1 ページ分の描画に必要な入力（E-7: 多ページ出力はこれをページごとに渡す）。 */
+export type PdfPageOptions = {
+  canvasData: CanvasData;
+  settings: ExportSettings;
+  printAreaCenter: { x: number; y: number } | null;
+  zoom: number;
+  panX: number;
+  panY: number;
+  /** 表題欄に入れるページ名（多ページ出力時のみ）。 */
+  pageLabel?: string;
+};
+
+/**
+ * 既存 PDFDocument に 1 ページ追加して描画する（E-7-1 で exportToPdf から分解）。
+ * 中身は従来の exportToPdf と同一: 紙面グリッド → Konva ステージの印刷枠切り出し → 表題欄 → 方位磁石。
+ * キャプチャ元は表示中のステージ (Konva.stages[0]) なので、呼び出し側で対象ページを表示し、
+ * 印刷枠がビューポートに収まるビューへ寄せてから呼ぶこと（exportViewport.withFittedPrintView）。
+ */
+export async function renderPdfPage(pdfDoc: PDFDocument, o: PdfPageOptions): Promise<void> {
+  const { canvasData, settings, printAreaCenter, zoom, panX, panY, pageLabel } = o;
   const paperDim = PAPER_DIMENSIONS[settings.paperSize] || PAPER_DIMENSIONS.A4_landscape;
   const page = pdfDoc.addPage([paperDim.width, paperDim.height]);
 
@@ -261,6 +289,7 @@ export const exportToPdf = async (
     settings.date || '',
     scaleLabel,
     tbWidthPx, tbHeightPx,
+    pageLabel,
   );
   const tbImage = await pdfDoc.embedPng(tbImageBytes);
 
@@ -319,16 +348,32 @@ export const exportToPdf = async (
     size: 7,
     color: rgb(0.9, 0.24, 0.18),
   });
+}
 
-  // ── ダウンロード ──
+/** PDFDocument を保存してダウンロードさせる（E-7-1 で分解・多ページ出力と共用）。 */
+export async function downloadPdf(pdfDoc: PDFDocument, filename: string): Promise<void> {
   const pdfBytes = await pdfDoc.save();
   const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.download = `${settings.siteName || '図面'}_平面図.pdf`;
+  link.download = filename;
   link.href = url;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+/** 現在表示中のページ 1 枚を PDF 出力する（従来どおり）。 */
+export const exportToPdf = async (
+  canvasData: CanvasData,
+  settings: ExportSettings,
+  printAreaCenter: { x: number; y: number } | null,
+  zoom: number,
+  panX: number,
+  panY: number,
+): Promise<void> => {
+  const pdfDoc = await PDFDocument.create();
+  await renderPdfPage(pdfDoc, { canvasData, settings, printAreaCenter, zoom, panX, panY });
+  await downloadPdf(pdfDoc, pdfFileName(settings.siteName));
 };

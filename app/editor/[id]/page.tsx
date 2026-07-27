@@ -307,21 +307,23 @@ export default function EditorPage() {
           await exportToPng(siteName);
         } else if (settings.format === 'pdf') {
           const { exportToPdf } = await import('@/lib/export/pdfExport');
+          const { withFittedPrintView } = await import('@/lib/export/exportViewport');
           const store = useCanvasStore.getState();
-          await exportToPdf(
-            canvasData,
-            {
-              format: 'pdf',
-              paperSize: settings.paperSize,
-              scale: settings.scale,
-              companyName: useAuthStore.getState().profile?.company_name || '',
-              siteName,
-              date: new Date().toLocaleDateString('ja-JP'),
-            },
-            store.printAreaCenter,
-            store.zoom,
-            store.panX,
-            store.panY,
+          const pdfSettings = {
+            format: 'pdf' as const,
+            paperSize: settings.paperSize,
+            scale: settings.scale,
+            companyName: useAuthStore.getState().profile?.company_name || '',
+            siteName,
+            date: new Date().toLocaleDateString('ja-JP'),
+          };
+          // E-7-1: 印刷枠が画面外にはみ出していると、その部分が白紙で出力される（背景・グリッドは
+          //   ビューポート分しか描かれないため）。キャプチャの間だけビューを寄せ、終わったら戻す。
+          await withFittedPrintView(
+            canvasData, settings.paperSize, settings.scale, store.printAreaCenter,
+            (view) => exportToPdf(
+              canvasData, pdfSettings, store.printAreaCenter, view.zoom, view.panX, view.panY,
+            ),
           );
           // PDF 保存完了案内 (= UA 判定で端末別文言)
           const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
