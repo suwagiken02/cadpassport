@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { PaperSize, ScaleOption } from '@/types';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { ExportProgress } from '@/lib/export/multiPageExport';
 
 type Props = {
@@ -50,6 +51,7 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   //   印刷枠を出すのはこのモーダルだけなので、アンマウント時に落として安全。
   useEffect(() => () => {
     const s = useCanvasStore.getState();
+    if (s.pdfWizard) return; // E-7-fix3: 全ページ枠指定ウィザードへ引き継いだときは消さない
     if (s.showPrintArea) s.toggleShowPrintArea();
     s.setPrintAreaCenter(null);
   }, []);
@@ -68,7 +70,32 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
     const vw = canvasSize.width || window.innerWidth;
     const vh = canvasSize.height || (window.innerHeight - 120);
     zoomToFitPrintArea(vw, vh);
+    // E-7-fix3: 全ページはページごとに枠を指定するウィザードへ（このモーダルは閉じる）。
+    //   モーダルのローカル state はページ遷移で消えるため、進行状態は store(pdfWizard) が持つ。
+    if (allPages) { void startWizard(); return; }
     setStep('range');
+  };
+
+  /** 全ページ枠指定ウィザードを開始する（対象ページを取得して store に積む）。 */
+  const startWizard = async () => {
+    const s = useCanvasStore.getState();
+    if (!s.projectId) { alert('プロジェクトが不明です'); return; }
+    const { fetchProjectPages } = await import('@/lib/export/multiPageExport');
+    const { createWizardState } = await import('@/lib/export/pdfWizard');
+    const rows = await fetchProjectPages(s.projectId);
+    const wizard = createWizardState(
+      rows.map((r) => ({ id: r.id, title: r.title })),
+      {
+        paperSize, scale,
+        siteName,
+        companyName: useAuthStore.getState().profile?.company_name || '',
+        date: new Date().toLocaleDateString('ja-JP'),
+      },
+      s.drawingId,
+    );
+    if (!wizard) { alert('出力できるページがありません'); return; }
+    useCanvasStore.getState().setPdfWizard(wizard);
+    onClose(); // 以降の進行は PdfPageWizardBar
   };
 
   // ステップ2: 出力実行

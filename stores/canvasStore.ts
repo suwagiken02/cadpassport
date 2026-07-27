@@ -226,6 +226,10 @@ type CanvasStore = {
   /** 印刷枠の中心位置（グリッド座標、null=建物中心に自動配置） */
   printAreaCenter: { x: number; y: number } | null;
   setPrintAreaCenter: (p: { x: number; y: number } | null) => void;
+  /** 全ページ PDF の枠指定ウィザード (= E-7-fix3、 null=非実行)。ページ遷移をまたぐため store 管理。 */
+  pdfWizard: import('@/lib/export/pdfWizard').PdfWizardState | null;
+  setPdfWizard: (w: import('@/lib/export/pdfWizard').PdfWizardState | null) => void;
+  updatePdfWizard: (patch: Partial<import('@/lib/export/pdfWizard').PdfWizardState>) => void;
 
   // Measurement
   isMeasuring: boolean;
@@ -507,10 +511,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
-  resetForDrawingChange: () => set({
+  resetForDrawingChange: () => set((s) => ({
     // E-7-fix2: 遷移を始めた時点で「メモリ上のデータは新ページのものではない」と宣言する。
     //   ロード完了(setCanvasData)まで保存が走っても別ページの内容を書き込まない。
     loadedDrawingId: null,
+    // E-7-fix3: 全ページ PDF のウィザード中はページを渡り歩いて枠を指定するので、
+    //   印刷枠の表示だけは維持する（通常のページ切替では従来どおり消す・E-7-fix）。
+    showPrintArea: s.pdfWizard != null,
     // modal フラグ
     showAreaCalcModal: false,
     showMemoCreateModal: false,
@@ -586,11 +593,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // 平米計算 offset / 印刷枠
     areaCalcOffsetMm: 900,
     printAreaCenter: null,
-    // E-7-fix: 印刷枠の表示も必ず消す。store は SPA セッション中ずっと生きているため、
+    // E-7-fix: 印刷枠の表示は原則消す（store は SPA セッション中ずっと生きているため、
     //   範囲指定中に離脱すると showPrintArea が true のまま残り、別の現場・新規現場にも
-    //   赤破線が出続けていた（printAreaCenter だけ戻しても枠は建物中心にフォールバックして描かれる）。
-    showPrintArea: false,
-  }),
+    //   赤破線が出続けていた）。ウィザード中だけは上の showPrintArea で維持する。
+  })),
 
   mode: 'view',  // 図面を開いた直後は閲覧モード (= 何も触れない)、 ユーザが明示的にボタン押下で遷移
   // R-1k: 建物モードを離れるときは方向入力の対象種別を既定へ戻す。屋根描きを他ボタンで中断すると
@@ -733,6 +739,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setPrintScale: (s) => set({ printScale: s }),
   printAreaCenter: null,
   setPrintAreaCenter: (p) => set({ printAreaCenter: p }),
+  pdfWizard: null,
+  setPdfWizard: (w) => set({ pdfWizard: w }),
+  updatePdfWizard: (patch) => set((s) => (s.pdfWizard ? { pdfWizard: { ...s.pdfWizard, ...patch } } : {})),
 
   isMeasuring: false,
   measurePoint1: null,

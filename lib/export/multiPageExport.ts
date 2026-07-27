@@ -46,9 +46,11 @@ export async function fetchProjectPages(projectId: string): Promise<PageRow[]> {
 export async function exportAllPagesToPdf(opts: {
   projectId: string;
   settings: ExportSettings;
+  /** E-7-fix3: pageId → 枠中心（ウィザードで指定したページのみ）。未指定ページは建物 bbox 中心。 */
+  centers?: Record<string, { x: number; y: number }>;
   onProgress?: (p: ExportProgress) => void;
 }): Promise<number> {
-  const { projectId, settings, onProgress } = opts;
+  const { projectId, settings, centers, onProgress } = opts;
   const pages = await fetchProjectPages(projectId);
   if (pages.length === 0) return 0;
 
@@ -80,7 +82,8 @@ export async function exportAllPagesToPdf(opts: {
       await nextPaint();
 
       const cv = useCanvasStore.getState().canvasData;
-      const center = isCurrent ? useCanvasStore.getState().printAreaCenter : null;
+      // 枠中心の優先順: ウィザードでこのページに指定された中心 → 表示中ページの現在の指定 → null(bbox 中心)。
+      const center = centers?.[p.id] ?? (isCurrent ? useCanvasStore.getState().printAreaCenter : null);
       await withFittedPrintView(cv, settings.paperSize, settings.scale, center, (view) =>
         renderPdfPage(pdfDoc, {
           canvasData: cv,
