@@ -3,13 +3,14 @@ import Konva from 'konva';
 import { CanvasData, ExportSettings } from '@/types';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 
-/** 用紙サイズ (pt, 72pt=1inch) */
-const PAPER_DIMENSIONS: Record<string, { width: number; height: number }> = {
-  A4_portrait: { width: 595.28, height: 841.89 },
-  A4_landscape: { width: 841.89, height: 595.28 },
-  A3_portrait: { width: 841.89, height: 1190.55 },
-  A3_landscape: { width: 1190.55, height: 841.89 },
-};
+// 用紙サイズ・表題欄・方位記号の実寸は pdfLayout.ts と単一ソース（画面プレビューと共有・E-7-fix4）。
+import {
+  PAPER_DIMENSIONS_PT as PAPER_DIMENSIONS,
+  PDF_MARGIN_PT,
+  PDF_TITLE_BLOCK_RESERVE_PT,
+  TITLE_BLOCK_PT,
+  COMPASS_PT,
+} from './pdfLayout';
 
 /** 用紙の実寸 (mm) */
 const PAPER_MM: Record<string, { width: number; height: number }> = {
@@ -141,8 +142,8 @@ export async function renderPdfPage(pdfDoc: PDFDocument, o: PdfPageOptions): Pro
   const paperDim = PAPER_DIMENSIONS[settings.paperSize] || PAPER_DIMENSIONS.A4_landscape;
   const page = pdfDoc.addPage([paperDim.width, paperDim.height]);
 
-  const marginPt = 20;
-  const titleBlockPt = 50;
+  const marginPt = PDF_MARGIN_PT;
+  const titleBlockPt = PDF_TITLE_BLOCK_RESERVE_PT;
   const drawableWidthPt = paperDim.width - marginPt * 2;
   const drawableHeightPt = paperDim.height - marginPt * 2 - titleBlockPt;
   const drawableX = marginPt;
@@ -293,8 +294,8 @@ export async function renderPdfPage(pdfDoc: PDFDocument, o: PdfPageOptions): Pro
   );
   const tbImage = await pdfDoc.embedPng(tbImageBytes);
 
-  const tbPdfWidth = 200;
-  const tbPdfHeight = tbPdfWidth * (tbHeightPx / tbWidthPx);
+  const tbPdfWidth = TITLE_BLOCK_PT.width;
+  const tbPdfHeight = TITLE_BLOCK_PT.height; // = tbPdfWidth * (tbHeightPx / tbWidthPx)
   page.drawImage(tbImage, {
     x: drawableX + drawableWidthPt - tbPdfWidth,
     y: marginPt,
@@ -303,8 +304,8 @@ export async function renderPdfPage(pdfDoc: PDFDocument, o: PdfPageOptions): Pro
   });
 
   // ── 方位磁石（表題欄の左、 canvasData.compass.angle で回転） ──
-  const compassRadius = 18;
-  const compassMargin = 12;
+  const compassRadius = COMPASS_PT.radius;
+  const compassMargin = COMPASS_PT.margin;
   const compassCx = drawableX + drawableWidthPt - tbPdfWidth - compassMargin - compassRadius;
   const compassCy = marginPt + compassRadius;
   // 0-360 度に正規化 (= undefined 互換)

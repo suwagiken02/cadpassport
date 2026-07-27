@@ -34,6 +34,7 @@ import { useCanvasInteraction } from '@/lib/konva/useCanvasInteraction';
 import { mmToGrid } from '@/lib/konva/gridUtils';
 import { getAllExistingVertices } from '@/lib/konva/snapUtils';
 import { getPrintAreaGrid } from '@/lib/export/pdfExport';
+import { titleBlockFrameRect, compassFrameRect } from '@/lib/export/pdfLayout';
 import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon } from '@/lib/konva/heightMarkerUtils';
 import { resolveFloorScope } from '@/lib/konva/floorScope';
 
@@ -841,20 +842,54 @@ export default function GridCanvas({ width, height }: Props) {
         const px = centerGrid.x * gridPx + panX - pw / 2;
         const py = centerGrid.y * gridPx + panY - ph / 2;
 
+        // E-7-fix4: 出力時に右下へ入る表題欄・方位記号の占有位置をプレビュー表示する。
+        //   （図面と重なるかを枠の位置決め中に判断できるようにする。実 PDF には影響しない）
+        const tb = titleBlockFrameRect(printPaperSize);
+        const cp = compassFrameRect(printPaperSize);
+        const rectOf = (f: { xF: number; yF: number; wF: number; hF: number }) => ({
+          x: px + f.xF * pw, y: py + f.yF * ph, width: f.wF * pw, height: f.hF * ph,
+        });
+
         return (
           <Layer>
-            <Rect x={px} y={py} width={pw} height={ph}
-              stroke="#EF4444" strokeWidth={1.5} dash={[8, 4]}
+            {/* 枠・ラベル・占有プレビューを 1 つの Group にしてドラッグに追従させる。 */}
+            <Group
               draggable
               onDragEnd={(e) => {
-                const newCenterX = (e.target.x() + pw / 2 - panX) / gridPx;
-                const newCenterY = (e.target.y() + ph / 2 - panY) / gridPx;
+                const newCenterX = (px + e.target.x() + pw / 2 - panX) / gridPx;
+                const newCenterY = (py + e.target.y() + ph / 2 - panY) / gridPx;
+                e.target.position({ x: 0, y: 0 }); // 位置は store から再計算されるので offset を戻す
                 setPrintAreaCenter({ x: Math.round(newCenterX), y: Math.round(newCenterY) });
               }}
-            />
-            <Text x={px + 4} y={py + 4}
-              text={`${printPaperSize.replace('_', ' ')} S=${printScale}`}
-              fontSize={11} fill="#EF4444" listening={false} />
+            >
+              <Rect x={px} y={py} width={pw} height={ph}
+                stroke="#EF4444" strokeWidth={1.5} dash={[8, 4]}
+              />
+              <Text x={px + 4} y={py + 4}
+                text={`${printPaperSize.replace('_', ' ')} S=${printScale}`}
+                fontSize={11} fill="#EF4444" listening={false} />
+              {tb && (() => {
+                const r = rectOf(tb);
+                const fs = Math.max(7, Math.min(11, r.height * 0.45));
+                return (
+                  <>
+                    <Rect {...r} fill="#EF4444" opacity={0.12} stroke="#EF4444" strokeWidth={1} dash={[4, 3]} listening={false} />
+                    {/* 実際の表題欄は上下 2 段（現場名／会社名・日付）。区切り線で見当を付けやすくする。 */}
+                    <Line points={[r.x, r.y + r.height / 2, r.x + r.width, r.y + r.height / 2]}
+                      stroke="#EF4444" strokeWidth={0.5} opacity={0.5} listening={false} />
+                    <Text x={r.x + 3} y={r.y + r.height / 2 - fs / 2}
+                      text="表題欄" fontSize={fs} fill="#EF4444" opacity={0.9} listening={false} />
+                  </>
+                );
+              })()}
+              {cp && (() => {
+                const r = rectOf(cp);
+                return (
+                  <Circle x={r.x + r.width / 2} y={r.y + r.height / 2} radius={r.width / 2}
+                    fill="#EF4444" opacity={0.12} stroke="#EF4444" strokeWidth={1} listening={false} />
+                );
+              })()}
+            </Group>
           </Layer>
         );
       })()}
