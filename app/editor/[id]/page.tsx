@@ -16,6 +16,7 @@ import FloorSelector from '@/components/toolbar/FloorSelector';
 import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
+import FloorPickerModal from '@/components/canvas/FloorPickerModal';
 import { buildingIdForPolygonOnFloor } from '@/lib/konva/floorScope';
 import { directionInputLabels } from '@/lib/directionInputLabels';
 import UdekiModal from '@/components/scaffold/UdekiModal';
@@ -748,6 +749,8 @@ export default function EditorPage() {
         <DirectionInputModal onClose={() => setShowDirectionInputModal(false)} />
       )}
       <RoofObjectModal />
+      {/* R-1k: 高さ/棟/屋根ツールの起動直後に対象階を訊く（複数階のときのみ） */}
+      <FloorPickerModal />
       <PinDistanceInputModal />
       {(showBuildingModal || showBuildingModalStore) && (
         <BuildingTemplateModal onClose={() => { setShowBuildingModal(false); setShowBuildingModalStore(false); }} />

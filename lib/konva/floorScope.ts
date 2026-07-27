@@ -45,6 +45,25 @@ export function isMultiFloor(buildings: BuildingShape[]): boolean {
 }
 
 /**
+ * 階選択の選択肢[]（上階から降順＝図面の見た目と同じ「上が上階」・FloorSelector と同順）。
+ * 単一階（建物なし含む）では空配列＝選択させない。
+ */
+export function floorChoices(buildings: BuildingShape[]): number[] {
+  const max = maxBuildingFloor(buildings);
+  if (max < 2) return [];
+  return Array.from({ length: max }, (_, i) => max - i);
+}
+
+/**
+ * ツール起動時に「どの階を編集しますか」を訊くべきか（R-1k）。
+ * 複数階のときだけ。単一階では誤爆のしようがないので訊かない（従来の操作感を変えない）。
+ * 1F の外形が 2F を内包する物件で「1F のまま 2F の屋根/高さを作る」誤爆を防ぐのが目的。
+ */
+export function shouldPromptFloor(buildings: BuildingShape[]): boolean {
+  return isMultiFloor(buildings);
+}
+
+/**
  * 入力の対象にする建物[]。指定階に建物があればその階だけ、無ければ全建物（安全側フォールバック）。
  * 高さマーカーのスナップ・中点ガイド・棟/屋根の建物特定はすべてこの1経路を通す。
  */

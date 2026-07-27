@@ -37,14 +37,38 @@ export default function OperationGuideBar() {
     return getOperationGuide(state);
   });
 
-  if (!guide) return null;
+  // R-1k: ツール作業中は「編集中の階」を目立つ位置に出し、その場で階選択に戻れるようにする
+  //   （隅の FloorSelector は気づきにくく、1F のまま 2F の屋根/高さを作る誤爆が起きていた）。
+  const floorTool = useCanvasStore((s) => (
+    s.isHeightMarkerMode ? 'height'
+      : s.isRidgeLineMode ? 'ridge'
+      : (s.pendingTargetType === 'roof' && s.mode === 'building') || s.mode === 'roof' ? 'roof'
+      : null
+  ));
+  const activeFloor = useCanvasStore((s) => s.activeFloor);
+  const multiFloor = useCanvasStore((s) => isMultiFloor(s.canvasData.buildings));
+  const showFloorBadge = floorTool != null && multiFloor;
+
+  if (!guide && !showFloorBadge) return null;
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none max-w-[92%]">
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-dark-surface/90 border border-dark-border shadow-lg backdrop-blur-sm">
-        <span className="text-accent text-xs leading-none">▶</span>
-        <span className="text-canvas text-xs font-bold whitespace-nowrap overflow-hidden text-ellipsis">{guide}</span>
-      </div>
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex flex-col items-center gap-1.5">
+      {guide && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-dark-surface/90 border border-dark-border shadow-lg backdrop-blur-sm pointer-events-none">
+          <span className="text-accent text-xs leading-none">▶</span>
+          <span className="text-canvas text-xs font-bold whitespace-nowrap overflow-hidden text-ellipsis">{guide}</span>
+        </div>
+      )}
+      {showFloorBadge && (
+        <button
+          type="button"
+          onClick={() => useCanvasStore.getState().setFloorPromptTool(floorTool)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent text-white border border-accent shadow-lg text-xs font-bold whitespace-nowrap"
+        >
+          <span>編集中: {activeFloor}F</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">切替</span>
+        </button>
+      )}
     </div>
   );
 }

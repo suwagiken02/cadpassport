@@ -11,6 +11,8 @@ import {
   floorOfBuildingId,
   buildingAtPointOnFloor,
   buildingIdForPolygonOnFloor,
+  floorChoices,
+  shouldPromptFloor,
 } from '../floorScope';
 
 // ============================================================
@@ -46,6 +48,25 @@ describe('R-1h-1: 階の絞り込み', () => {
     expect(floorOfBuildingId(BOTH, 'b2')).toBe(2);
     expect(floorOfBuildingId(BOTH, 'b1')).toBe(1);
     expect(floorOfBuildingId(BOTH, 'gone')).toBeNull();
+  });
+});
+
+// R-1k: ツール起動時の階選択モーダル（1F の外形が 2F を内包する物件での誤爆防止）。
+describe('R-1k: 階選択モーダルの表示条件', () => {
+  it('複数階のときだけ訊く', () => {
+    expect(shouldPromptFloor(BOTH)).toBe(true);
+    expect(shouldPromptFloor([B1F])).toBe(false);
+    expect(shouldPromptFloor([])).toBe(false);
+  });
+
+  it('選択肢は上階から降順（FloorSelector と同順）', () => {
+    expect(floorChoices(BOTH)).toEqual([2, 1]);
+    expect(floorChoices([...BOTH, { ...B2F, id: 'b3', floor: 3 }])).toEqual([3, 2, 1]);
+  });
+
+  it('単一階では選択肢なし（＝訊かない）', () => {
+    expect(floorChoices([B1F])).toEqual([]);
+    expect(floorChoices([])).toEqual([]);
   });
 });
 

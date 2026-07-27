@@ -357,6 +357,9 @@ type CanvasStore = {
   /** 編集対象の階 (= N階一般化 P2、 FloorSelector で切替、 非 active 階は薄表示)。default 1 */
   activeFloor: number;
   setActiveFloor: (f: number) => void;
+  /** 階選択モーダルの対象ツール (= R-1k、 null=非表示)。複数階のときツール起動直後に出す。 */
+  floorPromptTool: 'height' | 'ridge' | 'roof' | null;
+  setFloorPromptTool: (t: 'height' | 'ridge' | 'roof' | null) => void;
 
   // Zoom & Pan
   zoom: number;
@@ -1031,6 +1034,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   clearBuilding2FDraft: () => set({ building2FDraft: null }),
   activeFloor: 1,
   setActiveFloor: (f) => set({ activeFloor: f }),
+  floorPromptTool: null,
+  setFloorPromptTool: (t) => set({ floorPromptTool: t }),
 
   zoom: 1.0,
   panX: 0,

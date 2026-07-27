@@ -4,6 +4,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ModeType, getScaffoldStartByFloor } from '@/types';
 import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
+import { shouldPromptFloor } from '@/lib/konva/floorScope';
 import { isElevationPreviewUser } from '@/lib/auth/elevationAccess';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
@@ -53,6 +54,13 @@ export default function ModeToolbar() {
   useEffect(() => {
     setDismissedStage(null);
   }, [hasBuildings, hasScaffoldStart]);
+
+  /** R-1k: 複数階の物件では、高さ/棟/屋根ツールの起動直後に対象階を訊く（誤爆防止）。
+   *  単一階では何も出さない＝従来どおりの操作感。 */
+  const promptFloorIfMulti = (tool: 'height' | 'ridge' | 'roof') => {
+    const s = useCanvasStore.getState();
+    if (shouldPromptFloor(s.canvasData.buildings)) s.setFloorPromptTool(tool);
+  };
 
   const handleMainButton = (id: string) => {
     const stage = getCurrentStage();
@@ -188,6 +196,7 @@ export default function ModeToolbar() {
                 setRidgeLineMode(false);
                 setHeightMarkerMode(true);
                 setShowKutaiMenu(false);
+                promptFloorIfMulti('height'); // R-1k: 複数階なら対象階を先に訊く
               }}
               className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
             >
@@ -200,6 +209,7 @@ export default function ModeToolbar() {
                 setHeightMarkerMode(false);
                 setRidgeLineMode(true);
                 setShowKutaiMenu(false);
+                promptFloorIfMulti('ridge'); // R-1k
               }}
               className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
             >
@@ -215,6 +225,7 @@ export default function ModeToolbar() {
                 s.setBuildingInputMethod('direction');
                 s.setMode('building');
                 setShowKutaiMenu(false);
+                promptFloorIfMulti('roof'); // R-1k
               }}
               className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
             >
