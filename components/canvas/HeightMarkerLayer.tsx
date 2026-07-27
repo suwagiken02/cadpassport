@@ -11,6 +11,7 @@ import {
   snapToCorners,
   snapToMidpointIfNear,
 } from '@/lib/konva/heightMarkerUtils';
+import { OTHER_FLOOR_OPACITY_TOOL, resolveFloorScope } from '@/lib/konva/floorScope';
 
 const MARKER_COLOR = '#378ADD';
 const LONG_PRESS_MS = 300;
@@ -25,9 +26,16 @@ type DragInfo = {
 };
 
 export default function HeightMarkerLayer() {
-  const { canvasData, zoom, panX, panY, setHeightInputMarkerId, moveHeightMarker, isHeightMarkerMode } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, setHeightInputMarkerId, moveHeightMarker, isHeightMarkerMode, activeFloor } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const markers = canvasData.heightMarkers ?? [];
+  // R-1h-2: 高さツール中は編集中の階の建物だけを対象にする（総二階で 1F/2F の壁が重なるため）。
+  //   対象階に建物が無ければ全建物＝従来挙動（resolveFloorScope の安全側フォールバック）。
+  const scopedBuildings = resolveFloorScope(canvasData.buildings, activeFloor);
+  const scopedBuildingIds = new Set(scopedBuildings.map((b) => b.id));
+  /** 高さツール中で、かつ対象階以外の建物に付いたマーカーか（減光＋タップ不可にする）。 */
+  const isOtherFloorMarker = (buildingId: string) =>
+    isHeightMarkerMode && !scopedBuildingIds.has(buildingId);
 
   const layerRef = useRef<Konva.Layer>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -250,7 +258,7 @@ export default function HeightMarkerLayer() {
   return (
     <Layer ref={layerRef}>
       {/* 中点 ◇ ガイド (= isHeightMarkerMode 時のみ、 ドラッグ中ポインタ近傍ならハイライト) */}
-      {isHeightMarkerMode && canvasData.buildings.flatMap((building) => {
+      {isHeightMarkerMode && scopedBuildings.flatMap((building) => {
         const outline = getOutlinePolygon(building);
         return outline.map((p1, i) => {
           const p2 = outline[(i + 1) % outline.length];
@@ -299,12 +307,16 @@ export default function HeightMarkerLayer() {
         const labelText = marker.heightMm === 0
           ? 'H?'
           : `H${marker.heightMm}mm`;
+        // R-1h-2: 高さツール中、対象階以外のマーカーは大幅減光してタップも通さない
+        //   （重なった壁の下にある他階マーカーを誤って掴む/開くのを防ぐ）。階を切り替えれば編集できる。
+        const dimmed = isOtherFloorMarker(marker.buildingId);
         return (
           <React.Fragment key={marker.id}>
             {/* 透明ヒット領域（モバイル指基準・半径20px以上）。編集/削除のタップを確実化 */}
             <Circle
               x={screenX} y={screenY} radius={Math.max(20, r)}
               fill="transparent"
+              listening={!dimmed}
               onMouseDown={(e) => onCircleDown(e, { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t })}
               onTouchStart={(e) => onCircleDown(e, { id: marker.id, edgeIndex: marker.edgeIndex, t: marker.t })}
               onClick={() => onCircleClick(marker.id)}
@@ -313,12 +325,15 @@ export default function HeightMarkerLayer() {
             <Circle
               x={screenX} y={screenY} radius={r}
               fill={MARKER_COLOR} stroke="#fff" strokeWidth={1.5}
+              opacity={dimmed ? OTHER_FLOOR_OPACITY_TOOL : 1}
               listening={false}
             />
             <Text
               x={screenX + r + 4} y={screenY - fs / 2}
               text={labelText} fontSize={fs} fontStyle="bold"
-              fill={MARKER_COLOR} listening={false}
+              fill={MARKER_COLOR}
+              opacity={dimmed ? OTHER_FLOOR_OPACITY_TOOL : 1}
+              listening={false}
             />
           </React.Fragment>
         );

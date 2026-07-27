@@ -35,6 +35,7 @@ import { mmToGrid } from '@/lib/konva/gridUtils';
 import { getAllExistingVertices } from '@/lib/konva/snapUtils';
 import { getPrintAreaGrid } from '@/lib/export/pdfExport';
 import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon } from '@/lib/konva/heightMarkerUtils';
+import { resolveFloorScope } from '@/lib/konva/floorScope';
 
 type Props = {
   width: number;
@@ -402,7 +403,10 @@ export default function GridCanvas({ width, height }: Props) {
                 y: (pointer.y - panY) / (INITIAL_GRID_PX * zoom),
               };
               const thresholdGrid = 20 / (INITIAL_GRID_PX * zoom);
-              const result = findClosestOutlineEdge(clickGrid, canvasData.buildings, thresholdGrid);
+              // R-1h-2: スナップ対象を編集中の階の建物だけに絞る（総二階では 1F/2F の壁が平面上で
+              //   重なり、どちらに付いたかが数px差で決まっていた）。対象階に建物が無ければ全建物＝従来挙動。
+              const scopedBuildings = resolveFloorScope(canvasData.buildings, useCanvasStore.getState().activeFloor);
+              const result = findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
               if (result) {
                 const newId = uuidv4();
                 // 配置時の初期値は前回入力値 (= Issue 3、 0 の場合は従来通り)
@@ -482,7 +486,10 @@ export default function GridCanvas({ width, height }: Props) {
                 y: (pointer.y - panY) / (INITIAL_GRID_PX * zoom),
               };
               const thresholdGrid = 20 / (INITIAL_GRID_PX * zoom);
-              const result = findClosestOutlineEdge(clickGrid, canvasData.buildings, thresholdGrid);
+              // R-1h-2: スナップ対象を編集中の階の建物だけに絞る（総二階では 1F/2F の壁が平面上で
+              //   重なり、どちらに付いたかが数px差で決まっていた）。対象階に建物が無ければ全建物＝従来挙動。
+              const scopedBuildings = resolveFloorScope(canvasData.buildings, useCanvasStore.getState().activeFloor);
+              const result = findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
               if (result) {
                 const newId = uuidv4();
                 // 配置時の初期値は前回入力値 (= Issue 3、 0 の場合は従来通り)
