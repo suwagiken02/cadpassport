@@ -94,7 +94,9 @@ export default function DirectionInputModal({ onClose }: Props) {
       } else {
         const flr = s.pendingBuildingFloor;
         s.addBuilding({ id: newId, type: 'polygon', points: pts, fill: '#3d3d3a', floor: flr });
-        s.setAutoOpenRoofForBuildingId(newId);
+        // R-1k: 作成直後の屋根モーダル自動オープンは廃止（押し付けない・R-1e の方針をこの経路にも適用）。
+        //   壁方向入力だけ旧・屋根設定モーダルが開く非対称が残っていた（2F を任意壁で作ると出る症状）。
+        //   屋根は「躯体 → 屋根」で領域を描くか、出幅点線タップで編集する。
         s.setPendingBuildingFloor(1);
       }
       s.setLastCompletedDirectionSession({ points: pts });

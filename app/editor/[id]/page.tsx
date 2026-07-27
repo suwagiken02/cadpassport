@@ -15,7 +15,6 @@ import BuildingTemplateModal from '@/components/building/BuildingTemplateModal';
 import FloorSelector from '@/components/toolbar/FloorSelector';
 import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
-import RoofSettingsModal from '@/components/building/RoofSettingsModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
 import { buildingIdForPolygonOnFloor } from '@/lib/konva/floorScope';
 import { directionInputLabels } from '@/lib/directionInputLabels';
@@ -159,7 +158,6 @@ export default function EditorPage() {
   const [showScaffoldStartModal, setShowScaffoldStartModal] = useState(false);
   // bothmode から⭐設定を開いた場合の固定階(2F誘導)。通常起動は undefined。
   const [scaffoldStartLockFloor, setScaffoldStartLockFloor] = useState<number | undefined>(undefined);
-  const [showRoofModal, setShowRoofModal] = useState(false);
   const [showUdekiModal, setShowUdekiModal] = useState(false);
   const [showAutoLayoutModal, setShowAutoLayoutModal] = useState(false);
   const [showBackConfirm, setShowBackConfirm] = useState(false);
@@ -655,15 +653,8 @@ export default function EditorPage() {
             </div>
           )}
 
-          {/* 屋根設定ボタン（建物選択中のみ表示） */}
-          {selectedIds.length === 1 && canvasData.buildings.some(b => b.id === selectedIds[0]) && (
-            <button
-              onClick={() => setShowRoofModal(true)}
-              className="px-3 py-2 bg-dark-surface border border-dark-border rounded-xl text-xs text-dimension hover:text-canvas shadow-lg transition-colors"
-            >
-              屋根設定
-            </button>
-          )}
+          {/* R-1k(R-1i): 旧・屋根設定ボタンは撤去。屋根は「躯体 → 屋根」で領域を作成し、
+              平面の出幅点線タップで編集/削除する（屋根オブジェクト方式に一本化）。 */}
 
         </div>
 
@@ -848,28 +839,8 @@ export default function EditorPage() {
       {showMemoCreateModal && (
         <MemoCreateModal onClose={() => setShowMemoCreateModal(false)} />
       )}
-      {showRoofModal && selectedIds.length === 1 && (() => {
-        const bld = canvasData.buildings.find(b => b.id === selectedIds[0]);
-        return bld ? (
-          <RoofSettingsModal
-            buildingId={bld.id}
-            buildingPoints={bld.points}
-            initialRoof={bld.roof}
-            onClose={() => setShowRoofModal(false)}
-          />
-        ) : null;
-      })()}
-      {autoOpenRoofForBuildingId && (() => {
-        const bld = canvasData.buildings.find(b => b.id === autoOpenRoofForBuildingId);
-        return bld ? (
-          <RoofSettingsModal
-            buildingId={bld.id}
-            buildingPoints={bld.points}
-            initialRoof={bld.roof}
-            onClose={() => setAutoOpenRoofForBuildingId(null)}
-          />
-        ) : null;
-      })()}
+      {/* R-1k(R-1i): 旧・屋根設定モーダル(RoofSettingsModal)の描画箇所を撤去。
+          屋根の作成/編集/削除は RoofObjectModal（屋根オブジェクト）に一本化した。 */}
       {showProjectEditModal && (
         <ProjectEditModal
           initialName={siteName}

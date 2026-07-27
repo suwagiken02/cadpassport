@@ -161,7 +161,8 @@ export default function RoofObjectModal() {
         {uniform ? (
           <>
             <label className="block text-sm text-dimension mb-1">出幅</label>
-            <div className="flex items-center gap-2 mb-5">
+            {/* data-tutorial-id: チュートリアルの「軒の出を変更」ステップが値を読む（R-1k で旧モーダルから移設）。 */}
+            <div className="flex items-center gap-2 mb-5" data-tutorial-id="roof-overhang-input">
               <NumInput value={uniformMm} onChange={setUniformMm} min={0} step={50} />
               <span className="text-sm text-canvas">mm</span>
             </div>
@@ -195,7 +196,7 @@ export default function RoofObjectModal() {
           <button onClick={close} className="flex-1 py-2 bg-dark-bg border border-dark-border text-dimension rounded-xl text-sm font-bold">
             キャンセル
           </button>
-          <button onClick={handleConfirm} className="flex-1 py-2 bg-accent text-white rounded-xl text-sm font-bold">
+          <button onClick={handleConfirm} data-tutorial-id="roof-confirm" className="flex-1 py-2 bg-accent text-white rounded-xl text-sm font-bold">
             {existing ? '更新' : '作成'}
           </button>
         </div>

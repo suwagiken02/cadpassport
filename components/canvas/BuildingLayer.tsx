@@ -74,9 +74,11 @@ export default function BuildingLayer() {
         const strokeColor = isSelected ? '#FF6B35' : (is2F ? '#888888' : (isDarkMode ? '#888888' : '#1a1a18'));
 
         // mode='roof' 時の屋根再編集 (= 屋根なし状態でも building 本体 tap で開く、 #5 仕様)
+        // R-1k: 旧・屋根設定モーダル(autoOpenRoofForBuildingId)ではなく、屋根オブジェクトの
+        //   モーダルを建物外周 polygon で開く（全周屋根のワンタップ作成）。
         const handleBuildingRoofTap = () => {
           useCanvasStore.getState().setSelectedIds([building.id]);
-          useCanvasStore.getState().setAutoOpenRoofForBuildingId(building.id);
+          useCanvasStore.getState().setRoofSettingsTarget({ buildingId: building.id, polygon: building.points });
         };
         return (
           <Line key={building.id} points={flatPoints} closed

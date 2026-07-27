@@ -164,9 +164,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'roof-input',
     targetSelector: '[data-tutorial-id="roof-overhang-input"]',
-    title: '10. 軒の出を変更',
+    title: '10. 屋根をかけて軒の出を変更',
     description:
-      '建物を作ると屋根設定が自動で開きます。「出幅(mm)」を 600 から 500 に変更してください。',
+      // R-1k: 建物作成時の屋根モーダル自動オープンは廃止したので、屋根ツールから開く手順に変更。
+      '「躯体」→「屋根」で屋根の領域を建物に沿って描き、始点で閉じます。開いた屋根モーダルで「出幅」を 500 に変更してください。',
     completeWhenDom: () => {
       const el = document.querySelector('[data-tutorial-id="roof-overhang-input"] input') as HTMLInputElement | null;
       return el?.value === '500';
@@ -176,9 +177,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'roof-confirm',
     targetSelector: '[data-tutorial-id="roof-confirm"]',
-    title: '11. 屋根設定を確定',
-    description: '「設定する」ボタン（光っています）を押して、屋根の変更を確定してください。',
-    completeWhen: (ctx) => ctx.canvasData.buildings.some((b) => b.roof?.uniformMm === 500),
+    title: '11. 屋根を確定',
+    description: '「作成」ボタン（光っています）を押して、屋根を確定してください。',
+    // R-1k: 屋根オブジェクト(canvasData.roofs)で判定。旧 building.roof も残データ互換で見る。
+    completeWhen: (ctx) =>
+      (ctx.canvasData.roofs ?? []).some((r) => r.uniformMm === 500)
+      || ctx.canvasData.buildings.some((b) => b.roof?.uniformMm === 500),
     autoAdvance: true,
   },
   {
