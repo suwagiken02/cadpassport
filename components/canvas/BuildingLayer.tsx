@@ -21,7 +21,7 @@ export default function BuildingLayer() {
   // R-1h-3: 高さ・棟・屋根領域の入力中は「どの階の壁に置いているか」を一目で分かるよう、
   //   非 active 階をさらに大幅減光する（通常の薄表示 0.6 → 0.18）。非表示にしないのは
   //   下階との位置関係が見えないと上階の壁位置を掴めないため。
-  const isFloorScopedTool = isHeightMarkerMode || isRidgeLineMode || pendingTargetType === 'roof' || mode === 'roof';
+  const isFloorScopedTool = isHeightMarkerMode || isRidgeLineMode || pendingTargetType === 'roof';
   const otherFloorOpacity = isFloorScopedTool ? OTHER_FLOOR_OPACITY_TOOL : OTHER_FLOOR_OPACITY;
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
@@ -73,23 +73,16 @@ export default function BuildingLayer() {
         const fillColor = is2F ? '#A0A0A0' : (isDarkMode ? '#555555' : '#3d3d3a');
         const strokeColor = isSelected ? '#FF6B35' : (is2F ? '#888888' : (isDarkMode ? '#888888' : '#1a1a18'));
 
-        // mode='roof' 時の屋根再編集 (= 屋根なし状態でも building 本体 tap で開く、 #5 仕様)
-        // R-1k: 旧・屋根設定モーダル(autoOpenRoofForBuildingId)ではなく、屋根オブジェクトの
-        //   モーダルを建物外周 polygon で開く（全周屋根のワンタップ作成）。
-        const handleBuildingRoofTap = () => {
-          useCanvasStore.getState().setSelectedIds([building.id]);
-          useCanvasStore.getState().setRoofSettingsTarget({ buildingId: building.id, polygon: building.points });
-        };
+        // R-1g: mode='roof' のワンタップ屋根は撤去（mode 自体が未到達だった）。
+        //   全周屋根は「躯体 → 屋根」で建物外周をなぞって作る。
         return (
           <Line key={building.id} points={flatPoints} closed
             fill={fillColor}
             opacity={is2F ? otherFloorOpacity : 1}
             stroke={strokeColor}
             strokeWidth={(isSelected ? 24 : 16) * zoom}
-            listening={selectListenBuilding || mode === 'erase' || mode === 'move-select' || mode === 'roof'}
+            listening={selectListenBuilding || mode === 'erase' || mode === 'move-select'}
             id={building.id}
-            onClick={mode === 'roof' ? handleBuildingRoofTap : undefined}
-            onTap={mode === 'roof' ? handleBuildingRoofTap : undefined}
           />
         );
       })}

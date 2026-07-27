@@ -152,7 +152,6 @@ export default function TutorialOverlay() {
       showSettingsPanel: s.showSettingsPanel ?? false,
       showAreaCalcModal: s.showAreaCalcModal ?? false,
       showBuildingModal: s.showBuildingModal ?? false,
-      autoOpenRoofForBuildingId: s.autoOpenRoofForBuildingId ?? null,
       handrailsBeforeAutolayout: t.handrailsBeforeAutolayout,
       settingsOpenedOnce: useTutorialStore.getState().settingsOpenedOnce,
       directionPointsLength: s.directionPoints?.length ?? 0,

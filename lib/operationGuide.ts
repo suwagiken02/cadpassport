@@ -99,8 +99,7 @@ export function getOperationGuide(s: GuideState): string | null {
     case 'erase': return '削除するオブジェクトをタップ、またはドラッグで範囲選択してください';
     case 'obstacle': return '障害物を配置する位置をタップしてください';
     case 'memo': return 'メモを配置する位置をタップしてください';
-    case 'roof':
-      return `${fp}屋根をかける建物をタップしてください（建物全体に屋根）`;
+    // R-1g: 'roof' モードは撤去。屋根は mode='building' + pendingTargetType='roof' の領域描き（上の分岐）。
     case 'select': return s.selectActive ? 'オブジェクトをタップ、またはドラッグで範囲選択してください' : null;
     case 'move-select': return null; // moveSelectActive 側で扱う
     case 'view': return null;        // 閲覧中（ツール未選択）はガイド非表示

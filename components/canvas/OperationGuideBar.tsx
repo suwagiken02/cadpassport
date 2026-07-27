@@ -42,7 +42,7 @@ export default function OperationGuideBar() {
   const floorTool = useCanvasStore((s) => (
     s.isHeightMarkerMode ? 'height'
       : s.isRidgeLineMode ? 'ridge'
-      : (s.pendingTargetType === 'roof' && s.mode === 'building') || s.mode === 'roof' ? 'roof'
+      : s.pendingTargetType === 'roof' && s.mode === 'building' ? 'roof'
       : null
   ));
   const activeFloor = useCanvasStore((s) => s.activeFloor);

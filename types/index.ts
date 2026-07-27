@@ -2,7 +2,9 @@
 export type Point = { x: number; y: number };
 
 // === 操作モード ===
-export type ModeType = 'view' | 'building' | 'handrail' | 'post' | 'anti' | 'select' | 'erase' | 'memo' | 'obstacle' | 'move-select' | 'roof';
+// R-1g: 'roof' モードは撤去（setMode('roof') の呼び出しが無く未到達だった）。
+//   屋根の作成/編集は「躯体 → 屋根」の領域描きと、平面の出幅点線タップに一本化済み。
+export type ModeType = 'view' | 'building' | 'handrail' | 'post' | 'anti' | 'select' | 'erase' | 'memo' | 'obstacle' | 'move-select';
 
 // === 建物入力方式 ===
 export type BuildingInputMethod = 'template' | 'direction';

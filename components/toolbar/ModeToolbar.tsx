@@ -20,7 +20,7 @@ export default function ModeToolbar() {
   const [showClearScaffoldConfirm, setShowClearScaffoldConfirm] = useState(false);
 
   // 躯体グループ（建物・障害物・高さマーカー）
-  const isKutaiMode = mode === 'building' || mode === 'obstacle' || mode === 'roof' || isHeightMarkerMode || isRidgeLineMode;
+  const isKutaiMode = mode === 'building' || mode === 'obstacle' || isHeightMarkerMode || isRidgeLineMode;
 
   const mainButtons = [
     { id: 'select' as const, label: '選択', icon: '↖', color: '#378ADD' },

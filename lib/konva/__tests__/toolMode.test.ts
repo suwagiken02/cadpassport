@@ -65,7 +65,7 @@ describe('isPlainSelectMode: 常時リスナーを有効にしてよい状態', 
   });
 
   it('select 以外の mode は false（erase/roof/building/view など）', () => {
-    for (const mode of ['erase', 'roof', 'building', 'view', 'move-select'] as const) {
+    for (const mode of ['erase', 'building', 'view', 'move-select'] as const) {
       expect(isPlainSelectMode({ mode })).toBe(false);
     }
   });

@@ -101,8 +101,6 @@ describe('getOperationGuide: 対象階の明示', () => {
       .toBe('(2F) 棟の始点を建物の中でタップしてください');
     expect(g({ isRidgeLineMode: true, hasRidgeDraft: true, targetFloor: 2 }))
       .toBe('(2F) 棟の終点をタップしてください');
-    expect(g({ mode: 'roof', targetFloor: 2 }))
-      .toBe('(2F) 屋根をかける建物をタップしてください（建物全体に屋根）');
     expect(g({ mode: 'building', buildingInputMethod: 'direction', isRoofDraw: true, directionPointCount: 0, targetFloor: 2 }))
       .toBe('(2F) 屋根の始点をタップしてください');
   });
@@ -115,7 +113,6 @@ describe('getOperationGuide: 対象階の明示', () => {
   it('単一階（targetFloor 未指定/null）は従来の文言のまま', () => {
     expect(g({ isHeightMarkerMode: true })).toBe('高さを入力する壁面をタップしてください');
     expect(g({ isHeightMarkerMode: true, targetFloor: null })).toBe('高さを入力する壁面をタップしてください');
-    expect(g({ mode: 'roof' })).toBe('屋根をかける建物をタップしてください（建物全体に屋根）');
   });
 
   it('階スコープが効かないツールには階を出さない', () => {

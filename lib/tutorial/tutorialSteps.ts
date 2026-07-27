@@ -11,7 +11,9 @@ export type TutorialContext = {
   showSettingsPanel: boolean;
   showAreaCalcModal: boolean;
   showBuildingModal: boolean;
-  autoOpenRoofForBuildingId: string | null;
+  /** @deprecated R-1g: 旧・屋根設定モーダルの自動オープン。store から撤去済みで、どのステップも参照しない。
+   *  （テストの ctx が渡している間だけ optional で残置。次にテストを触るときに削除する） */
+  autoOpenRoofForBuildingId?: string | null;
   handrailsBeforeAutolayout: number | null;
   settingsOpenedOnce: boolean;
   /** 壁方向入力の頂点数 (= 最初のタップでスタート位置決定 → 1、 壁を追加ごとに +1) */

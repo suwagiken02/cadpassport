@@ -177,8 +177,8 @@ type CanvasStore = {
   clearDirectionPoints: () => void;
   setDirectionPoints: (points: { x: number; y: number }[]) => void;
   setLastCompletedDirectionSession: (s: { points: { x: number; y: number }[] } | null) => void;
-  autoOpenRoofForBuildingId: string | null;
-  setAutoOpenRoofForBuildingId: (id: string | null) => void;
+  // R-1g: autoOpenRoofForBuildingId（旧・屋根設定モーダルの自動オープン）は撤去。
+  //   書き込み経路は R-1k で無くなり、旧モーダル自体も削除済み。
   pendingBuildingFloor: number;
   setPendingBuildingFloor: (f: number) => void;
   pendingTargetType: 'building' | 'obstacle' | 'roof';
@@ -548,7 +548,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     pendingBuildingFloor: 1,
     lastCompletedDirectionSession: null,
     buildingInputMethod: 'template',
-    autoOpenRoofForBuildingId: null,
     // 計測
     isMeasuring: false,
     measurePoint1: null,
@@ -697,8 +696,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   noWallMode: false,
   setNoWallMode: (v) => set({ noWallMode: v }),
   setLastCompletedDirectionSession: (s) => set({ lastCompletedDirectionSession: s }),
-  autoOpenRoofForBuildingId: null,
-  setAutoOpenRoofForBuildingId: (id) => set({ autoOpenRoofForBuildingId: id }),
   pendingBuildingFloor: 1,
   setPendingBuildingFloor: (f) => set({ pendingBuildingFloor: f }),
   pendingTargetType: 'building',

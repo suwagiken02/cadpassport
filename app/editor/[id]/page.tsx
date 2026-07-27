@@ -120,8 +120,6 @@ export default function EditorPage() {
     lastCompletedDirectionSession,
     setLastCompletedDirectionSession,
     setDirectionPoints,
-    autoOpenRoofForBuildingId,
-    setAutoOpenRoofForBuildingId,
     pendingBuildingFloor,
     setPendingBuildingFloor,
     pendingTargetType,
@@ -413,7 +411,6 @@ export default function EditorPage() {
               // ケースC: 建物完成直後 → 建物を消して壁方向入力モードを再開
               if (s.lastCompletedDirectionSession) {
                 const session = s.lastCompletedDirectionSession;
-                s.setAutoOpenRoofForBuildingId(null);
                 s.undo();
                 s.setDirectionPoints(session.points);
                 s.setBuildingInputMethod('direction');
