@@ -215,20 +215,17 @@ export function roofExtXRange(
   return Number.isFinite(mn) ? { xStart: mn, xEnd: mx } : null;
 }
 
-/** この面の軒の出(グリッド)＝face を向く壁に乗った屋根辺の出幅 max。その面に軒がなければ 0。 */
+/** この面の軒の出(グリッド)＝face を向く屋根辺の出幅 max。その面に軒がなければ 0。
+ *  R-1j: 出幅は屋根 polygon の全辺が対象なので、壁に乗っているかは問わず辺の向きだけで判定する。 */
 export function roofFaceOverhangGrid(building: BuildingShape, roof: Roof, face: Face): number {
   const poly = getRoofPolygon(building, roof);
-  const bpts = building.points;
-  if (poly.length < 3 || bpts.length < 3) return 0;
+  if (poly.length < 3) return 0;
   const offsets = roofPolygonOffsetsGrid(building, roof);
-  const ws = polygonWindingSign(bpts);
-  const n = poly.length;
+  const ws = polygonWindingSign(poly);
   let mx = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < poly.length; i++) {
     if ((offsets[i] ?? 0) <= 0) continue;
-    const j = roofEdgeToBuildingEdge(poly[i], poly[(i + 1) % n], bpts);
-    if (j < 0) continue;
-    if (polygonEdgeFace(bpts, j, ws) !== face) continue;
+    if (polygonEdgeFace(poly, i, ws) !== face) continue;
     mx = Math.max(mx, offsets[i]);
   }
   return mx;

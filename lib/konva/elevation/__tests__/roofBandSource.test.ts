@@ -156,13 +156,22 @@ describe('R-1f-1: x 範囲・出幅・奥行き', () => {
     expect(roofExtXRange(BLD, MAIN, 'north')).toEqual({ xStart: -60, xEnd: 420 });
   });
 
-  it('roofExtXRange(東面): 変軸=y。大屋根は[-60,360]（北の軒だけ外へ出て境界辺は出ない）', () => {
+  // R-1j: 内部の境界辺も出幅対象になった（旧仕様は壁重なり辺のみ＝境界辺は自動 0 で
+  //   大屋根 [-60,360] / 下屋 [360,600] だった）。0 にしたい辺はユーザーが 0 を入力する。
+  it('roofExtXRange(東面): 変軸=y。境界辺(y=360)も出幅ぶん外へ出る', () => {
     const r = roofExtXRange(BLD, MAIN, 'east')!;
     expect(r.xStart).toBeCloseTo(-60, 6);
-    expect(r.xEnd).toBeCloseTo(360, 6);
+    expect(r.xEnd).toBeCloseTo(420, 6);   // 境界辺 360+60
     const l = roofExtXRange(BLD, LOWER, 'east')!;
-    expect(l.xStart).toBeCloseTo(360, 6); // 境界辺(y=360)は出幅なし＝壁位置のまま
+    expect(l.xStart).toBeCloseTo(300, 6); // 境界辺 360-60
     expect(l.xEnd).toBeCloseTo(600, 6);   // 南の軒 540+60
+  });
+
+  it('辺別出幅: 境界辺だけ 0 にすれば旧来の見え方になる', () => {
+    const lowerNoInner = { ...LOWER, edgeOverhangsMm: { 0: 0 } }; // 辺0=境界辺(y=360)
+    const l = roofExtXRange(BLD, lowerNoInner, 'east')!;
+    expect(l.xStart).toBeCloseTo(360, 6);
+    expect(l.xEnd).toBeCloseTo(600, 6);
   });
 
   it('roofExtXRange: 出幅 0 なら壁範囲と一致', () => {
@@ -170,11 +179,18 @@ describe('R-1f-1: x 範囲・出幅・奥行き', () => {
     expect(roofExtXRange(BLD, flat, 'north')).toEqual({ xStart: 0, xEnd: 360 });
   });
 
-  it('roofFaceOverhangGrid: 大屋根は北60・南0、下屋は南60・北0', () => {
+  // R-1j: 壁に乗っているかは問わず「その面を向く屋根辺」の出幅を見る（境界辺も対象）。
+  it('roofFaceOverhangGrid: 面を向く辺の出幅（境界辺を含む）', () => {
     expect(roofFaceOverhangGrid(BLD, MAIN, 'north')).toBe(60);
-    expect(roofFaceOverhangGrid(BLD, MAIN, 'south')).toBe(0);
+    expect(roofFaceOverhangGrid(BLD, MAIN, 'south')).toBe(60);  // 旧仕様は境界辺が自動 0 で 0
     expect(roofFaceOverhangGrid(BLD, LOWER, 'south')).toBe(60);
-    expect(roofFaceOverhangGrid(BLD, LOWER, 'north')).toBe(0);
+    expect(roofFaceOverhangGrid(BLD, LOWER, 'north')).toBe(60); // 同上
+  });
+
+  it('roofFaceOverhangGrid: 辺別出幅で 0 にした面は 0', () => {
+    const mainNoInner = { ...MAIN, edgeOverhangsMm: { 2: 0 } }; // 辺2=南向きの境界辺
+    expect(roofFaceOverhangGrid(BLD, mainNoInner, 'south')).toBe(0);
+    expect(roofFaceOverhangGrid(BLD, mainNoInner, 'north')).toBe(60);
   });
 
   it('roofFrontness: 南から見ると下屋が手前・北から見ると大屋根が手前', () => {

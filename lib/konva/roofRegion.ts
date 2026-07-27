@@ -2,9 +2,15 @@
 // 屋根＝閉じた領域（polygon）方式の pure 幾何 (R-1e-fix7)。
 //  ・getRoofPolygon: Roof の領域（旧 span/edgeRange の互換は建物外周へ）。
 //  ・edgeOnWall / roofEdgeToBuildingEdge: 屋根領域の辺が建物の壁と重なるか（＝出幅を出す辺）。
-//  ・roofPolygonOffsetsGrid: 屋根 polygon の辺別出幅(グリッド)。壁重なり辺のみ uniformMm、内部辺は 0。
+//  ・roofEdgeOverhangsMm / roofPolygonOffsetsGrid: 屋根 polygon の辺別出幅。
+//    R-1j: 出幅は「屋根 polygon の全辺」がユーザー設定の対象。以前は壁と重なる辺だけに uniformMm を
+//    当て内部辺を自動 0 にしていたが、システムが勝手に 0 にする判断は撤廃した（鮎澤氏指示）。
+//    既定は全辺 uniformMm、辺ごとに変えたい場合は Roof.edgeOverhangsMm[辺index] が優先（旧 RoofConfig と同じ）。
+//    0 にしたい辺はユーザーが 0 を入力する。
 //    → computeOffsetPolygon(polygon, これ) で平面の出幅点線（軒）を描く。
 //  ・buildingEdgeOverhangsFromRoofs: 建物の辺別出幅(グリッド)。立面・resolve 用。
+//    屋根辺→建物辺の対応付け（roofEdgeToBuildingEdge）は「どの建物辺の出幅か」を決めるための
+//    対応であって出幅の有無の判定ではない（壁に乗らない屋根辺は対応する建物辺が無いだけ）。
 // ============================================================
 import type { BuildingShape, Point, Roof } from '@/types';
 import { mmToGrid } from './gridUtils';
@@ -55,26 +61,41 @@ export function edgeOnWall(a: Point, b: Point, buildingPts: Point[], tol = WALL_
   return roofEdgeToBuildingEdge(a, b, buildingPts, tol) >= 0;
 }
 
-/** 屋根 polygon の辺別出幅(グリッド)。壁重なり辺のみ uniformMm、内部辺は 0（computeOffsetPolygon 用）。 */
-export function roofPolygonOffsetsGrid(building: BuildingShape, roof: Roof): number[] {
-  const poly = getRoofPolygon(building, roof);
-  const n = poly.length;
-  const ohGrid = roof.uniformMm > 0 ? mmToGrid(roof.uniformMm) : 0;
-  return poly.map((_, i) => (ohGrid > 0 && edgeOnWall(poly[i], poly[(i + 1) % n], building.points) ? ohGrid : 0));
+/**
+ * 屋根の辺別出幅(mm)。長さ = edgeCount。
+ * edgeOverhangsMm[辺index] が指定されていればそれ、無ければ uniformMm（旧 RoofConfig と同じ優先関係）。
+ * 負値は 0 に丸める。R-1j: 全辺が対象で、システム側で 0 にする辺は無い。
+ */
+export function roofEdgeOverhangsMm(roof: Roof, edgeCount: number): number[] {
+  const per = roof.edgeOverhangsMm;
+  const out: number[] = [];
+  for (let i = 0; i < edgeCount; i++) {
+    const v = per?.[i];
+    out.push(Math.max(0, v !== undefined ? v : roof.uniformMm));
+  }
+  return out;
 }
 
-/** 建物の辺別出幅(グリッド)。その建物の全屋根の壁重なり辺から辺別 max（立面・resolve 用）。 */
+/** 屋根 polygon の辺別出幅(グリッド)。全辺がユーザー設定の出幅（computeOffsetPolygon 用・R-1j）。 */
+export function roofPolygonOffsetsGrid(building: BuildingShape, roof: Roof): number[] {
+  const poly = getRoofPolygon(building, roof);
+  return roofEdgeOverhangsMm(roof, poly.length).map((mm) => (mm > 0 ? mmToGrid(mm) : 0));
+}
+
+/** 建物の辺別出幅(グリッド)。その建物の全屋根の辺別出幅を、対応する建物辺ごとに max（立面・resolve 用）。 */
 export function buildingEdgeOverhangsFromRoofs(building: BuildingShape, roofs: Roof[]): number[] {
   const out = new Array(building.points.length).fill(0);
   for (const roof of roofs) {
     if (roof.buildingId !== building.id) continue;
     const poly = getRoofPolygon(building, roof);
     const n = poly.length;
-    const ohGrid = roof.uniformMm > 0 ? mmToGrid(roof.uniformMm) : 0;
-    if (ohGrid <= 0) continue;
+    const ohs = roofEdgeOverhangsMm(roof, n);
     for (let i = 0; i < n; i++) {
+      const g = ohs[i] > 0 ? mmToGrid(ohs[i]) : 0;
+      if (g <= 0) continue;
+      // 壁に乗らない屋根辺は対応する建物辺が無い（＝建物の辺別出幅には現れない）。出幅の有無の判定ではない。
       const j = roofEdgeToBuildingEdge(poly[i], poly[(i + 1) % n], building.points);
-      if (j >= 0) out[j] = Math.max(out[j], ohGrid);
+      if (j >= 0) out[j] = Math.max(out[j], g);
     }
   }
   return out;
