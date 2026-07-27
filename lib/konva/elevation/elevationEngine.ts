@@ -29,6 +29,7 @@ import {
   roofExtXRange,
   roofFaceOverhangGrid,
   roofFaceWallIntervals,
+  roofFrontness,
   roofMarkerMaxMm,
   roofRunMm,
   roofWallCoverages,
@@ -777,7 +778,13 @@ function buildRoofBandsForRoofs(
   const ridgeByRoof = assignRidgeLinesToRoofs(ridgeLines, building, roofs);
   const bands: RoofBand[] = [];
 
-  for (const roof of roofs) {
+  // 同一面で複数の屋根バンドが重なるときの描画順（R-1f-3）。描画側は配列順に重ねるので、
+  // 奥→手前の順に並べると下屋が大屋根の手前に載り、建築立面図と同じ前後関係になる。
+  const ordered = [...roofs].sort(
+    (r1, r2) => roofFrontness(building, r1, face) - roofFrontness(building, r2, face),
+  );
+
+  for (const roof of ordered) {
     const ext = roofExtXRange(building, roof, face);
     if (!ext) continue;
     const coverages = roofWallCoverages(building, roof);

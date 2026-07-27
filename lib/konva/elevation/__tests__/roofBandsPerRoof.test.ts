@@ -109,6 +109,41 @@ describe('R-1f-2: 全周屋根(lift 相当)は従来経路と数値一致', () =
   });
 });
 
+describe('R-1f-3: 同一面の複数バンドは奥→手前の順', () => {
+  // 建物 RECT を 北 2/3=大屋根 / 南 1/3=下屋 に分ける。描画は配列順に重ねるので手前が後。
+  const MAIN: Roof = {
+    id: 'main', buildingId: 'B', roofShape: 'gable', uniformMm: 600,
+    polygon: [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 360 }, { x: 0, y: 360 }],
+  };
+  const LOWER: Roof = {
+    id: 'lower', buildingId: 'B', roofShape: 'shed', uniformMm: 600,
+    polygon: [{ x: 0, y: 360 }, { x: 360, y: 360 }, { x: 360, y: 540 }, { x: 0, y: 540 }],
+  };
+  const markers: HeightMarker[] = [
+    { id: 'a', buildingId: 'B', edgeIndex: 3, t: 0.5, heightMm: 5000 },
+    { id: 'b', buildingId: 'B', edgeIndex: 1, t: 0.5, heightMm: 5000 },
+    { id: 'c', buildingId: 'B', edgeIndex: 2, t: 0.25, heightMm: 3000 },
+    { id: 'd', buildingId: 'B', edgeIndex: 2, t: 0.75, heightMm: 3000 },
+  ];
+  const bands = (face: 'north' | 'south') =>
+    buildFaceElevation([], [legacyBld('B')], { markers, face, roofs: [MAIN, LOWER] }).roofBands;
+
+  it('南から見ると 大屋根(奥) → 下屋(手前) の順', () => {
+    expect(bands('south').map((b) => b.roofId)).toEqual(['main', 'lower']);
+  });
+
+  it('北から見ると 下屋(奥) → 大屋根(手前) の順（roofs[] の並び順に依らない）', () => {
+    expect(bands('north').map((b) => b.roofId)).toEqual(['lower', 'main']);
+  });
+
+  it('入力順を入れ替えても描画順は奥行きで決まる', () => {
+    const swapped = buildFaceElevation([], [legacyBld('B')], {
+      markers, face: 'south', roofs: [LOWER, MAIN],
+    });
+    expect(swapped.roofBands.map((b) => b.roofId)).toEqual(['main', 'lower']);
+  });
+});
+
 describe('R-1f-2: roofId と経路の切り分け', () => {
   const markers: HeightMarker[] = [{ id: 'e', buildingId: 'B', edgeIndex: 0, t: 0.5, heightMm: 5000 }];
 

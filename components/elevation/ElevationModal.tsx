@@ -57,7 +57,7 @@ export default function ElevationModal() {
       roofs: canvasData.roofs,
       ridgeLines: canvasData.ridgeLines ?? [],
     });
-  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, canvasData.roofOverhangs, canvasData.ridgeLines, hasMarkers]);
+  }, [face, pillarType, canvasData.handrails, canvasData.buildings, canvasData.heightMarkers, canvasData.roofOverhangs, canvasData.roofs, canvasData.ridgeLines, hasMarkers]);
 
   const noScaffold = faceElevation.scaffolds.length === 0;
   const hasContent = faceElevation.buildingOutlines.length > 0 || faceElevation.scaffolds.length > 0;
@@ -265,7 +265,10 @@ function ElevationSVG({
       )}
 
       {/* 屋根投影バンド（延長込み上辺プロファイル。樋面=水平/妻面=けらば斜辺、壁より張り出す） */}
-      {roofBands.map((band) => {
+      {roofBands.map((band, bi) => {
+        // R-1f: 1 建物に複数屋根（大屋根＋下屋）＝複数バンドがあるので key は屋根単位で作る。
+        // 配列は奥→手前の順（エンジン側でソート済み）なので、後の要素が手前に重なる。
+        const key = `rb-${band.roofId ?? band.buildingId}-${bi}`;
         const profPts = band.profile.map((p) => `${sxg(p.x).toFixed(1)},${sy(p.mm).toFixed(1)}`);
         if (band.filledToRidge) {
           if (band.baseMm != null) {
@@ -276,7 +279,7 @@ function ElevationSVG({
               `${sxg(band.xStart).toFixed(1)},${sy(band.baseMm).toFixed(1)}`,
             ].join(' ');
             return (
-              <polygon key={`rb-${band.buildingId}`} points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
+              <polygon key={key} points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
             );
           }
           // マーカー方式(樋面切妻投影): 延長込み軒プロファイル(下端) + 棟の水平線(上端) の台形を塗る。
@@ -286,7 +289,7 @@ function ElevationSVG({
             `${sxg(band.xStart).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
           ].join(' ');
           return (
-            <g key={`rb-${band.buildingId}`}>
+            <g key={key}>
               <polygon points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
               <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
               <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
@@ -295,7 +298,7 @@ function ElevationSVG({
         }
         // 妻面のけらば / 棟マーカー無しのフラット軒: 延長込みプロファイルを線で描く（壁より張り出す）。
         return (
-          <polyline key={`rb-${band.buildingId}`} points={profPts.join(' ')} fill="none" stroke="#8a8a86" strokeWidth={1.3} />
+          <polyline key={key} points={profPts.join(' ')} fill="none" stroke="#8a8a86" strokeWidth={1.3} />
         );
       })}
 
