@@ -8,9 +8,16 @@ import { Point } from '@/types';
 import { computeOffsetPolygon } from '@/lib/konva/roofUtils';
 import { getRoofPolygon, roofPolygonOffsetsGrid } from '@/lib/konva/roofRegion';
 import { OTHER_FLOOR_OPACITY, OTHER_FLOOR_OPACITY_TOOL } from '@/lib/konva/floorScope';
+import { isPlainSelectMode } from '@/lib/konva/toolMode';
 
 export default function BuildingLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor, isHeightMarkerMode, isRidgeLineMode, pendingTargetType } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor, isHeightMarkerMode, isRidgeLineMode, pendingTargetType, isMeasuring, isMagnetPinMode, isAreaDesignationMode } = useCanvasStore();
+  // R-1h-fix: 高さ等のツールは mode を変えず副次フラグだけで動くため、`mode === 'select'` 単独では
+  //   ツール中も選択モード扱いになり、常時リスナーがツールのクリックを先取りしていた。
+  const plainSelect = isPlainSelectMode({
+    mode, isHeightMarkerMode, isRidgeLineMode, isMeasuring, isMagnetPinMode,
+    isAreaDesignationMode, isReorderMode, moveSelectActive: moveSelectMode.active, pendingTargetType,
+  });
   // R-1h-3: 高さ・棟・屋根領域の入力中は「どの階の壁に置いているか」を一目で分かるよう、
   //   非 active 階をさらに大幅減光する（通常の薄表示 0.6 → 0.18）。非表示にしないのは
   //   下階との位置関係が見えないと上階の壁位置を掴めないため。
@@ -19,8 +26,10 @@ export default function BuildingLayer() {
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
   // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
+  // R-1h-fix: 通常の選択は素の選択モードのときだけ（ツール中は建物タップで選択させない）。
+  //   並べ替えは「選択モード中に部材/建物をタップする」ツールなので従来どおり通す。
   const selectListenBuilding =
-    (mode === 'select' && selectActive && !selectLock.building)
+    (plainSelect && selectActive && !selectLock.building)
     || (mode === 'select' && isReorderMode);
 
   return (
@@ -104,8 +113,11 @@ export default function BuildingLayer() {
             stroke="#888780"
             strokeWidth={8 * zoom}
             dash={[48 * zoom, 32 * zoom]}
-            hitStrokeWidth={mode === 'select' ? 14 : 0}
-            listening={mode === 'select'}
+            // R-1h-fix: 素の選択モードのときだけ触れる。高さ/棟/計測/ピン/面積指定/並べ替え/一括移動/
+            //   屋根描き中は当たり判定ごと無効化する（点線が壁に重なり、高さマーカーのタップを
+            //   先取りして「屋根を編集」が開いていた実機症状の修正）。
+            hitStrokeWidth={plainSelect ? 14 : 0}
+            listening={plainSelect}
             onClick={handleRoofTap}
             onTap={handleRoofTap}
           />
