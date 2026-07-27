@@ -10,6 +10,7 @@
 import React from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { getOperationGuide, type GuideState } from '@/lib/operationGuide';
+import { isMultiFloor } from '@/lib/konva/floorScope';
 
 export default function OperationGuideBar() {
   const guide = useCanvasStore((s) => {
@@ -30,6 +31,8 @@ export default function OperationGuideBar() {
       directionPointCount: s.directionPoints.length,
       selectActive: s.selectActive,
       isRoofDraw: s.pendingTargetType === 'roof',
+      // R-1h-4: 複数階の物件のときだけ「(2F)」等を文言に出す（単一階では従来どおり階を出さない）。
+      targetFloor: isMultiFloor(s.canvasData.buildings) ? s.activeFloor : null,
     };
     return getOperationGuide(state);
   });

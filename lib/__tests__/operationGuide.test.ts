@@ -92,6 +92,42 @@ describe('getOperationGuide: null（ガイド非表示）', () => {
   });
 });
 
+// R-1h-4: 階スコープが効くツール（高さ・棟・屋根）は、複数階の物件で対象階を文言に出す。
+describe('getOperationGuide: 対象階の明示', () => {
+  it('高さ・棟・屋根には (2F) が付く', () => {
+    expect(g({ isHeightMarkerMode: true, targetFloor: 2 }))
+      .toBe('(2F) 高さを入力する壁面をタップしてください');
+    expect(g({ isRidgeLineMode: true, hasRidgeDraft: false, targetFloor: 2 }))
+      .toBe('(2F) 棟の始点を建物の中でタップしてください');
+    expect(g({ isRidgeLineMode: true, hasRidgeDraft: true, targetFloor: 2 }))
+      .toBe('(2F) 棟の終点をタップしてください');
+    expect(g({ mode: 'roof', targetFloor: 2 }))
+      .toBe('(2F) 屋根をかける建物をタップしてください（建物全体に屋根）');
+    expect(g({ mode: 'building', buildingInputMethod: 'direction', isRoofDraw: true, directionPointCount: 0, targetFloor: 2 }))
+      .toBe('(2F) 屋根の始点をタップしてください');
+  });
+
+  it('1F でも複数階なら (1F) を出す（どちらの階か常に分かるように）', () => {
+    expect(g({ isHeightMarkerMode: true, targetFloor: 1 }))
+      .toBe('(1F) 高さを入力する壁面をタップしてください');
+  });
+
+  it('単一階（targetFloor 未指定/null）は従来の文言のまま', () => {
+    expect(g({ isHeightMarkerMode: true })).toBe('高さを入力する壁面をタップしてください');
+    expect(g({ isHeightMarkerMode: true, targetFloor: null })).toBe('高さを入力する壁面をタップしてください');
+    expect(g({ mode: 'roof' })).toBe('屋根をかける建物をタップしてください（建物全体に屋根）');
+  });
+
+  it('階スコープが効かないツールには階を出さない', () => {
+    expect(g({ isMeasuring: true, targetFloor: 2 })).toBe('計測の始点をタップしてください');
+    expect(g({ isMagnetPinMode: true, targetFloor: 2 })).toBe('ピンの基点（建物の角など）をタップしてください');
+    // 建物の壁入力は pendingBuildingFloor で階が決まるので activeFloor は出さない。
+    expect(g({ mode: 'building', buildingInputMethod: 'direction', directionPointCount: 0, targetFloor: 2 }))
+      .toBe('壁の始点をタップしてください');
+    expect(g({ mode: 'handrail', targetFloor: 2 })).toBe('手摺を配置する位置をタップしてください');
+  });
+});
+
 describe('getOperationGuide: 優先順位（フラグ > mode）', () => {
   it('計測中は mode に関わらず計測ガイド', () => {
     expect(g({ mode: 'select', isMeasuring: true })).toBe('計測の始点をタップしてください');

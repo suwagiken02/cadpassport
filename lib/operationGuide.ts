@@ -38,20 +38,33 @@ export type GuideState = {
   selectActive: boolean;
   /** 屋根領域を描画中か（建物方向入力を pendingTargetType='roof' で流用・R-1e-fix7b）。 */
   isRoofDraw: boolean;
+  /**
+   * 階スコープが効くツール（高さ・棟・屋根）の対象階（R-1h-4）。
+   * 建物が複数階に跨るときだけ数値を渡し、単一階では null/undefined＝階を出さない（従来文言のまま）。
+   */
+  targetFloor?: number | null;
 };
+
+/** 階スコープが効くツールの文言に付ける接頭辞。単一階（null/undefined）では空文字。 */
+function floorPrefix(targetFloor?: number | null): string {
+  return targetFloor == null ? '' : `(${targetFloor}F) `;
+}
 
 /**
  * 現在のツール状態から操作ガイド文（次アクション）を返す。ガイド不要は null。
  * 文言は現場の言葉で簡潔に（鮎澤氏が後で調整する前提で、まず全工程に出ることを優先）。
  */
 export function getOperationGuide(s: GuideState): string | null {
+  // 高さ・棟・屋根は編集中の階の建物だけが対象（R-1h）。複数階のときはどの階に入力しているかを明示する。
+  const fp = floorPrefix(s.targetFloor);
+
   // ── モードフラグ（mode に上書きして効くので先に判定）──
   if (s.isMeasuring) {
     return s.hasMeasurePoint1 ? '計測の終点をタップしてください' : '計測の始点をタップしてください';
   }
-  if (s.isHeightMarkerMode) return '高さを入力する壁面をタップしてください';
+  if (s.isHeightMarkerMode) return `${fp}高さを入力する壁面をタップしてください`;
   if (s.isRidgeLineMode) {
-    return s.hasRidgeDraft ? '棟の終点をタップしてください' : '棟の始点を建物の中でタップしてください';
+    return s.hasRidgeDraft ? `${fp}棟の終点をタップしてください` : `${fp}棟の始点を建物の中でタップしてください`;
   }
   if (s.isMagnetPinMode) {
     return s.hasPinAnchor ? 'ピンを立てる方向と距離を入力してください' : 'ピンの基点（建物の角など）をタップしてください';
@@ -72,8 +85,8 @@ export function getOperationGuide(s: GuideState): string | null {
       if (s.buildingInputMethod === 'direction') {
         if (s.isRoofDraw) {
           return s.directionPointCount === 0
-            ? '屋根の始点をタップしてください'
-            : '方向と距離で屋根の輪郭を描き、始点に戻って閉じてください';
+            ? `${fp}屋根の始点をタップしてください`
+            : `${fp}方向と距離で屋根の輪郭を描き、始点に戻って閉じてください`;
         }
         return s.directionPointCount === 0
           ? '壁の始点をタップしてください'
@@ -87,7 +100,7 @@ export function getOperationGuide(s: GuideState): string | null {
     case 'obstacle': return '障害物を配置する位置をタップしてください';
     case 'memo': return 'メモを配置する位置をタップしてください';
     case 'roof':
-      return '屋根をかける建物をタップしてください（建物全体に屋根）';
+      return `${fp}屋根をかける建物をタップしてください（建物全体に屋根）`;
     case 'select': return s.selectActive ? 'オブジェクトをタップ、またはドラッグで範囲選択してください' : null;
     case 'move-select': return null; // moveSelectActive 側で扱う
     case 'view': return null;        // 閲覧中（ツール未選択）はガイド非表示
