@@ -32,8 +32,13 @@ export type CanvasToolFlags = {
 
 /**
  * キャンバスのクリックを占有するツールが動いているか。
- * mode（ModeType）とは別に立つ副次フラグだけを見る（mode 自体の判定は isPlainSelectMode 側）。
+ * mode（ModeType）とは別に立つ副次フラグを見る（mode 自体の判定は isPlainSelectMode 側）。
  * ※ isDuplicateMode は「ドラッグの意味を変える修飾」でクリックを奪わないため含めない。
+ *
+ * R-1k: 屋根描き（pendingTargetType==='roof'）は「方向入力が実際に動いている（mode==='building'）」
+ *   ときだけツール中とみなす。pendingTargetType は屋根描きを他ボタンで中断すると 'roof' のまま
+ *   残ることがあり、これを無条件にツール中と扱うと通常の選択モードでも屋根点線が触れなくなる
+ *   （実機で「select なのに屋根点線タップで編集が開かない」デグレとして出た）。
  */
 export function isToolActive(s: CanvasToolFlags): boolean {
   return !!(
@@ -44,7 +49,7 @@ export function isToolActive(s: CanvasToolFlags): boolean {
     || s.isAreaDesignationMode
     || s.isReorderMode
     || s.moveSelectActive
-    || s.pendingTargetType === 'roof'
+    || (s.pendingTargetType === 'roof' && s.mode === 'building')
   );
 }
 

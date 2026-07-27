@@ -24,8 +24,11 @@ describe('isToolActive: クリックを占有するツール', () => {
     expect(isToolActive(f({ moveSelectActive: true }))).toBe(true);
   });
 
-  it('屋根領域の描き入力中(pendingTargetType=roof)も true。building/obstacle は false', () => {
-    expect(isToolActive(f({ pendingTargetType: 'roof' }))).toBe(true);
+  // R-1k: 屋根描きは方向入力(mode==='building')が動いているときだけツール中。
+  //   中断で pendingTargetType='roof' が残っても選択モードを巻き込まないようにする。
+  it('屋根領域の描き入力は mode=building のときだけ true', () => {
+    expect(isToolActive({ mode: 'building', pendingTargetType: 'roof' })).toBe(true);
+    expect(isToolActive(f({ pendingTargetType: 'roof' }))).toBe(false); // select に残った stale flag
     expect(isToolActive(f({ pendingTargetType: 'building' }))).toBe(false);
     expect(isToolActive(f({ pendingTargetType: 'obstacle' }))).toBe(false);
   });
@@ -52,7 +55,13 @@ describe('isPlainSelectMode: 常時リスナーを有効にしてよい状態', 
     expect(isPlainSelectMode(f({ isAreaDesignationMode: true }))).toBe(false);
     expect(isPlainSelectMode(f({ isReorderMode: true }))).toBe(false);
     expect(isPlainSelectMode(f({ moveSelectActive: true }))).toBe(false);
-    expect(isPlainSelectMode(f({ pendingTargetType: 'roof' }))).toBe(false);
+    expect(isPlainSelectMode({ mode: 'building', pendingTargetType: 'roof' })).toBe(false);
+  });
+
+  // R-1k のデグレ回帰: 屋根描きを中断して選択モードに戻ると pendingTargetType が 'roof' のまま
+  //   残ることがある。この状態でも通常の選択モードとして扱い、屋根点線タップ編集を効かせる。
+  it('中断で残った pendingTargetType=roof は選択モードを妨げない', () => {
+    expect(isPlainSelectMode(f({ pendingTargetType: 'roof' }))).toBe(true);
   });
 
   it('select 以外の mode は false（erase/roof/building/view など）', () => {

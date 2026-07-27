@@ -572,7 +572,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   }),
 
   mode: 'view',  // 図面を開いた直後は閲覧モード (= 何も触れない)、 ユーザが明示的にボタン押下で遷移
-  setMode: (mode) => set({ mode, selectedIds: [] }),
+  // R-1k: 建物モードを離れるときは方向入力の対象種別を既定へ戻す。屋根描きを他ボタンで中断すると
+  //   pendingTargetType が 'roof' のまま残り、以後の選択モードで屋根点線が触れなくなる/非 active 階が
+  //   減光したままになる、といった「モード抜けの取りこぼし」が起きていた。
+  setMode: (mode) => set(
+    mode === 'building'
+      ? { mode, selectedIds: [] }
+      : { mode, selectedIds: [], pendingTargetType: 'building' as const },
+  ),
   buildingInputMethod: 'template',
   setBuildingInputMethod: (m) => set({ buildingInputMethod: m }),
   isMagnetPinMode: false,
