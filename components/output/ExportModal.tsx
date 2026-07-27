@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PaperSize, ScaleOption } from '@/types';
 import { useCanvasStore } from '@/stores/canvasStore';
 import type { ExportProgress } from '@/lib/export/multiPageExport';
@@ -44,6 +44,15 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   const [allPages, setAllPages] = useState(false);
   /** E-7: 全ページ出力の進捗（null = 出力中でない）。 */
   const [progress, setProgress] = useState<ExportProgress | null>(null);
+
+  // E-7-fix: 範囲指定中にホームへ戻る等でアンマウントされても印刷枠を必ず消す。
+  //   ✕/戻る/出力完了の経路は個別に消していたが、画面離脱の経路だけ漏れていた。
+  //   印刷枠を出すのはこのモーダルだけなので、アンマウント時に落として安全。
+  useEffect(() => () => {
+    const s = useCanvasStore.getState();
+    if (s.showPrintArea) s.toggleShowPrintArea();
+    s.setPrintAreaCenter(null);
+  }, []);
 
   // ステップ1 → ステップ2: 印刷枠を表示してモーダルを隠す
   const handleConfirmSettings = () => {

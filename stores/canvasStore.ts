@@ -572,6 +572,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // 平米計算 offset / 印刷枠
     areaCalcOffsetMm: 900,
     printAreaCenter: null,
+    // E-7-fix: 印刷枠の表示も必ず消す。store は SPA セッション中ずっと生きているため、
+    //   範囲指定中に離脱すると showPrintArea が true のまま残り、別の現場・新規現場にも
+    //   赤破線が出続けていた（printAreaCenter だけ戻しても枠は建物中心にフォールバックして描かれる）。
+    showPrintArea: false,
   }),
 
   mode: 'view',  // 図面を開いた直後は閲覧モード (= 何も触れない)、 ユーザが明示的にボタン押下で遷移
