@@ -234,6 +234,27 @@ export function roofFaceOverhangGrid(building: BuildingShape, roof: Roof, face: 
   return mx;
 }
 
+/**
+ * この面の壁から棟までの水平距離(mm)＝軒先下がりの run（R-1c の faceEaveDropMm と同基準）。
+ * 棟位置は「面と平行な RidgeLine があればその垂直座標、無ければ屋根 polygon の bbox 中央」。
+ * 建物 bbox ではなく屋根 polygon の bbox を使うので、下屋の run が大屋根に引きずられない。
+ * 勾配そのものは elevationEngine.roofSlopePerMm（単一ソース）で計算する。
+ */
+export function roofRunMm(poly: Point[], face: Face, ridges: RidgeLine[]): number {
+  if (poly.length === 0) return 0;
+  const isHorizontal = face === 'north' || face === 'south';
+  const perp = poly.map((p) => (isHorizontal ? p.y : p.x));
+  const minP = Math.min(...perp), maxP = Math.max(...perp);
+  const wallPerp = face === 'south' || face === 'east' ? maxP : minP; // 外向き側の壁
+  let ridgePerp = (minP + maxP) / 2; // 既定: bbox 中央（妻の棟マーカー想定）
+  for (const r of ridges) {
+    const rp1 = isHorizontal ? r.p1.y : r.p1.x;
+    const rp2 = isHorizontal ? r.p2.y : r.p2.x;
+    if (Math.abs(rp1 - rp2) < EPS) { ridgePerp = rp1; break; } // 面と平行な棟の実位置
+  }
+  return Math.abs(ridgePerp - wallPerp) * 10;
+}
+
 /** 視点への近さ（大きいほど手前）。south/east は奥行き最大が手前、north/west は最小が手前。
  *  同一面に複数バンドが重なるときの描画順（奥→手前）に使う。 */
 export function roofFrontness(building: BuildingShape, roof: Roof, face: Face): number {

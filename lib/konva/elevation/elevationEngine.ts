@@ -20,7 +20,20 @@ import { heightToFloors, LAYER_HEIGHT_MM, PILLAR_START_MIN_MM, type PillarType }
 import { mmToGrid } from '../gridUtils';
 import { computeOffsetPolygon } from '../roofUtils';
 import { resolveBuildingOverhangsGrid } from '../roofResolve';
+import { getRoofPolygon } from '../roofRegion';
 import { getHeightAtPosition } from '../heightInterpolation';
+import {
+  assignRidgeLinesToRoofs,
+  clipSegmentsToIntervals,
+  roofEaveMm,
+  roofExtXRange,
+  roofFaceOverhangGrid,
+  roofFaceWallIntervals,
+  roofMarkerMaxMm,
+  roofRunMm,
+  roofWallCoverages,
+  variableCoord,
+} from './roofBandSource';
 import type { Face, FaceSpanColumn } from './faceReconstruction';
 
 // ── 定数（1 箇所に集約）──
@@ -315,12 +328,15 @@ export type ElevationScaffold = {
   spanRaises: SpanRaise[];
 };
 
-/** 屋根投影バンド（建物ごと）。外形上辺プロファイルを出幅ぶん傾き保存で延長したもの。
+/** 屋根投影バンド（屋根オブジェクトごと・R-1f。roofs[] が無い旧データは建物ごと）。
+ *  外形上辺プロファイルを出幅ぶん傾き保存で延長したもの。
  *  樋面(フラット)は水平延長、妻面(三角)は斜辺(けらば)延長で軒先が勾配なり下がる。
  *  filledToRidge=true は樋面の切妻投影（軒→棟の台形を塗る）、false は延長プロファイルの
  *  線のみ（妻のけらば／棟マーカー無しのフラット軒）。 */
 export type RoofBand = {
   buildingId: string;
+  /** 屋根オブジェクト id（R-1f）。roofs[] 由来のバンドのみ。旧データの建物単位バンドは undefined。 */
+  roofId?: string;
   /** 延長込みの変軸範囲（グリッド）。壁 ± 出幅。 */
   xStart: number;
   xEnd: number;
@@ -341,7 +357,7 @@ export type FaceElevation = {
   buildingOutlines: BuildingOutline[];
   /** 足場（同一面の複数列 = L 字は列ごとに別 scaffold）。 */
   scaffolds: ElevationScaffold[];
-  /** 屋根投影バンド（樋面のみ・建物ごと・妻面では空）。 */
+  /** 屋根投影バンド（樋面のみ・屋根ごと・妻面では空）。 */
   roofBands: RoofBand[];
   /** 棟(建物最高点)の最大高さ(mm)。roofBands があるとき最大 ridge、無ければ null。
    *  主に viewBox スケール算入用。 */
@@ -735,6 +751,99 @@ export function mirrorVariableAxis(fe: FaceElevation): FaceElevation {
 }
 
 /**
+ * 屋根オブジェクト(polygon)ごとの投影バンド[]（R-1f-2）。大屋根と下屋が別バンドになる。
+ *
+ *  ・x 範囲   = 壁重なり辺のみ出幅を出したオフセット polygon の変軸 bbox（その屋根だけの広がり）。
+ *  ・軒プロファイル = 「その屋根が覆う壁区間」で建物外形の上辺を切り出し、出幅ぶん傾き保存で延長。
+ *      切り出しにより下屋の壁区間に置いた低いマーカーがそのまま下屋の軒高になる（運用どおり）。
+ *      その面に壁を持たない屋根（例: 東壁だけの下屋を北から見る）は屋根の軒高で水平プロファイル。
+ *  ・棟       = 中点がその屋根 polygon 内の RidgeLine のみ（assignRidgeLinesToRoofs）。
+ *  ・棟マーカー = その屋根の壁区間上のマーカー最高値のみ（大屋根の棟で下屋が持ち上がらない）。
+ *  ・軒先下がり = 屋根 polygon の bbox を run にするので下屋の勾配が建物 bbox に引きずられない。
+ *
+ * バンドを出す条件（優先度順）は建物単位の従来経路と同一:
+ *   棟ラインあり → 上側包絡線を軒まで塗る / 棟マーカーが軒より高い → 軒→棟の台形 / 軒の出あり → 線のみ。
+ * polygon が建物外周と一致する屋根（旧データの lift）では従来経路と同じ数値になる。
+ */
+function buildRoofBandsForRoofs(
+  building: BuildingShape,
+  outline: BuildingOutline,
+  roofs: Roof[],
+  markers: HeightMarker[],
+  ridgeLines: RidgeLine[],
+  defaultHeightMm?: number,
+): RoofBand[] {
+  const face = outline.face;
+  const ridgeByRoof = assignRidgeLinesToRoofs(ridgeLines, building, roofs);
+  const bands: RoofBand[] = [];
+
+  for (const roof of roofs) {
+    const ext = roofExtXRange(building, roof, face);
+    if (!ext) continue;
+    const coverages = roofWallCoverages(building, roof);
+    const clipped = clipSegmentsToIntervals(outline.segments, roofFaceWallIntervals(building, roof, face));
+
+    // この面に壁を持たない屋根は、屋根の軒高で水平プロファイル（壁範囲＝屋根 polygon の変軸 bbox）。
+    let segs: BuildingOutlineSegment[] = clipped;
+    if (segs.length === 0) {
+      const eaveMm = roofEaveMm(building, coverages, markers) ?? defaultHeightMm;
+      if (eaveMm == null) continue;
+      const poly = getRoofPolygon(building, roof);
+      const cs = poly.map(p => variableCoord(p, face));
+      const wx0 = Math.min(...cs), wx1 = Math.max(...cs);
+      if (!(wx1 > wx0 + 1e-6)) continue;
+      segs = [{ xStart: wx0, xEnd: wx1, heightStartMm: eaveMm, heightEndMm: eaveMm }];
+    }
+
+    const wallXStart = segs[0].xStart;
+    const wallXEnd = segs[segs.length - 1].xEnd;
+    let outlineMax = -Infinity;
+    for (const s of segs) outlineMax = Math.max(outlineMax, s.heightStartMm, s.heightEndMm);
+    if (!Number.isFinite(outlineMax)) continue;
+
+    const markerMax = roofMarkerMaxMm(building, coverages, markers);
+    const hasRidgeMarker = markerMax != null && markerMax > outlineMax + 1e-6;
+    const hasOverhang = ext.xStart < wallXStart - 1e-6 || ext.xEnd > wallXEnd + 1e-6;
+    const myRidgeLines = ridgeByRoof.get(roof.id) ?? [];
+    const ridges = projectRidgeLinesToFace(myRidgeLines, building, face);
+
+    // R-1c と同じ判定・同じ式。棟/出幅/run をこの屋根のものに差し替えただけ。
+    const hasParallelRidge = ridges.some(r => r.b > r.a + 1e-6);
+    const isGutterFace = ridges.length > 0 ? hasParallelRidge : hasRidgeMarker;
+    const ridgeMmForDrop = ridges.length > 0
+      ? ridges.reduce((m, r) => Math.max(m, r.heightMm), -Infinity)
+      : (markerMax ?? outlineMax);
+    const ohGrid = roofFaceOverhangGrid(building, roof, face);
+    const eaveDropMm = (isGutterFace && ohGrid > 0)
+      ? Math.round(roofSlopePerMm(outlineMax, ridgeMmForDrop, roofRunMm(getRoofPolygon(building, roof), face, myRidgeLines)) * ohGrid * 10)
+      : 0;
+    const eaveProfile = extendedTopProfile(segs, ext.xStart, ext.xEnd, eaveDropMm);
+    if (eaveProfile.length < 2) continue;
+
+    if (ridges.length > 0) {
+      const profile = composeUpperEnvelope(eaveProfile, ridges, ext.xStart, ext.xEnd);
+      const envMax = profile.reduce((m, p) => Math.max(m, p.mm), -Infinity);
+      const baseMm = Math.min(profile[0].mm, profile[profile.length - 1].mm);
+      bands.push({
+        buildingId: building.id, roofId: roof.id, xStart: ext.xStart, xEnd: ext.xEnd,
+        ridgeMm: Math.round(envMax), profile, filledToRidge: true, baseMm,
+      });
+    } else if (hasRidgeMarker) {
+      bands.push({
+        buildingId: building.id, roofId: roof.id, xStart: ext.xStart, xEnd: ext.xEnd,
+        ridgeMm: Math.round(markerMax!), profile: eaveProfile, filledToRidge: true,
+      });
+    } else if (hasOverhang) {
+      bands.push({
+        buildingId: building.id, roofId: roof.id, xStart: ext.xStart, xEnd: ext.xEnd,
+        ridgeMm: Math.round(outlineMax), profile: eaveProfile, filledToRidge: false,
+      });
+    }
+  }
+  return bands;
+}
+
+/**
  * 同一面・同一 floor の列群 → 1 面の立面モデル。
  * @param faceColumns 同 face・同 floor の FaceSpanColumn 群（E-1 出力を絞ったもの）。
  * @param buildings 建物（該当 floor + 重ねる下階を含めてよい）。
@@ -756,10 +865,19 @@ export function buildFaceElevation(
     if (o.segments.length > 0) buildingOutlines.push(o);
   }
 
-  // 屋根投影バンド: 建物ごとに、マーカー最高値がこの面外形の最高値を超える建物のみ帯を出す。
+  // 屋根投影バンド。roofs[] にその建物の屋根があれば「屋根ごとに 1 本」（大屋根＋下屋が別バンド・
+  // R-1f-2）、無ければ従来どおり「建物ごとに 1 本」（旧データ互換・マーカー最高値がこの面外形の
+  // 最高値を超える建物のみ帯を出す）。
   const ms = opts?.markers ?? [];
   const roofBands: RoofBand[] = [];
   for (const o of buildingOutlines) {
+    const b = buildings.find(bb => bb.id === o.buildingId);
+    const myRoofs = b ? (opts?.roofs ?? []).filter(r => r.buildingId === b.id) : [];
+    if (b && myRoofs.length > 0) {
+      roofBands.push(...buildRoofBandsForRoofs(b, o, myRoofs, ms, opts?.ridgeLines ?? [], opts?.defaultHeightMm));
+      continue;
+    }
+
     let markerMax = -Infinity;
     for (const m of ms) if (m.buildingId === o.buildingId) markerMax = Math.max(markerMax, m.heightMm);
     let outlineMax = -Infinity, xMin = Infinity, xMax = -Infinity;
@@ -772,7 +890,6 @@ export function buildFaceElevation(
 
     // 軒の出: 出幅ぶん左右へ拡張した屋根 x 範囲（出幅なしなら壁範囲と一致）。
     let extXStart = xMin, extXEnd = xMax;
-    const b = buildings.find(bb => bb.id === o.buildingId);
     if (b) {
       const ohs = mergedRoofOverhangsGrid(b, opts?.roofOverhangs ?? [], opts?.roofs);
       if (ohs.some(v => v > 0)) {
