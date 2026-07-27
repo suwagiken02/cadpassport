@@ -7,9 +7,15 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { Point } from '@/types';
 import { computeOffsetPolygon } from '@/lib/konva/roofUtils';
 import { getRoofPolygon, roofPolygonOffsetsGrid } from '@/lib/konva/roofRegion';
+import { OTHER_FLOOR_OPACITY, OTHER_FLOOR_OPACITY_TOOL } from '@/lib/konva/floorScope';
 
 export default function BuildingLayer() {
-  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor } = useCanvasStore();
+  const { canvasData, zoom, panX, panY, mode, selectedIds, moveSelectMode, isDarkMode, selectActive, selectLock, isReorderMode, activeFloor, isHeightMarkerMode, isRidgeLineMode, pendingTargetType } = useCanvasStore();
+  // R-1h-3: 高さ・棟・屋根領域の入力中は「どの階の壁に置いているか」を一目で分かるよう、
+  //   非 active 階をさらに大幅減光する（通常の薄表示 0.6 → 0.18）。非表示にしないのは
+  //   下階との位置関係が見えないと上階の壁位置を掴めないため。
+  const isFloorScopedTool = isHeightMarkerMode || isRidgeLineMode || pendingTargetType === 'roof' || mode === 'roof';
+  const otherFloorOpacity = isFloorScopedTool ? OTHER_FLOOR_OPACITY_TOOL : OTHER_FLOOR_OPACITY;
   const gridPx = INITIAL_GRID_PX * zoom;
   const effectiveSelectedIds = mode === 'move-select' ? moveSelectMode.selectedIds : selectedIds;
   // 選択ON + ロック解除中、 または入替モード中のみ触れる (= 選択OFF + 非入替 = 閲覧モードで触れない)
@@ -66,7 +72,7 @@ export default function BuildingLayer() {
         return (
           <Line key={building.id} points={flatPoints} closed
             fill={fillColor}
-            opacity={is2F ? 0.6 : 1}
+            opacity={is2F ? otherFloorOpacity : 1}
             stroke={strokeColor}
             strokeWidth={(isSelected ? 24 : 16) * zoom}
             listening={selectListenBuilding || mode === 'erase' || mode === 'move-select' || mode === 'roof'}

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import NumInput from '@/components/ui/NumInput';
 import { GRID_UNIT_MM } from '@/lib/konva/gridUtils';
-import { buildingForRoofPolygon } from '@/lib/konva/roofRegion';
+import { buildingIdForPolygonOnFloor } from '@/lib/konva/floorScope';
 import { directionInputLabels } from '@/lib/directionInputLabels';
 
 type Props = { onClose: () => void };
@@ -80,7 +80,8 @@ export default function DirectionInputModal({ onClose }: Props) {
       const pts = [...directionPoints];
       if (s.pendingTargetType === 'roof') {
         // R-1e-fix7b: 屋根領域を描き終えた → その領域が乗る建物に紐づけて設定モーダルへ。
-        const buildingId = buildingForRoofPolygon(pts, s.canvasData.buildings);
+        // R-1h-3: 屋根が乗る建物は編集中の階から選ぶ（総二階での 1F/2F 取り違え対策）。
+        const buildingId = buildingIdForPolygonOnFloor(pts, s.canvasData.buildings, s.activeFloor);
         if (buildingId) s.setRoofSettingsTarget({ buildingId, polygon: pts });
         s.setPendingTargetType('building');
       } else if (s.pendingTargetType === 'obstacle' && s.pendingObstacleType) {

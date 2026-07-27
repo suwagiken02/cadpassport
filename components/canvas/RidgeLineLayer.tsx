@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
+import { buildingAtPointOnFloor } from '@/lib/konva/floorScope';
 import { computeRidgeGuides, snapRidgeInput } from '@/lib/konva/elevation/ridgeProjection';
 import type { Point, BuildingShape } from '@/types';
 
@@ -25,7 +26,7 @@ export default function RidgeLineLayer() {
   const {
     canvasData, zoom, panX, panY, canvasSize,
     isRidgeLineMode, setRidgeInputLineId, addRidgeLine, moveRidgeLine,
-    ridgeDraft: draft, setRidgeDraft: setDraft,
+    ridgeDraft: draft, setRidgeDraft: setDraft, activeFloor,
   } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const ridgeLines = canvasData.ridgeLines ?? [];
@@ -38,8 +39,11 @@ export default function RidgeLineLayer() {
   const sx = (gx: number) => gx * gridPx + panX;
   const sy = (gy: number) => gy * gridPx + panY;
 
+  // R-1h-3: 棟の所属建物は編集中の階から選ぶ。総二階では 1F/2F の外形が重なり、
+  //   従来の「配列順で最初に見つかった建物」だと 2F の棟が必ず 1F に紐づいていた。
+  //   対象階に建物が無ければ全建物＝従来挙動（resolveFloorScope の安全側フォールバック）。
   const buildingAt = (pt: Point): BuildingShape | undefined =>
-    canvasData.buildings.find((b) => isPointInPolygon(pt.x, pt.y, b.points));
+    buildingAtPointOnFloor(pt, canvasData.buildings, activeFloor);
 
   const snapIn = (pt: Point, b: BuildingShape) => snapRidgeInput(pt, b.points, SNAP_PX / gridPx);
 

@@ -17,7 +17,7 @@ import ExportModal from '@/components/output/ExportModal';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofSettingsModal from '@/components/building/RoofSettingsModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
-import { buildingForRoofPolygon } from '@/lib/konva/roofRegion';
+import { buildingIdForPolygonOnFloor } from '@/lib/konva/floorScope';
 import { directionInputLabels } from '@/lib/directionInputLabels';
 import UdekiModal from '@/components/scaffold/UdekiModal';
 import AutoLayoutModal from '@/components/scaffold/AutoLayoutModal';
@@ -722,7 +722,9 @@ export default function EditorPage() {
                 const pts = [...directionPoints];
                 if (pendingTargetType === 'roof') {
                   // R-1e-fix7b: 屋根領域を描き終えた → 乗る建物に紐づけて設定モーダルへ。
-                  const buildingId = buildingForRoofPolygon(pts, canvasData.buildings);
+                  // R-1h-3: 屋根が乗る建物は編集中の階から選ぶ（総二階では 1F/2F の外形が重なり、
+                  //   従来は配列順で先の建物＝常に 1F に紐づいていた）。
+                  const buildingId = buildingIdForPolygonOnFloor(pts, canvasData.buildings, useCanvasStore.getState().activeFloor);
                   if (buildingId) useCanvasStore.getState().setRoofSettingsTarget({ buildingId, polygon: pts });
                   setPendingTargetType('building');
                 } else if (pendingTargetType === 'obstacle' && pendingObstacleType) {
