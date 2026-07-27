@@ -300,14 +300,19 @@ export default function EditorPage() {
 
   // 出力処理
   const handleExport = useCallback(
-    async (settings: { format: 'pdf' | 'png' | 'dxf'; paperSize: PaperSize; scale: ScaleOption }) => {
+    async (settings: {
+      format: 'pdf' | 'png' | 'dxf';
+      paperSize: PaperSize;
+      scale: ScaleOption;
+      allPages?: boolean;
+      onProgress?: (p: { current: number; total: number; title: string }) => void;
+    }) => {
       try {
         if (settings.format === 'png') {
           const { exportToPng } = await import('@/lib/export/pngExport');
           await exportToPng(siteName);
         } else if (settings.format === 'pdf') {
-          const { exportToPdf } = await import('@/lib/export/pdfExport');
-          const { withFittedPrintView } = await import('@/lib/export/exportViewport');
+          let exportedPages = 1; // 完了案内に出すページ数（全ページ出力時に上書き）
           const store = useCanvasStore.getState();
           const pdfSettings = {
             format: 'pdf' as const,
@@ -317,14 +322,28 @@ export default function EditorPage() {
             siteName,
             date: new Date().toLocaleDateString('ja-JP'),
           };
-          // E-7-1: 印刷枠が画面外にはみ出していると、その部分が白紙で出力される（背景・グリッドは
-          //   ビューポート分しか描かれないため）。キャプチャの間だけビューを寄せ、終わったら戻す。
-          await withFittedPrintView(
-            canvasData, settings.paperSize, settings.scale, store.printAreaCenter,
-            (view) => exportToPdf(
-              canvasData, pdfSettings, store.printAreaCenter, view.zoom, view.panX, view.panY,
-            ),
-          );
+          if (settings.allPages && store.projectId) {
+            // E-7: 物件の全ページを1つの PDF に。ページごとに canvasData を差し替えて描く。
+            const { exportAllPagesToPdf } = await import('@/lib/export/multiPageExport');
+            const count = await exportAllPagesToPdf({
+              projectId: store.projectId,
+              settings: pdfSettings,
+              onProgress: settings.onProgress,
+            });
+            if (count === 0) throw new Error('出力できるページがありません');
+            exportedPages = count;
+          } else {
+            const { exportToPdf } = await import('@/lib/export/pdfExport');
+            const { withFittedPrintView } = await import('@/lib/export/exportViewport');
+            // E-7-1: 印刷枠が画面外にはみ出していると、その部分が白紙で出力される（背景・グリッドは
+            //   ビューポート分しか描かれないため）。キャプチャの間だけビューを寄せ、終わったら戻す。
+            await withFittedPrintView(
+              canvasData, settings.paperSize, settings.scale, store.printAreaCenter,
+              (view) => exportToPdf(
+                canvasData, pdfSettings, store.printAreaCenter, view.zoom, view.panX, view.panY,
+              ),
+            );
+          }
           // PDF 保存完了案内 (= UA 判定で端末別文言)
           const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
           const deviceMsg = /iPhone|iPad|iPod/.test(ua)
@@ -332,7 +351,8 @@ export default function EditorPage() {
             : /Android/i.test(ua)
             ? 'ダウンロードフォルダ または Files アプリで確認できます。'
             : 'ダウンロードフォルダに保存されました。';
-          useCanvasStore.getState().setAlertMessage(`PDFを保存しました\n\n${deviceMsg}`);
+          const pagesMsg = exportedPages > 1 ? `（全${exportedPages}ページ）` : '';
+          useCanvasStore.getState().setAlertMessage(`PDFを保存しました${pagesMsg}\n\n${deviceMsg}`);
         } else {
           const { exportToDxf } = await import('@/lib/export/dxfExport');
           exportToDxf(canvasData, siteName);

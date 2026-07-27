@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { PaperSize, ScaleOption } from '@/types';
 import { useCanvasStore } from '@/stores/canvasStore';
+import type { ExportProgress } from '@/lib/export/multiPageExport';
 
 type Props = {
   onClose: () => void;
@@ -10,6 +11,10 @@ type Props = {
     format: 'pdf' | 'png' | 'dxf';
     paperSize: PaperSize;
     scale: ScaleOption;
+    /** E-7: true なら物件の全ページを1つの PDF にまとめる（PDF のみ）。 */
+    allPages?: boolean;
+    /** E-7: 全ページ出力の進捗通知。 */
+    onProgress?: (p: ExportProgress) => void;
   }) => void;
   siteName: string;
 };
@@ -35,6 +40,10 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   const [format, setFormat] = useState<'pdf' | 'png' | 'dxf'>('pdf');
   const [paperSize, setPaperSize] = useState<PaperSize>('A4_landscape');
   const [scale, setScale] = useState<ScaleOption>('1/100');
+  /** E-7: 出力範囲（このページのみ / 物件の全ページ）。 */
+  const [allPages, setAllPages] = useState(false);
+  /** E-7: 全ページ出力の進捗（null = 出力中でない）。 */
+  const [progress, setProgress] = useState<ExportProgress | null>(null);
 
   // ステップ1 → ステップ2: 印刷枠を表示してモーダルを隠す
   const handleConfirmSettings = () => {
@@ -62,10 +71,12 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
       const vh = canvasSize.height || (window.innerHeight - 120);
       zoomToFitPrintArea(vw, vh);
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await onExport({ format, paperSize, scale });
+      await onExport({ format, paperSize, scale, allPages, onProgress: setProgress });
     } catch (e) {
       console.error('[Export] error:', e);
       alert(`出力エラー: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setProgress(null);
     }
     // 印刷枠を非表示
     if (useCanvasStore.getState().showPrintArea) useCanvasStore.getState().toggleShowPrintArea();
@@ -79,14 +90,36 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
     onClose();
   };
 
+  // E-7: 全ページ出力中のオーバーレイ（ページを差し替えながら描くので画面が切り替わる）。
+  if (progress) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-dark-surface border border-dark-border rounded-2xl px-6 py-5 text-center shadow-2xl">
+          <p className="text-canvas font-bold mb-1">
+            出力中… ({progress.current}/{progress.total})
+          </p>
+          <p className="text-xs text-dimension">{progress.title}</p>
+          <div className="mt-3 h-1.5 w-56 bg-dark-bg rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${Math.round((progress.current / Math.max(1, progress.total)) * 100)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ステップ2: 範囲指定中（モーダルは下部に小さく表示）
   if (step === 'range') {
     return (
       <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-1.5 flex items-center gap-2">
-        <span className="text-xs text-canvas whitespace-nowrap">範囲をドラッグ</span>
+        <span className="text-xs text-canvas whitespace-nowrap">
+          {allPages ? '範囲をドラッグ（このページ）' : '範囲をドラッグ'}
+        </span>
         <button type="button" onClick={handleExport}
           className="px-3 py-1.5 bg-accent text-white font-bold rounded-lg text-xs whitespace-nowrap">
-          PDF出力
+          {allPages ? '全ページ出力' : 'PDF出力'}
         </button>
         <button type="button" onClick={() => { setStep('settings'); if (useCanvasStore.getState().showPrintArea) useCanvasStore.getState().toggleShowPrintArea(); }}
           className="px-2 py-1.5 bg-dark-bg border border-dark-border rounded-lg text-xs text-dimension whitespace-nowrap">
@@ -123,6 +156,28 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
               ))}
             </div>
           </div>
+
+          {/* 出力範囲 (PDF only・E-7) */}
+          {format === 'pdf' && (
+            <div>
+              <p className="text-xs text-dimension mb-2">出力範囲</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setAllPages(false)}
+                  className={`flex-1 py-2 rounded-lg text-sm ${
+                    !allPages ? 'bg-accent text-white' : 'bg-dark-bg text-canvas border border-dark-border'
+                  }`}>このページのみ</button>
+                <button type="button" onClick={() => setAllPages(true)}
+                  className={`flex-1 py-2 rounded-lg text-sm ${
+                    allPages ? 'bg-accent text-white' : 'bg-dark-bg text-canvas border border-dark-border'
+                  }`}>全ページ</button>
+              </div>
+              {allPages && (
+                <p className="text-[11px] text-dimension mt-1.5">
+                  この物件の全ページ（平面図・立面図）をタブの順で1つの PDF にまとめます。
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 用紙サイズ (PDF only) */}
           {format === 'pdf' && (
