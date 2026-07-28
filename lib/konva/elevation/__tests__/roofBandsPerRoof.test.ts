@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, HeightMarker, Point, RidgeLine, Roof } from '@/types';
 import { buildFaceElevation, type RoofBand } from '../elevationEngine';
+import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 
 // ============================================================
 // R-1f-2: 屋根単位バンド生成への切替。
-// roofs[] にその建物の屋根があれば屋根ごと 1 本、無ければ従来どおり建物ごと 1 本。
-// ここでは「polygon = 建物外周（旧データの lift 相当）の 1 屋根」が従来経路と数値一致することを固定する。
+// roofs[] にその建物の屋根があれば屋根ごと 1 本、無ければ建物ごと 1 本（マーカーだけのバンド）。
+// R-1g: 旧 building.roof の直読みは撤去し、互換は読み込み時の lift に一本化した。よってここでは
+//   「旧データ(RoofConfig)を lift した屋根」と「同じ形の屋根オブジェクトを直接渡した場合」が
+//   数値一致することを固定する（＝旧データが lift 経由で従来どおり読めることの担保）。
 // ============================================================
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 
@@ -25,20 +28,21 @@ const liftedRoof = (buildingId: string, uniformMm = 600): Roof => ({
 /** roofId を落として旧経路の出力と比較できる形にする。 */
 const stripRoofId = (bands: RoofBand[]) => bands.map(({ roofId: _roofId, ...rest }) => rest);
 
-/** 同じ入力を「旧経路(roofs 無し)」「新経路(roofs 有り)」で走らせて両方返す。 */
+/** 同じ入力を「旧データを lift した経路」「屋根オブジェクトを直接渡す経路」で走らせて両方返す。 */
 function bothPaths(
   markers: HeightMarker[], face: 'north' | 'south' | 'east' | 'west',
   opts?: { ridgeLines?: RidgeLine[]; uniformMm?: number; defaultHeightMm?: number },
 ) {
   const uniformMm = opts?.uniformMm ?? 600;
+  const b = legacyBld('B', uniformMm);
   const common = {
     markers, face, ridgeLines: opts?.ridgeLines ?? [], defaultHeightMm: opts?.defaultHeightMm,
   };
-  const legacy = buildFaceElevation([], [legacyBld('B', uniformMm)], common);
-  const perRoof = buildFaceElevation([], [legacyBld('B', uniformMm)], {
-    ...common, roofs: [liftedRoof('B', uniformMm)],
-  });
-  return { legacy, perRoof };
+  // legacy = 本番の読み込みと同じ経路（normalize が liftLegacyRoofs で roofs[] を作る）。
+  const legacy = buildFaceElevation([], [b], { ...common, roofs: liftLegacyRoofs([b], []) });
+  const perRoof = buildFaceElevation([], [b], { ...common, roofs: [liftedRoof('B', uniformMm)] });
+  // どちらも屋根単位経路を通るので、比較は roofId を落とした形で行う（id は lift と同じ規則で一致する）。
+  return { legacy: { ...legacy, roofBands: stripRoofId(legacy.roofBands) as RoofBand[] }, perRoof };
 }
 
 describe('R-1f-2: 全周屋根(lift 相当)は従来経路と数値一致', () => {
@@ -145,7 +149,12 @@ describe('R-1f-3: 同一面の複数バンドは奥→手前の順', () => {
 });
 
 describe('R-1f-2: roofId と経路の切り分け', () => {
-  const markers: HeightMarker[] = [{ id: 'e', buildingId: 'B', edgeIndex: 0, t: 0.5, heightMm: 5000 }];
+  // R-1g: 出幅は roofs[] からしか出ないので、roofs[] 無しでもバンドが出る棟マーカー方式で判定する。
+  const markers: HeightMarker[] = [
+    { id: 'n0', buildingId: 'B', edgeIndex: 0, t: 0, heightMm: 5000 },
+    { id: 'n1', buildingId: 'B', edgeIndex: 0, t: 1, heightMm: 5000 },
+    { id: 'sm', buildingId: 'B', edgeIndex: 2, t: 0.5, heightMm: 7000 },
+  ];
 
   it('roofs[] 由来のバンドには roofId が入る', () => {
     const fe = buildFaceElevation([], [legacyBld('B')], { markers, face: 'north', roofs: [liftedRoof('B')] });

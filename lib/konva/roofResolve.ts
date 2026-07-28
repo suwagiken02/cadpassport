@@ -34,11 +34,11 @@ function legacyOverhangsGrid(building: BuildingShape, legacyRoofOverhangs: RoofO
 export function resolveBuildingOverhangsGrid(
   building: BuildingShape,
   roofs: Roof[] | undefined,
-  legacyRoofOverhangs: RoofOverhang[],
 ): number[] {
-  const mine = (roofs ?? []).filter((r) => r.buildingId === building.id);
-  if (mine.length === 0) return legacyOverhangsGrid(building, legacyRoofOverhangs);
-  return buildingEdgeOverhangsFromRoofs(building, mine);
+  // R-1g: 旧 building.roof / roofOverhangs[] の直読みフォールバックは撤去。互換は読み込み時の
+  //   lift（liftLegacyRoofs → roofs[]）の一点に集約する。lift 後は必ず roofs[] に現れるため、
+  //   ここでフォールバックしても結果は「屋根なし＝全辺 0」と同じで、二重経路を持つ意味がない。
+  return buildingEdgeOverhangsFromRoofs(building, (roofs ?? []).filter((r) => r.buildingId === building.id));
 }
 
 /**

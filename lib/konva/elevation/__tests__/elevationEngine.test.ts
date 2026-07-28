@@ -10,7 +10,17 @@ import {
   DEFAULT_JACK_MM,
   KOMA_PITCH_MM,
   LAYER_HEIGHT_MM,
+  type FaceElevationOpts,
 } from '../elevationEngine';
+import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
+
+/** R-1g: 出幅は roofs[] からしか読まない。旧 RoofConfig / roofOverhangs[] の建物は
+ *  本番の読み込み(normalize)と同じく lift して渡す。期待値は従来のまま＝lift の等価性の担保。 */
+const feLift = (cols: FaceSpanColumn[], buildings: BuildingShape[], opts?: FaceElevationOpts) =>
+  buildFaceElevation(cols, buildings, {
+    ...opts,
+    roofs: opts?.roofs ?? liftLegacyRoofs(buildings, opts?.roofOverhangs ?? []),
+  });
 
 // 座標: 水平=グリッド(1grid=10mm)、高さ=mm(GL基準)。1800mm=180grid。
 function bld(id: string, points: Point[], floor?: number): BuildingShape {
@@ -161,7 +171,7 @@ describe('E-3.5-2b: 段数・天端は水下(樋面)基準', () => {
       { id: 'wm', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 7000 },
       { id: 'w1', buildingId: 'W1', edgeIndex: 0, t: 1, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([northCol], [building], { markers });
+    const fe = feLift([northCol], [building], { markers });
     // 段数・天端は水下5000基準（heightToFloors(5000)）
     expect(fe.scaffolds[0].levels.topRailMm).toBe(5000);
     expect(fe.scaffolds[0].levels.levels).toEqual([1400, 3200]);
@@ -174,7 +184,7 @@ describe('E-3.5-2b: 段数・天端は水下(樋面)基準', () => {
     const markers: HeightMarker[] = [
       { id: 'f1', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([northCol], [building], { markers });
+    const fe = feLift([northCol], [building], { markers });
     expect(fe.scaffolds[0].levels.topRailMm).toBe(5000);
     expect(fe.scaffolds[0].levels.levels).toEqual([1400, 3200]);
   });
@@ -203,7 +213,7 @@ describe('E-3.5-2c: 妻面のコマ嵩上げ(段違い作業床)', () => {
       { id: 'wm', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 7000 },
       { id: 'w1', buildingId: 'W1', edgeIndex: 0, t: 1, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([northCol], [building], { markers });
+    const fe = feLift([northCol], [building], { markers });
     const sr = fe.scaffolds[0].spanRaises;
     // 水下5000基準 → 最上段床3200。各スパンの屋根最高点まで届かない分だけコマ追加。
     expect(sr.map(r => r.spanIndex)).toEqual([0, 1, 2]);
@@ -222,12 +232,12 @@ describe('E-3.5-2c: 妻面のコマ嵩上げ(段違い作業床)', () => {
     const markers: HeightMarker[] = [
       { id: 'f1', buildingId: 'W1', edgeIndex: 0, t: 0.5, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([northCol], [building], { markers });
+    const fe = feLift([northCol], [building], { markers });
     expect(fe.scaffolds[0].spanRaises).toEqual([]);
   });
 
   it('マーカー無し(既定高さ)でも spanRaises は空', () => {
-    const fe = buildFaceElevation([northCol], [building], { defaultHeightMm: 6500 });
+    const fe = feLift([northCol], [building], { defaultHeightMm: 6500 });
     expect(fe.scaffolds[0].spanRaises).toEqual([]);
   });
 });
@@ -242,7 +252,7 @@ describe('E-3.6-1: 嵩上げコマの 4+1 分解', () => {
   ];
 
   it('addKoma=5 → fullLayers=1・remKoma=1・中間床[5000]・最終床5450', () => {
-    const fe = buildFaceElevation([northCol], [building], { markers: gable(7000) });
+    const fe = feLift([northCol], [building], { markers: gable(7000) });
     const mid = fe.scaffolds[0].spanRaises.find(r => r.spanIndex === 1)!;
     expect(mid.addKoma).toBe(5);
     expect(mid.fullLayers).toBe(1);
@@ -252,7 +262,7 @@ describe('E-3.6-1: 嵩上げコマの 4+1 分解', () => {
   });
 
   it('addKoma=2 → fullLayers=0・中間床なし(従来どおり)', () => {
-    const fe = buildFaceElevation([northCol], [building], { markers: gable(7000) });
+    const fe = feLift([northCol], [building], { markers: gable(7000) });
     const edge = fe.scaffolds[0].spanRaises.find(r => r.spanIndex === 0)!;
     expect(edge.addKoma).toBe(2);
     expect(edge.fullLayers).toBe(0);
@@ -262,7 +272,7 @@ describe('E-3.6-1: 嵩上げコマの 4+1 分解', () => {
   });
 
   it('addKoma=4 → fullLayers=1・remKoma=0・中間床なし・最終床=最上フル段', () => {
-    const fe = buildFaceElevation([northCol], [building], { markers: gable(6800) });
+    const fe = feLift([northCol], [building], { markers: gable(6800) });
     const mid = fe.scaffolds[0].spanRaises.find(r => r.spanIndex === 1)!;
     expect(mid.addKoma).toBe(4);
     expect(mid.fullLayers).toBe(1);
@@ -275,7 +285,7 @@ describe('E-3.6-1: 嵩上げコマの 4+1 分解', () => {
 describe('E-3.6-2: 足場なしでも建物のみ表示', () => {
   const building = bld('N1', RECT, 1);
   it('列0でも buildingOutlines は生成され scaffolds は空・face は opts.face', () => {
-    const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
+    const fe = feLift([], [building], { defaultHeightMm: 5000, face: 'north' });
     expect(fe.scaffolds).toEqual([]);
     expect(fe.buildingOutlines.length).toBe(1);
     expect(fe.face).toBe('north');
@@ -292,17 +302,17 @@ describe('E-3.6-3: 棟(建物最高点)破線 ridgeMaxMm', () => {
   ];
 
   it('外形が棟に達しない面(北・軒5000) → ridgeMaxMm=7000', () => {
-    const fe = buildFaceElevation([], [building], { markers, face: 'north' });
+    const fe = feLift([], [building], { markers, face: 'north' });
     expect(fe.ridgeMaxMm).toBe(7000);
   });
 
   it('妻面(南・外形が棟7000に達する) → ridgeMaxMm=null', () => {
-    const fe = buildFaceElevation([], [building], { markers, face: 'south' });
+    const fe = feLift([], [building], { markers, face: 'south' });
     expect(fe.ridgeMaxMm).toBeNull();
   });
 
   it('マーカー無しは ridgeMaxMm=null', () => {
-    const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
+    const fe = feLift([], [building], { defaultHeightMm: 5000, face: 'north' });
     expect(fe.ridgeMaxMm).toBeNull();
   });
 });
@@ -317,7 +327,7 @@ describe('E-3.7: 屋根投影バンド roofBands', () => {
   ];
 
   it('軒面(北): roofBands 1件・x は外形範囲[0,360]・ridge=7000', () => {
-    const fe = buildFaceElevation([], [building], { markers, face: 'north' });
+    const fe = feLift([], [building], { markers, face: 'north' });
     expect(fe.roofBands.length).toBe(1);
     expect(fe.roofBands[0].buildingId).toBe('R1');
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
@@ -328,13 +338,13 @@ describe('E-3.7: 屋根投影バンド roofBands', () => {
   });
 
   it('妻面(南・外形が棟7000に達する): roofBands 空', () => {
-    const fe = buildFaceElevation([], [building], { markers, face: 'south' });
+    const fe = feLift([], [building], { markers, face: 'south' });
     expect(fe.roofBands).toEqual([]);
     expect(fe.ridgeMaxMm).toBeNull();
   });
 
   it('マーカー無し: roofBands 空', () => {
-    const fe = buildFaceElevation([], [building], { defaultHeightMm: 5000, face: 'north' });
+    const fe = feLift([], [building], { defaultHeightMm: 5000, face: 'north' });
     expect(fe.roofBands).toEqual([]);
   });
 });
@@ -351,7 +361,7 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
       ...bld('RF1', RECT, 1),
       roof: { roofType: 'yosemune', uniformMm: 600, northMm: null, southMm: null, eastMm: null, westMm: null },
     };
-    const fe = buildFaceElevation([], [roofBuilding], { markers: markers('RF1'), face: 'north' });
+    const fe = feLift([], [roofBuilding], { markers: markers('RF1'), face: 'north' });
     const segs = fe.buildingOutlines[0].segments;
     // E-5-fix: 北立面は左右反転。壁[0,360]→[-360,0]、壁±出幅[-60,420]→[-420,60]。
     expect(segs[0].xStart).toBe(-360);           // 壁シルエットは壁位置
@@ -363,7 +373,7 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
   });
 
   it('出幅なし: 壁と roofBands の x 範囲が一致', () => {
-    const fe = buildFaceElevation([], [bld('R1', RECT, 1)], { markers: markers('R1'), face: 'north' });
+    const fe = feLift([], [bld('R1', RECT, 1)], { markers: markers('R1'), face: 'north' });
     const segs = fe.buildingOutlines[0].segments;
     expect(fe.roofBands[0].xStart).toBe(segs[0].xStart);
     expect(fe.roofBands[0].xEnd).toBe(segs[segs.length - 1].xEnd);
@@ -374,7 +384,7 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
       { id: 'ro1', buildingId: 'L1', faceIndex: 1, overhangMm: 600 }, // east(edge1)
       { id: 'ro3', buildingId: 'L1', faceIndex: 3, overhangMm: 600 }, // west(edge3)
     ];
-    const fe = buildFaceElevation([], [bld('L1', RECT, 1)], { markers: markers('L1'), face: 'north', roofOverhangs: legacy });
+    const fe = feLift([], [bld('L1', RECT, 1)], { markers: markers('L1'), face: 'north', roofOverhangs: legacy });
     // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]。
     expect(fe.roofBands[0].xStart).toBe(-420);
     expect(fe.roofBands[0].xEnd).toBe(60);
@@ -389,7 +399,7 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
     const markers: HeightMarker[] = [
       { id: 'h1', buildingId: 'SF1', edgeIndex: 0, t: 0.5, heightMm: 6000 }, // 単一=建物高さ(軒)のみ
     ];
-    const fe = buildFaceElevation([], [roofBuilding], { markers, face: 'north' });
+    const fe = feLift([], [roofBuilding], { markers, face: 'north' });
     expect(fe.roofBands.length).toBe(1);
     // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]、壁[0,360]→[-360,0]。
     expect(fe.roofBands[0].xStart).toBe(-420);     // 壁[-360,0] より左右へ張り出す
@@ -399,7 +409,7 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
   });
 
   it('出幅なし・棟マーカー無しなら軒バンドは出ない', () => {
-    const fe = buildFaceElevation([], [bld('NF1', RECT, 1)], { defaultHeightMm: 5000, face: 'north' });
+    const fe = feLift([], [bld('NF1', RECT, 1)], { defaultHeightMm: 5000, face: 'north' });
     expect(fe.roofBands).toEqual([]);
   });
 });
@@ -407,7 +417,7 @@ describe('E-3.9: 軒の出を屋根バンドに反映', () => {
 describe('buildFaceElevation: 矩形2階 × H=6500', () => {
   const building = bld('B1', RECT, 1);
   const northCol = scol({}); // 北面 floor1, rails[1800×3], x[-90,450]
-  const fe = buildFaceElevation([northCol], [building], { defaultHeightMm: 6500 });
+  const fe = feLift([northCol], [building], { defaultHeightMm: 6500 });
 
   it('段構成が電卓と整合・支柱x累積', () => {
     expect(fe.scaffolds.length).toBe(1);
@@ -439,7 +449,7 @@ describe('buildFaceElevation: L字上階の2列が別 scaffold', () => {
   const inner = scol({ face: 'south', floor: 2, depthCoord: 270, xStart: 90, xEnd: 450, rails: [1800, 1800] });
   const outer = scol({ face: 'south', floor: 2, depthCoord: 450, xStart: -90, xEnd: 270, rails: [1800, 1800] });
   const building = bld('L2', RECT, 2);
-  const fe = buildFaceElevation([inner, outer], [building], { defaultHeightMm: 5000 });
+  const fe = feLift([inner, outer], [building], { defaultHeightMm: 5000 });
 
   it('2列がそれぞれ別 scaffold で保持され、奥行き順が保たれる', () => {
     expect(fe.scaffolds.length).toBe(2);
@@ -465,7 +475,7 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
   });
 
   it('妻面・出幅600: x=壁±出幅・けらば軒先=軒高−勾配×出幅・棟まで塗らない', () => {
-    const fe = buildFaceElevation([], [roofBld('G')], { markers: gableMarkers('G', 5000, 7000), face: 'north' });
+    const fe = feLift([], [roofBld('G')], { markers: gableMarkers('G', 5000, 7000), face: 'north' });
     expect(fe.roofBands.length).toBe(1);
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(false);
@@ -480,7 +490,7 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
   });
 
   it('けらば軒先の高さは GL(0) 下限', () => {
-    const fe = buildFaceElevation([], [roofBld('G2')], { markers: gableMarkers('G2', 400, 7000), face: 'north' });
+    const fe = feLift([], [roofBld('G2')], { markers: gableMarkers('G2', 400, 7000), face: 'north' });
     const band = fe.roofBands[0];
     // 傾き=(7000-400)/180≈36.7、60grid で 400−2200<0 → 0
     expect(band.profile[0].mm).toBe(0);
@@ -488,7 +498,7 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
   });
 
   it('妻面・出幅なし: バンドなし(従来どおり)', () => {
-    const fe = buildFaceElevation([], [bld('GN', RECT, 1)], { markers: gableMarkers('GN', 5000, 7000), face: 'north' });
+    const fe = feLift([], [bld('GN', RECT, 1)], { markers: gableMarkers('GN', 5000, 7000), face: 'north' });
     expect(fe.roofBands).toEqual([]);
   });
 
@@ -499,7 +509,7 @@ describe('E-3.11: 妻面のけらば張り出し(傾き保存延長)', () => {
       { id: 'n1', buildingId: 'E', edgeIndex: 0, t: 1, heightMm: 5000 },
       { id: 'sm', buildingId: 'E', edgeIndex: 2, t: 0.5, heightMm: 7000 },
     ];
-    const fe = buildFaceElevation([], [roofBld('E')], { markers, face: 'north' });
+    const fe = feLift([], [roofBld('E')], { markers, face: 'north' });
     expect(fe.roofBands[0].filledToRidge).toBe(true);
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
     // E-5-fix: 北立面は左右反転。壁±出幅[-60,420]→[-420,60]。
@@ -521,7 +531,7 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
 
   it('寄棟(面平行の棟ライン・出幅600): 台形の上側包絡線', () => {
     const ridge = rline('r', 'W', { x: 90, y: 270 }, { x: 270, y: 270 }, 7000); // 北面(x軸)に平行
-    const fe = buildFaceElevation([], [roofBld('W')], { markers: eaveMarker('W'), face: 'north', ridgeLines: [ridge] });
+    const fe = feLift([], [roofBld('W')], { markers: eaveMarker('W'), face: 'north', ridgeLines: [ridge] });
     expect(fe.roofBands.length).toBe(1);
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(true);
@@ -541,7 +551,7 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
 
   it('妻側(面直交の棟ライン): 三角の包絡線(棟が1点に潰れる)', () => {
     const ridge = rline('r', 'G', { x: 180, y: 90 }, { x: 180, y: 450 }, 7000); // 北面(x軸)に直交
-    const fe = buildFaceElevation([], [roofBld('G')], { markers: eaveMarker('G'), face: 'north', ridgeLines: [ridge] });
+    const fe = feLift([], [roofBld('G')], { markers: eaveMarker('G'), face: 'north', ridgeLines: [ridge] });
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(true);
     // E-5-fix: 北立面は左右反転。x→-x で profile を反転（棟が中央なので mm は対称）。
@@ -553,7 +563,7 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
 
   it('出幅なし+棟ライン: 拡張なしで包絡線(x=壁範囲)', () => {
     const ridge = rline('r', 'N', { x: 90, y: 270 }, { x: 270, y: 270 }, 7000);
-    const fe = buildFaceElevation([], [bld('N', RECT, 1)], { markers: eaveMarker('N'), face: 'north', ridgeLines: [ridge] });
+    const fe = feLift([], [bld('N', RECT, 1)], { markers: eaveMarker('N'), face: 'north', ridgeLines: [ridge] });
     const band = fe.roofBands[0];
     // E-5-fix: 北立面は左右反転。壁範囲[0,360]→[-360,0]、profile も x→-x で反転。
     expect(band.xStart).toBe(-360);
@@ -566,7 +576,7 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
   it('複数棟ライン: 全ラインの max で合成(間の谷も交点で標本化)', () => {
     const r1 = rline('r1', 'M', { x: 60, y: 270 }, { x: 120, y: 270 }, 7000);
     const r2 = rline('r2', 'M', { x: 240, y: 270 }, { x: 300, y: 270 }, 7000);
-    const fe = buildFaceElevation([], [bld('M', RECT, 1)], { markers: eaveMarker('M'), face: 'north', ridgeLines: [r1, r2] });
+    const fe = feLift([], [bld('M', RECT, 1)], { markers: eaveMarker('M'), face: 'north', ridgeLines: [r1, r2] });
     const band = fe.roofBands[0];
     // E-5-fix: 北立面は左右反転。x→-x で profile を反転（谷位置も -180 へ）。
     expect(band.profile).toEqual([
@@ -583,7 +593,7 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
       { id: 'n1', buildingId: 'K', edgeIndex: 0, t: 1, heightMm: 5000 },
       { id: 'sm', buildingId: 'K', edgeIndex: 2, t: 0.5, heightMm: 7000 },
     ];
-    const fe = buildFaceElevation([], [bld('K', RECT, 1)], { markers, face: 'north' });
+    const fe = feLift([], [bld('K', RECT, 1)], { markers, face: 'north' });
     expect(fe.roofBands[0].filledToRidge).toBe(true);
     expect(fe.roofBands[0].baseMm).toBeUndefined();
     expect(fe.roofBands[0].ridgeMm).toBe(7000);
@@ -594,7 +604,7 @@ describe('E-3.8b: 棟ライン投影で屋根バンド上端を上側包絡線�
     const buildings = [roofBld('X')];
     const heightMarkers = eaveMarker('X');
     const ridgeLines: RidgeLine[] = [{ id: 'r', buildingId: 'X', p1: { x: 90, y: 270 }, p2: { x: 270, y: 270 }, heightMm: 7000 }];
-    const fe = buildFaceElevation([], buildings, { markers: heightMarkers, face: 'north', ridgeLines });
+    const fe = feLift([], buildings, { markers: heightMarkers, face: 'north', ridgeLines });
     expect(fe.roofBands.length).toBe(1);
     // R-1c: 樋面の軒先下がりで baseMm(軒)は 5000→4556（slope0.7407×出幅600）。棟は不変。
     expect(fe.roofBands[0].baseMm).toBe(4556);
@@ -614,7 +624,7 @@ describe('E-5-fix: 立面の視点方向(外から見た左右)', () => {
       { id: 'w', buildingId: 'V', edgeIndex: 0, t: 0, heightMm: 5000 },
       { id: 'e', buildingId: 'V', edgeIndex: 0, t: 1, heightMm: 6000 },
     ];
-    const fe = buildFaceElevation([], [bV], { markers, face: 'north' });
+    const fe = feLift([], [bV], { markers, face: 'north' });
     // 反転後、左端セグメント開始 = 東端(6000)。
     expect(seg0(fe).heightStartMm).toBe(6000);
   });
@@ -625,7 +635,7 @@ describe('E-5-fix: 立面の視点方向(外から見た左右)', () => {
       { id: 'e', buildingId: 'V', edgeIndex: 2, t: 0, heightMm: 6000 },
       { id: 'w', buildingId: 'V', edgeIndex: 2, t: 1, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([], [bV], { markers, face: 'south' });
+    const fe = feLift([], [bV], { markers, face: 'south' });
     // 反転なし、左端 = 西端(5000)。
     expect(seg0(fe).heightStartMm).toBe(5000);
   });
@@ -636,7 +646,7 @@ describe('E-5-fix: 立面の視点方向(外から見た左右)', () => {
       { id: 'n', buildingId: 'V', edgeIndex: 1, t: 0, heightMm: 5000 },
       { id: 's', buildingId: 'V', edgeIndex: 1, t: 1, heightMm: 6000 },
     ];
-    const fe = buildFaceElevation([], [bV], { markers, face: 'east' });
+    const fe = feLift([], [bV], { markers, face: 'east' });
     // 反転後、左端 = 南端(6000)。
     expect(seg0(fe).heightStartMm).toBe(6000);
   });
@@ -647,7 +657,7 @@ describe('E-5-fix: 立面の視点方向(外から見た左右)', () => {
       { id: 's', buildingId: 'V', edgeIndex: 3, t: 0, heightMm: 6000 },
       { id: 'n', buildingId: 'V', edgeIndex: 3, t: 1, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([], [bV], { markers, face: 'west' });
+    const fe = feLift([], [bV], { markers, face: 'west' });
     // 反転なし、左端 = 北端(5000)。
     expect(seg0(fe).heightStartMm).toBe(5000);
   });

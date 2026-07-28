@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, HeightMarker, RidgeLine, Point } from '@/types';
-import { buildFaceElevation, roofSlopePerMm } from '../elevationEngine';
+import { buildFaceElevation, roofSlopePerMm, type FaceElevationOpts } from '../elevationEngine';
+import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import type { FaceSpanColumn, Face } from '../faceReconstruction';
+
+/** R-1g: 出幅は roofs[] からしか読まない。旧 RoofConfig の建物は本番(normalize)と同じく lift して渡す。 */
+const feLift = (cols: FaceSpanColumn[], buildings: BuildingShape[], opts?: FaceElevationOpts) =>
+  buildFaceElevation(cols, buildings, {
+    ...opts,
+    roofs: opts?.roofs ?? liftLegacyRoofs(buildings, opts?.roofOverhangs ?? []),
+  });
 
 // ============================================================
 // R-1c: 軒先下がりの自動計算。①(軒高)と②(棟)から勾配を出し、樋面の軒先を軒高−勾配×出幅に下げる。
@@ -37,7 +45,7 @@ describe('樋面の軒先下がり (R-1c)', () => {
 
   it('軒高5000・棟7000・出幅600 → 軒先=4556(=5000−0.7407×600)。棟マーカー方式', () => {
     // run = 北壁(y=0) → 棟(bbox中央 y=270) = 2700mm。slope=2000/2700。drop=round(0.7407×600)=444。
-    const fe = buildFaceElevation([], [roofBld('E')], { markers, face: 'north' });
+    const fe = feLift([], [roofBld('E')], { markers, face: 'north' });
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(true);
     expect(band.ridgeMm).toBe(7000); // 棟は不変
@@ -51,7 +59,7 @@ describe('樋面の軒先下がり (R-1c)', () => {
       { id: 'a', buildingId: 'F', edgeIndex: 0, t: 0, heightMm: 5000 },
       { id: 'b', buildingId: 'F', edgeIndex: 0, t: 1, heightMm: 5000 },
     ];
-    const fe = buildFaceElevation([], [roofBld('F')], { markers: eaveOnly, face: 'north' });
+    const fe = feLift([], [roofBld('F')], { markers: eaveOnly, face: 'north' });
     const band = fe.roofBands[0];
     expect(band.filledToRidge).toBe(false);
     expect(band.profile.every((p) => p.mm === 5000)).toBe(true); // 下がりなし
@@ -82,14 +90,14 @@ describe('R-1c-fix2: コマ嵩上げの基準は壁の形（棟は算入しな�
     // 壁は全周 5000 で一定＝全面水下。棟(RidgeLine)は嵩上げに一切算入しない → どの面も spanRaises 空。
     // 以前は北/南面で点棟(x=180)を拾い中央スパンだけ嵩上げされていた（これが症状）。
     for (const face of ['north', 'south', 'east', 'west'] as Face[]) {
-      const fe = buildFaceElevation([cols[face]], [RECT_BLD], { defaultHeightMm: 5000, ridgeLines: [hipRidge] });
+      const fe = feLift([cols[face]], [RECT_BLD], { defaultHeightMm: 5000, ridgeLines: [hipRidge] });
       expect(fe.scaffolds[0].spanRaises).toEqual([]);
     }
   });
 
   it('切妻・妻面（中央マーカーの三角壁）: 壁が高いので階段状に嵩上げ', () => {
     // 南辺(edge2)中央マーカーで への字 → 壁 segments が棟高7000を含む＝壁の形で嵩上げ。
-    const fe = buildFaceElevation([cols.south], [RECT_BLD], { markers: gableS });
+    const fe = feLift([cols.south], [RECT_BLD], { markers: gableS });
     const raises = fe.scaffolds[0].spanRaises;
     expect(raises.length).toBeGreaterThan(0);
     expect(raises.every((r) => r.raisedFloorMm > 3200)).toBe(true); // 最上段床3200より上へ
@@ -97,7 +105,7 @@ describe('R-1c-fix2: コマ嵩上げの基準は壁の形（棟は算入しな�
 
   it('切妻・樋面（フラット壁）: 嵩上げなし（維持）', () => {
     // 妻面(南)に棟マーカーがあっても、樋面(東)の壁は軒高一定＝水下 → 嵩上げ対象外。
-    const fe = buildFaceElevation([cols.east], [RECT_BLD], { markers: gableS });
+    const fe = feLift([cols.east], [RECT_BLD], { markers: gableS });
     expect(fe.scaffolds[0].spanRaises).toEqual([]);
   });
 });

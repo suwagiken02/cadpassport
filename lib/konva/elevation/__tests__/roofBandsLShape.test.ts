@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { BuildingShape, HeightMarker, Point, Roof } from '@/types';
 import { buildFaceElevation, type RoofBand } from '../elevationEngine';
 import { faceElevationToPrimitives } from '../elevationToObjects';
+import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import type { Face } from '../faceReconstruction';
 
 // ============================================================
@@ -121,13 +122,15 @@ describe('R-1f-4: 既存の単一屋根は不変（L字の回帰）', () => {
   };
   const strip = (bands: RoofBand[]) => bands.map(({ roofId: _r, ...rest }) => rest);
 
-  it('polygon=建物外周の 1 屋根は、旧経路(roofs 無し)と 4 面すべてで数値一致', () => {
+  // R-1g: 旧 building.roof の直読みは撤去。互換は読み込み時の lift 一点なので、
+  //   「旧 RoofConfig を lift した屋根」と「同形の屋根を直接渡した場合」の一致で担保する。
+  it('旧 RoofConfig は lift すれば polygon=建物外周の 1 屋根と 4 面すべてで数値一致', () => {
     for (const face of FACES) {
-      const legacy = buildFaceElevation([], [BLD], { markers: MARKERS, face });
-      const lifted = buildFaceElevation([], [BLD], { markers: MARKERS, face, roofs: [single] });
-      expect(legacy.roofBands.length, face).toBe(1);
-      expect(strip(lifted.roofBands), face).toEqual(legacy.roofBands);
-      expect(lifted.ridgeMaxMm, face).toBe(legacy.ridgeMaxMm);
+      const lifted = buildFaceElevation([], [BLD], { markers: MARKERS, face, roofs: liftLegacyRoofs([BLD], []) });
+      const explicit = buildFaceElevation([], [BLD], { markers: MARKERS, face, roofs: [single] });
+      expect(lifted.roofBands.length, face).toBe(1);
+      expect(strip(lifted.roofBands), face).toEqual(strip(explicit.roofBands));
+      expect(lifted.ridgeMaxMm, face).toBe(explicit.ridgeMaxMm);
     }
   });
 
