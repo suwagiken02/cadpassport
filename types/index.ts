@@ -367,6 +367,8 @@ export type ElevationView = {
   primitives: ElevationPrimitive[];
   /** ユーザー編集の差分 (= E-8a)。未編集は undefined。primitives は再生成で入れ替わるが差分は残る。 */
   edits?: ElevationEdit[];
+  /** 再生成で引き継げなかった編集 (= E-8d)。勝手に消さず一覧提示し、ユーザーが削除する。 */
+  orphanEdits?: ElevationEdit[];
 };
 
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===

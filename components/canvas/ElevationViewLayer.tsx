@@ -15,7 +15,7 @@ import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
-import { applyElevationEdits, overriddenTextIds, primitiveBounds, withMove } from '@/lib/konva/elevation/elevationEdits';
+import { applyElevationEdits, nextAddId, overriddenTextIds, primitiveBounds, withAdd, withMove } from '@/lib/konva/elevation/elevationEdits';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -82,11 +82,82 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
   const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
   const prims = useMemo(() => applyElevationEdits(view), [view]);
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
+  const addTool = useCanvasStore((s) => s.elevationAddTool);
+  const addDraft = useCanvasStore((s) => s.elevationAddDraft);
 
   const S: ToScreen = (lx, ly) => ({
     x: (view.originGrid.x + lx * view.scale) * gridPx + panX,
     y: (view.originGrid.y + ly * view.scale) * gridPx + panY,
   });
+  /** スクリーン px → ビューローカル（グリッド）。 */
+  const toLocal = (sx: number, sy: number) => ({
+    x: ((sx - panX) / gridPx - view.originGrid.x) / view.scale,
+    y: ((sy - panY) / gridPx - view.originGrid.y) / view.scale,
+  });
+
+  // E-8d: 追加ツールの入力面（ビュー全体を覆う透明 Rect）。2点タップで線、1点で文字。
+  const addSurface = (() => {
+    if (!addTool) return null;
+    const b = prims.reduce<{ minX: number; minY: number; maxX: number; maxY: number } | null>((acc, p) => {
+      const q = primitiveBounds(p);
+      if (!acc) return { ...q };
+      return {
+        minX: Math.min(acc.minX, q.minX), minY: Math.min(acc.minY, q.minY),
+        maxX: Math.max(acc.maxX, q.maxX), maxY: Math.max(acc.maxY, q.maxY),
+      };
+    }, null);
+    if (!b) return null;
+    const pad = 4;
+    const a = S(b.minX - pad, b.minY - pad), c = S(b.maxX + pad, b.maxY + pad);
+    const rect = {
+      x: Math.min(a.x, c.x), y: Math.min(a.y, c.y),
+      w: Math.abs(c.x - a.x), h: Math.abs(c.y - a.y),
+    };
+    const onPoint = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+      const pos = e.target.getStage()?.getPointerPosition();
+      if (!pos) return;
+      const L = toLocal(pos.x, pos.y);
+      const s = useCanvasStore.getState();
+      if (addTool === 'text') {
+        // 文字は1点。空文字で作って、そのまま文字編集モーダルを開く。
+        const id = nextAddId(view, 'text');
+        const prim: ElevationPrimitive = {
+          kind: 'text', x: L.x, y: L.y, text: '文字', size: 9, fill: '#c9c9c6', anchor: 'start',
+          meta: { kind: 'text', id, x: Math.round(L.x * 10) / 10 },
+        };
+        s.setElevationEdits(view.id, withAdd(view.edits, prim));
+        s.setElevationAddTool(null);
+        s.setElevationTextEditTargetId(id);
+        return;
+      }
+      if (!addDraft) { s.setElevationAddDraft(L); return; }
+      // 2点目: ツールごとに軸を固定（手摺=水平・支柱=垂直・自由線=そのまま）。
+      const x1 = addDraft.x, y1 = addDraft.y;
+      const x2 = addTool === 'post' ? x1 : L.x;
+      const y2 = addTool === 'rail' ? y1 : L.y;
+      if (Math.abs(x2 - x1) < 1e-6 && Math.abs(y2 - y1) < 1e-6) { s.setElevationAddDraft(null); return; }
+      const kindMeta = addTool === 'rail' ? 'rail' : addTool === 'post' ? 'post' : 'text';
+      const id = nextAddId(view, addTool);
+      const prim: ElevationPrimitive = {
+        kind: 'line', x1, y1, x2, y2,
+        stroke: addTool === 'post' ? '#FFD700' : addTool === 'rail' ? '#378ADD' : '#c9c9c6',
+        width: addTool === 'post' ? 1.6 : addTool === 'rail' ? 0.7 : 1,
+        meta: { kind: kindMeta, id, heightMm: addTool === 'rail' ? Math.round(-y1 * 10) : undefined, x: Math.round(x1 * 10) / 10 },
+      };
+      s.setElevationEdits(view.id, withAdd(view.edits, prim));
+      s.setElevationAddDraft(null);
+    };
+    return (
+      <>
+        <Rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="#000" opacity={0.001}
+          onClick={onPoint} onTap={onPoint} />
+        {addDraft && (() => {
+          const d = S(addDraft.x, addDraft.y);
+          return <Rect x={d.x - 4} y={d.y - 4} width={8} height={8} fill="#FF6B35" listening={false} />;
+        })()}
+      </>
+    );
+  })();
 
   return (
     <>
@@ -102,7 +173,8 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
         return (
           <Group
             key={id ?? i}
-            draggable={!!id}
+            draggable={!!id && !addTool}
+            listening={!addTool}
             onDragEnd={(e) => {
               if (!id) return;
               const g = e.target;
@@ -130,6 +202,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
           </Group>
         );
       })}
+      {addSurface}
     </>
   );
 }

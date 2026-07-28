@@ -9,6 +9,7 @@
 import React, { useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { hasEditFor, withHide, withoutEditsFor } from '@/lib/konva/elevation/elevationEdits';
+import { describeEdit } from '@/lib/konva/elevation/elevationRematch';
 import type { ElevationPrimitiveKind } from '@/types';
 
 const KIND_LABEL: Record<ElevationPrimitiveKind, string> = {
@@ -21,6 +22,8 @@ export default function ElevationEditBar() {
   const viewId = useCanvasStore((s) => s.elevationEditViewId);
   const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
+  const addTool = useCanvasStore((s) => s.elevationAddTool);
+  const addDraft = useCanvasStore((s) => s.elevationAddDraft);
   const view = (views ?? []).find((v) => v.id === viewId) ?? null;
 
   // Esc で編集モードを抜ける（選択中なら選択解除を先に）。
@@ -61,8 +64,45 @@ export default function ElevationEditBar() {
   };
   const done = () => useCanvasStore.getState().setElevationEditViewId(null);
 
+  const orphans = view.orphanEdits ?? [];
+
   return (
-    <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 flex items-center gap-2 max-w-[94vw]">
+    <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
+      {/* E-8d: 追加ツール */}
+      <div className="flex items-center gap-1 mb-2">
+        <span className="text-[10px] text-dimension mr-1">追加</span>
+        {([['rail', '手摺'], ['post', '支柱'], ['line', '自由線'], ['text', '文字']] as const).map(([t, label]) => (
+          <button key={t} type="button"
+            onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === t ? null : t)}
+            className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
+              addTool === t ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
+            }`}>
+            {label}
+          </button>
+        ))}
+        {addTool && (
+          <span className="text-[10px] text-accent ml-1 whitespace-nowrap">
+            {addTool === 'text' ? '位置をタップ' : addDraft ? '終点をタップ' : '始点をタップ'}
+          </span>
+        )}
+      </div>
+
+      {/* E-8d: 再生成で引き継げなかった編集 */}
+      {orphans.length > 0 && (
+        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-dark-bg border border-dark-border rounded-lg">
+          <span className="text-[10px] text-dimension truncate max-w-[46vw]">
+            引き継げなかった編集 {orphans.length} 件: {orphans.slice(0, 2).map(describeEdit).join(' / ')}
+            {orphans.length > 2 ? ' …' : ''}
+          </span>
+          <button type="button"
+            onClick={() => useCanvasStore.getState().setElevationOrphanEdits(viewId, [])}
+            className="px-2 py-1 bg-dark-surface border border-dark-border rounded text-[10px] text-dimension whitespace-nowrap">
+            削除
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
       <div className="min-w-0">
         <p className="text-[11px] text-accent font-bold leading-tight">立面編集</p>
         <p className="text-xs text-canvas font-bold whitespace-nowrap truncate">
@@ -90,6 +130,7 @@ export default function ElevationEditBar() {
         className="px-3 py-2 bg-accent text-white font-bold rounded-lg text-xs whitespace-nowrap">
         完了
       </button>
+      </div>
     </div>
   );
 }

@@ -34,6 +34,7 @@ import {
 } from '@/lib/pages/crossPageCopy';
 import { computeContentBounds } from '@/lib/pages/contentBounds';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
+import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -467,6 +468,16 @@ type CanvasStore = {
   /** 文字編集モーダルの対象プリミティブ id (= E-8c、 null=非表示)。 */
   elevationTextEditTargetId: string | null;
   setElevationTextEditTargetId: (id: string | null) => void;
+  /** 再配置(再生成)時に旧ビューの編集を新ビューへ引き継ぐ (= E-8d)。 */
+  carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView) => ElevationView;
+  /** 孤立した編集の一覧を差し替える (= E-8d、 ユーザーが削除するとき)。 */
+  setElevationOrphanEdits: (viewId: string, orphans: import('@/types').ElevationEdit[]) => void;
+  /** 立面編集モードの追加ツール (= E-8d、 null=選択操作)。 */
+  elevationAddTool: 'rail' | 'post' | 'line' | 'text' | null;
+  setElevationAddTool: (t: 'rail' | 'post' | 'line' | 'text' | null) => void;
+  /** 追加ツールの1点目（ビューローカル座標）。 */
+  elevationAddDraft: { x: number; y: number } | null;
+  setElevationAddDraft: (p: { x: number; y: number } | null) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
   setShowAreaCalcModal: (v: boolean) => void;
@@ -1434,13 +1445,26 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setRoofSettingsTarget: (t) => set({ roofSettingsTarget: t }),
 
   // === 立面ビュー (= E-4) ===
+  /** E-8d: 同じ面の旧ビューに編集があれば、新ビューへ引き継ぐ（引き継げない分は孤立として保持）。 */
+  carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView): ElevationView => {
+    if (!prev || ((prev.edits?.length ?? 0) === 0 && (prev.orphanEdits?.length ?? 0) === 0)) return next;
+    const r = rematchElevationEdits(prev.primitives, next.primitives, prev.edits);
+    const orphans = [...(prev.orphanEdits ?? []), ...r.orphans];
+    return {
+      ...next,
+      edits: r.edits.length > 0 ? r.edits : undefined,
+      orphanEdits: orphans.length > 0 ? orphans : undefined,
+    };
+  },
   addElevationView: (v) => {
     const { canvasData, pushHistory } = get();
     pushHistory();
-    // 同じ面の既存ビューは置換（1 面 1 ビュー）。
-    const kept = (canvasData.elevationViews ?? []).filter((e) => e.face !== v.face);
+    // 同じ面の既存ビューは置換（1 面 1 ビュー）。E-8d: 旧ビューの編集を新ビューへ引き継ぐ。
+    const all = canvasData.elevationViews ?? [];
+    const prev = all.find((e) => e.face === v.face);
+    const kept = all.filter((e) => e.face !== v.face);
     set({
-      canvasData: { ...canvasData, elevationViews: [...kept, v] },
+      canvasData: { ...canvasData, elevationViews: [...kept, get().carryOverElevationEdits(prev, v)] },
       isDirty: true,
     });
   },
@@ -1450,9 +1474,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     pushHistory();
     // 追加する面の既存ビューをまとめて置換（1 面 1 ビュー）。
     const placedFaces = new Set(views.map((v) => v.face));
-    const kept = (canvasData.elevationViews ?? []).filter((e) => !placedFaces.has(e.face));
+    const all = canvasData.elevationViews ?? [];
+    const kept = all.filter((e) => !placedFaces.has(e.face));
+    // E-8d: 面ごとに旧ビューの編集を引き継ぐ（引き継げない分は孤立として保持）。
+    const carried = views.map((v) => get().carryOverElevationEdits(all.find((e) => e.face === v.face), v));
     set({
-      canvasData: { ...canvasData, elevationViews: [...kept, ...views] },
+      canvasData: { ...canvasData, elevationViews: [...kept, ...carried] },
       isDirty: true,
     });
   },
@@ -1470,6 +1497,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setElevationEditSelectedId: (id) => set({ elevationEditSelectedId: id }),
   elevationTextEditTargetId: null,
   setElevationTextEditTargetId: (id) => set({ elevationTextEditTargetId: id }),
+  setElevationOrphanEdits: (viewId, orphans) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((e) =>
+          (e.id === viewId ? { ...e, orphanEdits: orphans.length > 0 ? orphans : undefined } : e)),
+      },
+      isDirty: true,
+    });
+  },
+  elevationAddTool: null,
+  setElevationAddTool: (t) => set({ elevationAddTool: t, elevationAddDraft: null, elevationEditSelectedId: null }),
+  elevationAddDraft: null,
+  setElevationAddDraft: (p) => set({ elevationAddDraft: p }),
   setElevationEdits: (viewId, edits) => {
     const { canvasData, pushHistory } = get();
     pushHistory();
