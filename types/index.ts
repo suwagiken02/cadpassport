@@ -298,11 +298,61 @@ export type RidgeLine = {
  * 立面プリミティブ: 立面ビューを構成する描画要素。座標はグループローカル・グリッド単位
  * (= 左端=0、 GL=0、 上方向は負)。線幅/文字サイズは px。ElevationModal の SVG と同等内容。
  */
+/**
+ * 立面プリミティブの意味タグ (= E-8a)。図形種別(kind: line/rect/…)とは別に「何を描いた線か」を持つ。
+ * 部材単位の編集（選択・削除・移動）と、平面変更で立面を再生成したときの差分再マッチに使う。
+ */
+export type ElevationPrimitiveKind =
+  | 'building'   // 建物シルエット
+  | 'roof'       // 屋根投影バンド
+  | 'ridge'      // 棟線
+  | 'gl'         // GL 線
+  | 'board'      // 作業床(踏板)
+  | 'rail'       // 手摺・コマ横線
+  | 'post'       // 支柱
+  | 'jack'       // ジャッキ
+  | 'raise'      // 妻面のコマ嵩上げ(段違い作業床)
+  | 'dim'        // 寸法線
+  | 'dimText'    // 寸法値の文字
+  | 'text';      // その他の文字(GL ラベル・棟ラベル等)
+
+/**
+ * 再マッチ用ヒント (= E-8a)。再生成で id が変わっても kind + ヒントで対応付ける。
+ * heightMm(GL 基準)とスパン/支柱の index は平面を編集しても比較的安定した鍵になる。
+ */
+export type ElevationPrimitiveMeta = {
+  kind: ElevationPrimitiveKind;
+  /** 安定 id。同じ図なら再生成しても同じ値になるよう kind＋高さ/添字/座標から組み立てる。 */
+  id: string;
+  /** 高さ (= mm、 GL 基準)。board/rail/dim/ridge 等の同定用 */
+  heightMm?: number;
+  /** 添字 (= 支柱番号・スパン番号・段番号など) */
+  index?: number;
+  /** 面軸座標 (= グループローカル・グリッド)。post/jack の横位置 */
+  x?: number;
+  /** 紐づく建物 id (= building/roof) */
+  buildingId?: string;
+};
+
 export type ElevationPrimitive =
-  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: string; width: number; dash?: number[]; opacity?: number }
-  | { kind: 'rect'; x: number; y: number; w: number; h: number; fill?: string; fillOpacity?: number; stroke?: string; width?: number }
-  | { kind: 'polygon'; points: number[]; fill?: string; fillOpacity?: number; stroke?: string; width?: number }
-  | { kind: 'text'; x: number; y: number; text: string; size: number; fill: string; anchor?: 'start' | 'middle' | 'end' };
+  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: string; width: number; dash?: number[]; opacity?: number; meta?: ElevationPrimitiveMeta }
+  | { kind: 'rect'; x: number; y: number; w: number; h: number; fill?: string; fillOpacity?: number; stroke?: string; width?: number; meta?: ElevationPrimitiveMeta }
+  | { kind: 'polygon'; points: number[]; fill?: string; fillOpacity?: number; stroke?: string; width?: number; meta?: ElevationPrimitiveMeta }
+  | { kind: 'text'; x: number; y: number; text: string; size: number; fill: string; anchor?: 'start' | 'middle' | 'end'; meta?: ElevationPrimitiveMeta };
+
+/**
+ * 立面の編集差分 (= E-8a、 案B)。生成された primitives は書き換えず、差分だけを積む。
+ * 元データが保護され、undo は edits 配列の履歴でそのまま扱える。
+ *   hide : 部材を消す（削除マーク）
+ *   move : ローカル座標(グリッド)のオフセット
+ *   text : 文字の上書き（元へ戻すときはこの edit を外す）
+ *   add  : ユーザーが描き足したプリミティブ（meta.id は追加時に採番）
+ */
+export type ElevationEdit =
+  | { op: 'hide'; targetId: string }
+  | { op: 'move'; targetId: string; dx: number; dy: number }
+  | { op: 'text'; targetId: string; text: string }
+  | { op: 'add'; primitive: ElevationPrimitive };
 
 /**
  * 立面ビュー: 1 面の立面を面グループ単位でキャンバスに配置したもの (= E-4)。
@@ -315,6 +365,8 @@ export type ElevationView = {
   originGrid: Point;
   scale: number;
   primitives: ElevationPrimitive[];
+  /** ユーザー編集の差分 (= E-8a)。未編集は undefined。primitives は再生成で入れ替わるが差分は残る。 */
+  edits?: ElevationEdit[];
 };
 
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===
