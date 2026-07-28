@@ -464,6 +464,9 @@ type CanvasStore = {
   setElevationEditSelectedId: (id: string | null) => void;
   /** 立面ビューの編集差分を差し替える (= E-8b、 履歴に積む)。 */
   setElevationEdits: (viewId: string, edits: import('@/types').ElevationEdit[]) => void;
+  /** 文字編集モーダルの対象プリミティブ id (= E-8c、 null=非表示)。 */
+  elevationTextEditTargetId: string | null;
+  setElevationTextEditTargetId: (id: string | null) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
   setShowAreaCalcModal: (v: boolean) => void;
@@ -1465,6 +1468,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setElevationEditViewId: (id) => set({ elevationEditViewId: id, elevationEditSelectedId: null }),
   elevationEditSelectedId: null,
   setElevationEditSelectedId: (id) => set({ elevationEditSelectedId: id }),
+  elevationTextEditTargetId: null,
+  setElevationTextEditTargetId: (id) => set({ elevationTextEditTargetId: id }),
   setElevationEdits: (viewId, edits) => {
     const { canvasData, pushHistory } = get();
     pushHistory();

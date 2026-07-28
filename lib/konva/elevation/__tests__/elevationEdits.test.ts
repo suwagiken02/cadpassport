@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 import {
   applyElevationEdits, hasEditFor, nextAddId, primitiveBounds, translatePrimitive,
-  withAdd, withHide, withMove, withText, withoutEditsFor,
+  withAdd, withHide, withMove, withText, withoutEditsFor, withoutTextFor, overriddenTextIds,
 } from '../elevationEdits';
 
 // ============================================================
@@ -124,6 +124,19 @@ describe('差分配列の組み立て', () => {
     ];
     expect(withoutEditsFor(e, 'a').map((x) => x.op)).toEqual(['add']);
     expect(withoutEditsFor(e, 'add:x:1').map((x) => x.op)).toEqual(['move', 'hide']);
+  });
+
+  it('withoutTextFor は文字の上書きだけ外す（移動・削除は残す）', () => {
+    let e = withMove(undefined, 'd', 1, 1);
+    e = withText(e, 'd', 'X');
+    e = withHide(e, 'other');
+    expect(withoutTextFor(e, 'd').map((x) => x.op)).toEqual(['move', 'hide']);
+  });
+
+  it('overriddenTextIds は上書き中の id 集合', () => {
+    const e = withText(withText(undefined, 'a', 'A'), 'b', 'B');
+    expect(Array.from(overriddenTextIds(e)).sort()).toEqual(['a', 'b']);
+    expect(overriddenTextIds(undefined).size).toBe(0);
   });
 
   it('hasEditFor は編集の有無を返す', () => {

@@ -15,7 +15,7 @@ import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
-import { applyElevationEdits, primitiveBounds, withMove } from '@/lib/konva/elevation/elevationEdits';
+import { applyElevationEdits, overriddenTextIds, primitiveBounds, withMove } from '@/lib/konva/elevation/elevationEdits';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -34,7 +34,7 @@ function withAlpha(hex: string | undefined, a: number | undefined): string | und
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, editing = false) {
+function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, editing = false, overridden = false) {
   if (p.kind === 'line') {
     const a = S(p.x1, p.y1), b = S(p.x2, p.y2);
     return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} strokeScaleEnabled={false} listening={false} hitStrokeWidth={editing ? 10 : 0} />;
@@ -52,7 +52,9 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, editing = fal
   const a = S(p.x, p.y);
   const est = p.text.length * p.size * 0.6;
   const offX = p.anchor === 'middle' ? est / 2 : p.anchor === 'end' ? est : 0;
-  return <Text key={i} x={a.x} y={a.y} text={p.text} fontSize={p.size} fill={p.fill} offsetX={offX} fontFamily="monospace" listening={false} />;
+  // E-8c: ユーザーが上書きした文字は色で明示（生成値のままと区別できるように）。
+  const fill = overridden ? '#FF9F1C' : p.fill;
+  return <Text key={i} x={a.x} y={a.y} text={p.text} fontSize={p.size} fill={fill} offsetX={offX} fontFamily="monospace" listening={false} />;
 }
 
 /** primitives のローカル bbox（生座標・グリッド）。 */
@@ -79,6 +81,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
   const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
   const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
   const prims = useMemo(() => applyElevationEdits(view), [view]);
+  const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
 
   const S: ToScreen = (lx, ly) => ({
     x: (view.originGrid.x + lx * view.scale) * gridPx + panX,
@@ -112,8 +115,10 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
             }}
             onClick={() => id && setSelectedId(id)}
             onTap={() => id && setSelectedId(id)}
+            onDblClick={() => { if (id && p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+            onDblTap={() => { if (id && p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
           >
-            {renderPrim(p, i, S, true)}
+            {renderPrim(p, i, S, true, !!id && overridden.has(id))}
             {/* 細い線でも掴めるよう、bbox を覆う透明の当たり判定を重ねる。 */}
             <Rect x={box.x - 3} y={box.y - 3} width={box.w + 6} height={box.h + 6} fill="#000" opacity={0.001} />
             {isSel && (
@@ -158,7 +163,10 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
   });
   // E-8b: 編集差分を反映して描く（未編集なら元の配列がそのまま返る＝従来と同一）。
   const children = useMemo(
-    () => applyElevationEdits(view).map((p, i) => renderPrim(p, i, worldOf)),
+    () => {
+      const ov = overriddenTextIds(view.edits);
+      return applyElevationEdits(view).map((p, i) => renderPrim(p, i, worldOf, false, !!p.meta && ov.has(p.meta.id)));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [view, cachedGridPx],
   );

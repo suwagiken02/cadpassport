@@ -71,6 +71,13 @@ export default function ElevationEditBar() {
             : '部材をタップして選択（ドラッグで移動）'}
         </p>
       </div>
+      {/* E-8c: 文字(寸法値・ラベル)は上書き編集できる */}
+      {selected?.kind === 'text' && (
+        <button type="button" onClick={() => useCanvasStore.getState().setElevationTextEditTargetId(selectedId)}
+          className="px-3 py-2 bg-dark-bg border border-accent text-accent font-bold rounded-lg text-xs whitespace-nowrap">
+          文字を編集
+        </button>
+      )}
       <button type="button" onClick={hide} disabled={!selectedId}
         className="px-3 py-2 bg-red-500 text-white font-bold rounded-lg text-xs whitespace-nowrap disabled:opacity-40">
         削除

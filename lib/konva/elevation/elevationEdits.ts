@@ -153,6 +153,20 @@ export function withoutEditsFor(
     e.op === 'add' ? e.primitive.meta?.id !== targetId : e.targetId !== targetId);
 }
 
+/** 文字の上書きだけを取り消す (= E-8c「元に戻す」)。移動・削除の差分は残す。 */
+export function withoutTextFor(
+  edits: ElevationEdit[] | undefined, targetId: string,
+): ElevationEdit[] {
+  return (edits ?? []).filter((e) => !(e.op === 'text' && e.targetId === targetId));
+}
+
+/** 文字が上書きされている id の集合 (= E-8c、 上書き済みを色で明示するため)。 */
+export function overriddenTextIds(edits: ElevationEdit[] | undefined): Set<string> {
+  const s = new Set<string>();
+  for (const e of edits ?? []) if (e.op === 'text') s.add(e.targetId);
+  return s;
+}
+
 /** その id に何らかの編集が入っているか（バッジ表示用）。 */
 export function hasEditFor(edits: ElevationEdit[] | undefined, targetId: string): boolean {
   return (edits ?? []).some((e) =>
