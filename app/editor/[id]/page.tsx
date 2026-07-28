@@ -18,6 +18,7 @@ import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
 import FloorPickerModal from '@/components/canvas/FloorPickerModal';
 import PdfPageWizardBar from '@/components/export/PdfPageWizardBar';
+import ElevationEditBar from '@/components/elevation/ElevationEditBar';
 import { buildingIdForPolygonOnFloor } from '@/lib/konva/floorScope';
 import { directionInputLabels } from '@/lib/directionInputLabels';
 import UdekiModal from '@/components/scaffold/UdekiModal';
@@ -773,6 +774,8 @@ export default function EditorPage() {
       <FloorPickerModal />
       {/* E-7-fix3: 全ページ PDF の枠指定ウィザード（ページ遷移をまたいで進行するので store 駆動） */}
       <PdfPageWizardBar />
+      {/* E-8b: 立面編集モードのバー（配置済み立面をダブルタップで開始） */}
+      <ElevationEditBar />
       <PinDistanceInputModal />
       {(showBuildingModal || showBuildingModalStore) && (
         <BuildingTemplateModal onClose={() => { setShowBuildingModal(false); setShowBuildingModalStore(false); }} />

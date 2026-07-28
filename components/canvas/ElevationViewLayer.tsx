@@ -15,6 +15,7 @@ import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
+import { applyElevationEdits, primitiveBounds, withMove } from '@/lib/konva/elevation/elevationEdits';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -33,10 +34,10 @@ function withAlpha(hex: string | undefined, a: number | undefined): string | und
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen) {
+function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, editing = false) {
   if (p.kind === 'line') {
     const a = S(p.x1, p.y1), b = S(p.x2, p.y2);
-    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} strokeScaleEnabled={false} listening={false} />;
+    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} strokeScaleEnabled={false} listening={false} hitStrokeWidth={editing ? 10 : 0} />;
   }
   if (p.kind === 'rect') {
     const a = S(p.x, p.y), b = S(p.x + p.w, p.y + p.h);
@@ -67,6 +68,67 @@ function localBounds(view: ElevationView) {
   return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
 }
 
+/**
+ * E-8b: 立面編集モードの描画。cache() を外して部材(プリミティブ)単位で当たり判定を持たせ、
+ * タップで選択・ドラッグで移動差分（move edit）を作る。編集中のビューだけがこの経路。
+ * 通常表示は従来どおり cache 済みビットマップ＋bbox 1枚 hit のまま（性能を落とさない）。
+ */
+function ElevationEditGroup({ view, gridPx, panX, panY }: {
+  view: ElevationView; gridPx: number; panX: number; panY: number;
+}) {
+  const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
+  const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
+  const prims = useMemo(() => applyElevationEdits(view), [view]);
+
+  const S: ToScreen = (lx, ly) => ({
+    x: (view.originGrid.x + lx * view.scale) * gridPx + panX,
+    y: (view.originGrid.y + ly * view.scale) * gridPx + panY,
+  });
+
+  return (
+    <>
+      {prims.map((p, i) => {
+        const id = p.meta?.id;
+        const isSel = !!id && id === selectedId;
+        const b = primitiveBounds(p);
+        const a = S(b.minX, b.minY), c = S(b.maxX, b.maxY);
+        const box = {
+          x: Math.min(a.x, c.x), y: Math.min(a.y, c.y),
+          w: Math.max(Math.abs(c.x - a.x), 6), h: Math.max(Math.abs(c.y - a.y), 6),
+        };
+        return (
+          <Group
+            key={id ?? i}
+            draggable={!!id}
+            onDragEnd={(e) => {
+              if (!id) return;
+              const g = e.target;
+              // ローカル(グリッド)へ戻して差分に積む。ノード自体の位置は 0 に戻す。
+              const dx = g.x() / (gridPx * view.scale);
+              const dy = g.y() / (gridPx * view.scale);
+              g.position({ x: 0, y: 0 });
+              if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return;
+              useCanvasStore.getState().setElevationEdits(view.id, withMove(view.edits, id, dx, dy));
+            }}
+            onClick={() => id && setSelectedId(id)}
+            onTap={() => id && setSelectedId(id)}
+          >
+            {renderPrim(p, i, S, true)}
+            {/* 細い線でも掴めるよう、bbox を覆う透明の当たり判定を重ねる。 */}
+            <Rect x={box.x - 3} y={box.y - 3} width={box.w + 6} height={box.h + 6} fill="#000" opacity={0.001} />
+            {isSel && (
+              <Rect
+                x={box.x - 4} y={box.y - 4} width={box.w + 8} height={box.h + 8}
+                stroke="#FF6B35" strokeWidth={1.5} dash={[4, 3]} listening={false}
+              />
+            )}
+          </Group>
+        );
+      })}
+    </>
+  );
+}
+
 type GroupProps = {
   view: ElevationView;
   gridPx: number;
@@ -94,8 +156,9 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     x: (view.originGrid.x + lx * view.scale) * cachedGridPx,
     y: (view.originGrid.y + ly * view.scale) * cachedGridPx,
   });
+  // E-8b: 編集差分を反映して描く（未編集なら元の配列がそのまま返る＝従来と同一）。
   const children = useMemo(
-    () => view.primitives.map((p, i) => renderPrim(p, i, worldOf)),
+    () => applyElevationEdits(view).map((p, i) => renderPrim(p, i, worldOf)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [view, cachedGridPx],
   );
@@ -132,6 +195,12 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
     setSelectedIds([view.id]);
   };
+  /** E-8b: ダブルタップで立面編集モードへ（部材単位の編集）。 */
+  const onDblTap = () => {
+    if (mode !== 'select') return;
+    useCanvasStore.getState().setSelectedIds([view.id]);
+    useCanvasStore.getState().setElevationEditViewId(view.id);
+  };
   const onDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const g = e.target;
     // ドラッグは position(x/y) を親(Layer)px で動かす。scale は無関係。
@@ -151,7 +220,7 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 
   return (
     <>
-      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} listening={listening}>
+      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} onDblClick={onDblTap} onDblTap={onDblTap} listening={listening}>
         {children}
         {/* cached hit canvas は listening=false 子を無視するため、bbox を覆う透明 Rect を hit 領域に。 */}
         {wboxCached && <Rect x={wboxCached.x} y={wboxCached.y} width={wboxCached.w} height={wboxCached.h} fill="#000" opacity={0} listening={listening} />}
@@ -172,6 +241,7 @@ export default function ElevationViewLayer() {
   const selectedIds = useCanvasStore((s) => s.selectedIds);
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds);
   const moveElevationView = useCanvasStore((s) => s.moveElevationView);
+  const editingViewId = useCanvasStore((s) => s.elevationEditViewId);
 
   const gridPx = INITIAL_GRID_PX * zoom;
   const arr = views ?? [];
@@ -180,6 +250,10 @@ export default function ElevationViewLayer() {
   return (
     <Layer>
       {arr.map((view) => (
+        editingViewId === view.id ? (
+          // E-8b: 編集中のビューは cache を外して部材単位で扱う。
+          <ElevationEditGroup key={view.id} view={view} gridPx={gridPx} panX={panX} panY={panY} />
+        ) : (
         <ElevationViewGroup
           key={view.id}
           view={view}
@@ -191,6 +265,7 @@ export default function ElevationViewLayer() {
           setSelectedIds={setSelectedIds}
           moveElevationView={moveElevationView}
         />
+        )
       ))}
     </Layer>
   );

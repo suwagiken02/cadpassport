@@ -456,6 +456,14 @@ type CanvasStore = {
   addElevationViews: (views: ElevationView[]) => void;
   removeElevationView: (id: string) => void;
   moveElevationView: (id: string, originGrid: import('@/types').Point) => void;
+  /** 立面編集モードの対象ビュー id (= E-8b、 null=通常モード)。 */
+  elevationEditViewId: string | null;
+  setElevationEditViewId: (id: string | null) => void;
+  /** 立面編集モードで選択中の部材(プリミティブ)の安定 id。 */
+  elevationEditSelectedId: string | null;
+  setElevationEditSelectedId: (id: string | null) => void;
+  /** 立面ビューの編集差分を差し替える (= E-8b、 履歴に積む)。 */
+  setElevationEdits: (viewId: string, edits: import('@/types').ElevationEdit[]) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
   setShowAreaCalcModal: (v: boolean) => void;
@@ -1450,6 +1458,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     pushHistory();
     set({
       canvasData: { ...canvasData, elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id) },
+      isDirty: true,
+    });
+  },
+  elevationEditViewId: null,
+  setElevationEditViewId: (id) => set({ elevationEditViewId: id, elevationEditSelectedId: null }),
+  elevationEditSelectedId: null,
+  setElevationEditSelectedId: (id) => set({ elevationEditSelectedId: id }),
+  setElevationEdits: (viewId, edits) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((e) => (e.id === viewId ? { ...e, edits } : e)),
+      },
       isDirty: true,
     });
   },
