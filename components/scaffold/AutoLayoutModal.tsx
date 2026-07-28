@@ -316,6 +316,14 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     detectedGableFaces.forEach((f) => { if (!gableOptOut.has(f)) s.add(f); });
     return s;
   }, [detectedGableFaces, gableOptOut]);
+  /** M-1d: 面カードの「妻割⇔通常」切替。 */
+  const toggleGableFace = (face: FaceDir) => {
+    setGableOptOut((prev) => {
+      const next = new Set(prev);
+      if (next.has(face)) next.delete(face); else next.add(face);
+      return next;
+    });
+  };
 
   // Phase H-3d-2 修正A: 1Fポリゴンに2F頂点を投影して自動分割 (normalizedBuilding1F)
   // 1F辺が「2F直下部分」と「下屋部分」の複合辺の場合、2F頂点で分割する。
@@ -1474,6 +1482,16 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                 {targetFloor === 'all' ? '割付結果 (2F全周)' : '割付結果'}
               </p>
 
+              {/* M-1d: 妻割の案内。妻面が見つかった物件だけ出す（通常物件の表示は変えない）。 */}
+              {detectedGableFaces.size > 0 && (
+                <p className="text-[11px] text-dimension leading-snug">
+                  妻面（三角に立ち上がる壁の面）は
+                  <span className="text-accent font-bold">妻割（センター割り）</span>
+                  で中央から左右対称に割り付けます。コマ嵩上げが左右対称の階段になります。
+                  面ごとに「通常割り」へ戻せます。
+                </p>
+              )}
+
               {result.edgeLayouts.map((el, i) => {
                 // Phase H-3d-4: bothmode の 1F-origin entry は専用 1F セクションで描画 (下方)、
                 // ここは 2F-origin / 単一階 (originFloor undefined) のみ。
@@ -1501,11 +1519,33 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                         {/* Phase H-3d-3: bothmode は 1F 側 (1{label}) と対称に "2" prefix */}
                         {targetFloor === 'all' ? '2' : ''}{((targetFloor === 'all' ? edges2FAll : edges).find(e => e.index === el.edge.index)?.label ?? el.edge.label)} ({FACE_LABEL[el.edge.face]})
                         {el.locked && <span className="text-[10px] text-dimension ml-1">L字固定</span>}
+                        {/* M-1d: 妻割を当てている面のバッジ */}
+                        {activeGableFaces.has(el.edge.face) && (
+                          <span className="text-[10px] bg-accent/20 text-accent border border-accent/40 rounded px-1 ml-1">妻割</span>
+                        )}
                       </span>
                       <span className="text-[10px] text-dimension">
                         辺長 {el.edgeLengthMm}mm / 有効 {el.effectiveMm}mm
                       </span>
                     </div>
+
+                    {/* M-1d: 妻面と判定された面だけ 妻割⇔通常 を切り替えられる */}
+                    {detectedGableFaces.has(el.edge.face) && (
+                      <div className="flex items-center gap-2 mb-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleGableFace(el.edge.face)}
+                          className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border ${
+                            activeGableFaces.has(el.edge.face)
+                              ? 'bg-accent/20 border-accent text-accent'
+                              : 'bg-dark-surface border-dark-border text-dimension'
+                          }`}
+                        >
+                          {activeGableFaces.has(el.edge.face) ? '妻割（センター割り）' : '通常割り'}
+                        </button>
+                        <span className="text-[10px] text-dimension">タップで切替</span>
+                      </div>
+                    )}
 
                     {candidate.rails.length > 0 ? (
                       <>
@@ -1513,7 +1553,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
                           {formatRailsSummary(candidate.rails)}
                         </p>
                         <div className="flex flex-wrap gap-1 mb-1">
-                          {candidate.rails.map((r, ri) => (
+                          {railsForFace(candidate.rails, el.edge.face, activeGableFaces, enabledSizes).map((r, ri) => (
                             <span key={ri} className="px-1.5 py-0.5 bg-handrail/20 text-handrail text-[11px] font-mono rounded">
                               {r}
                             </span>
