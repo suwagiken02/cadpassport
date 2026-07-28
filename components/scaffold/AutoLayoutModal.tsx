@@ -7,6 +7,9 @@ import { Handrail, HandrailLengthMm, Point, ScaffoldStartConfig, getScaffoldStar
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import NumInput from '@/components/ui/NumInput';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
+import { detectGableFaces } from '@/lib/konva/gableFaces';
+import type { FaceDir } from '@/lib/konva/autoLayoutUtils';
+import { railsForFace } from '@/lib/konva/autolayout/gableApply';
 import {
   getBuildingEdgesClockwise,
   computeAutoLayoutSequential,
@@ -292,6 +295,27 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     const f = targetFloor === 'all' ? topFloor : targetFloor;
     return buildingByFloor[f] ?? null;
   }, [targetFloor, buildingByFloor, topFloor]);
+
+  // ── M-1c: 妻面（センター割りを当てる面）──
+  // 壁の形(への字)と切妻の棟の向きから自動判定。矩形外周のみ対象（入隅は中央対称が成立しない）。
+  const detectedGableFaces = useMemo(() => {
+    if (!building) return new Set<FaceDir>();
+    return detectGableFaces(
+      building,
+      canvasData.heightMarkers ?? [],
+      canvasData.roofs ?? [],
+      canvasData.ridgeLines ?? [],
+    ).faces;
+  }, [building, canvasData.heightMarkers, canvasData.roofs, canvasData.ridgeLines]);
+
+  /** M-1d: ユーザーが「通常割り」に戻した面（面別トグルの解除集合）。 */
+  const [gableOptOut, setGableOptOut] = useState<Set<FaceDir>>(new Set());
+  /** 実際に妻割を当てる面 = 自動判定 − ユーザー解除。 */
+  const activeGableFaces = useMemo(() => {
+    const s = new Set<FaceDir>();
+    detectedGableFaces.forEach((f) => { if (!gableOptOut.has(f)) s.add(f); });
+    return s;
+  }, [detectedGableFaces, gableOptOut]);
 
   // Phase H-3d-2 修正A: 1Fポリゴンに2F頂点を投影して自動分割 (normalizedBuilding1F)
   // 1F辺が「2F直下部分」と「下屋部分」の複合辺の場合、2F頂点で分割する。
@@ -1158,6 +1182,9 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
   const handlePlace = () => {
     if (!result || !building) return;
     const allHandrails: Handrail[] = [];
+    // M-1c: 妻面はセンター割り（妻割）。合計は変えずに並び（と同じ合計の多重集合）だけ差し替えるので、
+    //   両端の離れ・隣接面の端点接続という絶対制約は保たれる。
+    const gableFaces = activeGableFaces;
 
     // L字辺も通常辺と同様に配置する（L字辺の特徴は「離れ固定 + ダイアログ対象外」のみ）。
     // ScaffoldStartModal で既に置かれた L字辺の始点手摺は、下の overlappingIds で検出されて
@@ -1168,7 +1195,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       const candidate = el.candidates[selIdx];
       if (!candidate || candidate.rails.length === 0) continue;
 
-      const placements = placeHandrailsForEdge(el, candidate.rails);
+      const placements = placeHandrailsForEdge(el, railsForFace(candidate.rails, el.edge.face, gableFaces, enabledSizes));
       // 所属階:
       // - bothmode: adapter が originFloor を埋めているのでそれを使う (2F 由来 → 2F、1F 由来 → 1F)
       // - 単一階: 1Fのみ → 1F、2Fのみ → 2F (originFloor は undefined)
@@ -1191,7 +1218,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
         const selIdx = selectionsSub[el.edge.index] ?? 0;
         const candidate = el.candidates[selIdx];
         if (!candidate || candidate.rails.length === 0) continue;
-        const placements = placeHandrailsForEdge(el, candidate.rails);
+        const placements = placeHandrailsForEdge(el, railsForFace(candidate.rails, el.edge.face, gableFaces, enabledSizes));
         for (const p of placements) {
           allHandrails.push({
             id: uuidv4(),
