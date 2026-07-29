@@ -24,6 +24,8 @@ export default function ElevationEditBar() {
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const addDraft = useCanvasStore((s) => s.elevationAddDraft);
+  const mode = useCanvasStore((s) => s.mode);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
   const view = (views ?? []).find((v) => v.id === viewId) ?? null;
 
   // Esc で編集モードを抜ける（選択中なら選択解除を先に）。
@@ -44,7 +46,26 @@ export default function ElevationEditBar() {
     if (viewId && !view) useCanvasStore.getState().setElevationEditViewId(null);
   }, [viewId, view]);
 
-  if (!viewId || !view) return null;
+  // E-8-fix: ダブルタップに頼らない導線。立面を1つ選択していれば「編集」ボタンを出す。
+  //   （ダブルタップは端末差で取りこぼしやすいので、確実に入れる入口を併設する）
+  if (!viewId) {
+    if (mode !== 'select' || selectedIds.length !== 1) return null;
+    const target = (views ?? []).find((v) => v.id === selectedIds[0]);
+    if (!target) return null;
+    return (
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 flex items-center gap-2">
+        <span className="text-xs text-canvas font-bold whitespace-nowrap">立面図を選択中</span>
+        <button
+          type="button"
+          onClick={() => useCanvasStore.getState().setElevationEditViewId(target.id)}
+          className="px-3 py-2 bg-accent text-white font-bold rounded-lg text-xs whitespace-nowrap"
+        >
+          ✏️ 編集
+        </button>
+      </div>
+    );
+  }
+  if (!view) return null;
 
   const selected = selectedId
     ? [...view.primitives, ...(view.edits ?? []).flatMap((e) => (e.op === 'add' ? [e.primitive] : []))]

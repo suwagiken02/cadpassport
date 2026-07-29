@@ -268,17 +268,20 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     return () => { g.clearCache(); };
   }, [view, cachedGridPx, mode]);
 
-  const listening = mode === 'select' || mode === 'erase' || mode === 'move-select';
+  // E-8-fix: 閲覧(view)モードでも当たり判定は生かす。ただし単タップでは何もせず、
+  //   ダブルタップのときだけ編集モードへ入る（閲覧中に選択・移動が起きる従来の挙動は変えない）。
+  const listening = mode === 'select' || mode === 'erase' || mode === 'move-select' || mode === 'view';
   // ズーム中の追従倍率。停止時は 1。
   const followScale = gridPx / cachedGridPx;
 
   const onClick = () => {
+    if (mode === 'view') return;  // 閲覧中は単タップで選択しない（従来どおり触れない）
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
     setSelectedIds([view.id]);
   };
   /** E-8b: ダブルタップで立面編集モードへ（部材単位の編集）。 */
   const onDblTap = () => {
-    if (mode !== 'select') return;
+    if (mode !== 'select' && mode !== 'view') return;
     useCanvasStore.getState().setSelectedIds([view.id]);
     useCanvasStore.getState().setElevationEditViewId(view.id);
   };
@@ -287,7 +290,11 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     // ドラッグは position(x/y) を親(Layer)px で動かす。scale は無関係。
     const dx = (g.x() - panX) / gridPx, dy = (g.y() - panY) / gridPx;
     g.x(panX); g.y(panY);
-    moveElevationView(view.id, { x: Math.round(view.originGrid.x + dx), y: Math.round(view.originGrid.y + dy) });
+    const gx = Math.round(view.originGrid.x + dx), gy = Math.round(view.originGrid.y + dy);
+    // E-8-fix: 動いていない「ドラッグ」で履歴を汚さない（タップの取りこぼし対策で dragDistance を
+    //   入れたが、それでも 1 グリッド未満のドラッグは位置が変わらないため書き込まない）。
+    if (gx === view.originGrid.x && gy === view.originGrid.y) return;
+    moveElevationView(view.id, { x: gx, y: gy });
   };
 
   // 選択枠は live gridPx でスクリーン計算（ズーム中も正しく追従）。
@@ -301,7 +308,9 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 
   return (
     <>
-      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} onDblClick={onDblTap} onDblTap={onDblTap} listening={listening}>
+      {/* E-8-fix: dragDistance を入れないと、押下中の 1px の揺れでもドラッグ扱いになり
+          Konva が click/tap を発火しない＝ダブルクリック/ダブルタップが成立しない（指では特に顕著）。 */}
+      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} dragDistance={6} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} onDblClick={onDblTap} onDblTap={onDblTap} listening={listening}>
         {children}
         {/* cached hit canvas は listening=false 子を無視するため、bbox を覆う透明 Rect を hit 領域に。 */}
         {wboxCached && <Rect x={wboxCached.x} y={wboxCached.y} width={wboxCached.w} height={wboxCached.h} fill="#000" opacity={0} listening={listening} />}
