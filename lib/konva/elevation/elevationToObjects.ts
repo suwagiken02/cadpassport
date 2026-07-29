@@ -35,17 +35,17 @@ const C_DIM = '#8a8a86';
 const C_DIM_TXT = '#9a9a96';
 
 /** id に埋める座標の丸め（0.1 グリッド＝1mm 精度。浮動小数の揺れで id が変わらないように）。 */
-const q = (v: number): number => Math.round(v * 10) / 10;
+export const q = (v: number): number => Math.round(v * 10) / 10;
 
-/** FaceElevation を、グループローカル座標のプリミティブ列へ変換する。
- *  fillOf: 建物 id → 塗り色（未指定は既定色）。高さ情報が無ければ空配列。 */
-export function faceElevationToPrimitives(
-  fe: FaceElevation,
-  fillOf: (buildingId: string) => string = () => '#3d3d3a',
-): ElevationPrimitive[] {
+/**
+ * 面の描画範囲（E-8-v2a で切り出し）。ローカル原点(左端=0)と最高高さを決める。
+ * 部材ブロック側（elevationParts）と座標基準を共有するため single source にする。
+ * 高さ情報が無い（描くものが無い）場合は null。
+ */
+export function faceElevationExtent(fe: FaceElevation): {
+  minXg: number; maxXg: number; maxMm: number; buildingTopMm: number;
+} | null {
   const { buildingOutlines, scaffolds, roofBands, ridgeMaxMm } = fe;
-
-  // ---- 変軸範囲・最高高さ ----
   let minXg = Infinity, maxXg = -Infinity, maxMm = 0, buildingTopMm = 0;
   const seeX = (gx: number) => { minXg = Math.min(minXg, gx); maxXg = Math.max(maxXg, gx); };
   for (const o of buildingOutlines) {
@@ -58,8 +58,22 @@ export function faceElevationToPrimitives(
   for (const sc of scaffolds) { for (const px of sc.postXs) seeX(px); maxMm = Math.max(maxMm, sc.levels.topRailMm); }
   for (const rb of roofBands) { seeX(rb.xStart); seeX(rb.xEnd); }
   if (ridgeMaxMm != null) maxMm = Math.max(maxMm, ridgeMaxMm);
+  if (!(maxMm >= 1 && Number.isFinite(minXg))) return null;
+  return { minXg, maxXg, maxMm, buildingTopMm };
+}
 
-  if (!(maxMm >= 1 && Number.isFinite(minXg))) return [];
+/** FaceElevation を、グループローカル座標のプリミティブ列へ変換する。
+ *  fillOf: 建物 id → 塗り色（未指定は既定色）。高さ情報が無ければ空配列。 */
+export function faceElevationToPrimitives(
+  fe: FaceElevation,
+  fillOf: (buildingId: string) => string = () => '#3d3d3a',
+): ElevationPrimitive[] {
+  const { buildingOutlines, scaffolds, roofBands } = fe;
+
+  // ---- 変軸範囲・最高高さ（部材ブロック側と共有・E-8-v2a）----
+  const ext = faceElevationExtent(fe);
+  if (!ext) return [];
+  const { minXg, maxXg, buildingTopMm } = ext;
 
   const lx = (gx: number) => gx - minXg;      // 左端 0
   const ly = (mm: number) => -(mm / 10);       // GL=0、上は負
