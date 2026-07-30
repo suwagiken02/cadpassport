@@ -29,8 +29,10 @@
 // 座標はグループローカル（横=面軸グリッド、縦=-(mm/10)、GL=0・上が負）。
 // ============================================================
 import { HANDRAIL_COLORS, getHandrailColor } from '@/lib/konva/handrailColors';
-import { KOMA_PITCH_MM } from './elevationEngine';
 import type { ElevationPrimitive, ElevationPrimitiveMeta, HandrailLengthMm } from '@/types';
+
+// コマ格子の定義は komaGrid.ts（皿＋250 起点・450 刻み）。描画側からも引けるよう再 export する。
+export { komaLevelsMm, komaLevelsFromJackMm } from './komaGrid';
 
 /** 選択色。平面(ScaffoldLayer)の選択色と同値。 */
 export const ELEV_SELECT_COLOR = '#FF6B35';
@@ -105,20 +107,6 @@ export const ELEV_PART_STYLE = {
 export function partWidthPx(minPx: number, gridValue: number | undefined, pxPerGrid: number): number {
   if (gridValue == null || !(pxPerGrid > 0)) return minPx;
   return Math.max(minPx, gridValue * pxPerGrid);
-}
-
-/**
- * コマ（楔ポケット＝手摺の受け金具）の高さ列(mm)。
- * fromMm から 450 刻みで toMm 以下まで。ジャッキ上端(GL+150)起点で使う。
- * エンジンの ElevationLevels.komaGridMm と同じ定義（そちらは buildElevationLevels が持つ）。
- */
-export function komaLevelsMm(
-  fromMm: number, toMm: number, pitchMm: number = KOMA_PITCH_MM,
-): number[] {
-  const out: number[] = [];
-  if (!(pitchMm > 0) || !(toMm >= fromMm)) return out;
-  for (let h = fromMm; h <= toMm + 1e-6; h += pitchMm) out.push(Math.round(h));
-  return out;
 }
 
 /**

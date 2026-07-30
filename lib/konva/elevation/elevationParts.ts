@@ -16,7 +16,7 @@ import type { ElevationPrimitive } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import { faceElevationExtent, q } from './elevationToObjects';
 import {
-  komaLevelsMm, nominalSpanMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
+  komaLevelsFromJackMm, nominalSpanMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 
 /** 部材の種類。palette に出すのは post/rail/board/jack/brace。 */
@@ -219,7 +219,7 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         const top = p.levelMm ?? sg.topRailMm;
         pushPost(out, lx(span.x0), ly(sg.topRailMm), ly(top),
           { kind: 'post', id: p.id, x: q(lx(span.x0)), heightMm: p.levelMm },
-          komaLevelsMm(sg.jackTopMm, top).filter((h) => h > sg.topRailMm + 1e-6).map(ly));
+          komaLevelsFromJackMm(sg.jackTopMm, top).filter((h) => h > sg.topRailMm + 1e-6).map(ly));
         break;
       }
       case 'jack':

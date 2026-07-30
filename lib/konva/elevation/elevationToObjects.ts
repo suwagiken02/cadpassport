@@ -17,7 +17,7 @@ import type {
 } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import {
-  komaLevelsMm, nominalSpanMm, pushBoard, pushJack, pushPost, pushRail,
+  komaLevelsFromJackMm, nominalSpanMm, pushBoard, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 
 /** 立面ビューの初期配置位置（グループローカル原点 = 左下=GL・左端）。
@@ -195,7 +195,7 @@ export function faceElevationToPrimitives(
     postExtendTop.forEach((top, px) => {
       pushPost(prims, lx(px), ly(topRail), ly(top),
         { kind: 'post', id: `postExt:${si}:${q(lx(px))}`, x: q(lx(px)), heightMm: top },
-        komaLevelsMm(jackTop, top).filter((h) => h > topRail + 1e-6).map(ly));
+        komaLevelsFromJackMm(jackTop, top).filter((h) => h > topRail + 1e-6).map(ly));
     });
   });
 

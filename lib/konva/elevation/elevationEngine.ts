@@ -36,16 +36,20 @@ import {
   variableCoord,
 } from './roofBandSource';
 import type { Face, FaceSpanColumn } from './faceReconstruction';
+import {
+  FIRST_KOMA_OFFSET_MM, JACK_WIND_MAX_MM, JACK_WIND_MIN_MM, KOMA_PITCH_MM,
+  jackTopForStartMm, komaLevelsFromJackMm,
+} from './komaGrid';
 
 // ── 定数（1 箇所に集約）──
 /** 足場 1 段の高さ(mm)。電卓と単一ソース（calculator.ts）を再 export。 */
 export { LAYER_HEIGHT_MM };
 /** 支柱コマピッチ(mm)。楔ポケット間隔（足場基礎仕様: 1800 = 4×450）。 */
-export const KOMA_PITCH_MM = 450;
+export { KOMA_PITCH_MM, FIRST_KOMA_OFFSET_MM, JACK_WIND_MIN_MM, JACK_WIND_MAX_MM };
 /**
- * ジャッキ上端の既定高さ(mm, GL 基準)。
- * ※現場確認要の仮値。実機ではジャッキ伸縮で 100〜350mm 程度可変。
- *   opts.jackMm で上書き可。定数はここ 1 箇所のみ。
+ * 皿(ジャッキ上端)の高さ(mm, GL 基準)のフォールバック。
+ * 通常はスタート端数から逆算する（jackTopForStartMm）。段が無い＝逆算できないときだけこれを使う。
+ * ※旧実装はこれを固定値として使っていたが、実際はジャッキ巻き 40〜490 で可変（鮎澤氏）。
  */
 export const DEFAULT_JACK_MM = 150;
 
@@ -91,7 +95,6 @@ export function buildElevationLevels(
   opts?: ElevationLevelsOpts,
 ): ElevationLevels {
   const layerMm = opts?.layerMm ?? LAYER_HEIGHT_MM;
-  const jackTopMm = opts?.jackMm ?? DEFAULT_JACK_MM;
   const komaMm = opts?.komaMm ?? KOMA_PITCH_MM;
   const pillarType = opts?.pillarType ?? 'normal';
 
@@ -104,10 +107,14 @@ export function buildElevationLevels(
   const topRailMm = startMm + layerMm * floors; // heightToFloors 定義上 = H
   const sagariMm = floors > 0 ? H - (startMm + layerMm * (floors - 1)) : 0;
 
-  const komaGridMm: number[] = [];
-  if (floors > 0 && komaMm > 0) {
-    for (let h = jackTopMm; h <= topRailMm + 1e-6; h += komaMm) komaGridMm.push(Math.round(h));
-  }
+  // 皿(ジャッキ上端)はスタート端数から逆算する（職人がジャッキを巻いて合わせる）。
+  //   1 コマ目 = 皿+250、以降 450 刻み。作業床は必ずコマに乗るので皿が一意に決まる。
+  //   段が無いときだけ既定値。opts.jackMm があればそれを優先（テスト・特殊ケース用）。
+  const jackTopMm = opts?.jackMm
+    ?? (floors > 0 ? jackTopForStartMm(startMm, komaMm) : DEFAULT_JACK_MM);
+
+  // コマ列＝スタート基準の 450 刻み（皿+250 から天端まで）。作業床も手摺もこの列に乗る。
+  const komaGridMm = floors > 0 ? komaLevelsFromJackMm(jackTopMm, topRailMm, komaMm) : [];
 
   return { buildingHeightMm: H, jackTopMm, startMm, floors, sagariMm, levels, topRailMm, komaGridMm };
 }

@@ -17,7 +17,7 @@ import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstru
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import ElevationPlaceDialog from './ElevationPlaceDialog';
 import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsMm, nominalSpanMm,
+  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, nominalSpanMm,
   partWidthPx, railColorForSpanMm,
 } from '@/lib/konva/elevation/elevationPartStyle';
 import type { PillarType } from '@/lib/konva/calculator';
@@ -402,7 +402,7 @@ function ElevationSVG({
             {/* 妻嵩上げの支柱延長（天端→要求上端） */}
             {Array.from(postExtendTop.entries()).map(([px, top], i) => (
               postLine(`pe-${i}`, px, topRail, top,
-                komaLevelsMm(jackTop, top).filter((h) => h > topRail + 1e-6))
+                komaLevelsFromJackMm(jackTop, top).filter((h) => h > topRail + 1e-6))
             ))}
           </g>
         );

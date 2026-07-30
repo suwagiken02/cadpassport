@@ -8,10 +8,14 @@ import {
   buildBuildingOutline,
   buildFaceElevation,
   DEFAULT_JACK_MM,
+  FIRST_KOMA_OFFSET_MM,
+  JACK_WIND_MAX_MM,
+  JACK_WIND_MIN_MM,
   KOMA_PITCH_MM,
   LAYER_HEIGHT_MM,
   type FaceElevationOpts,
 } from '../elevationEngine';
+import { jackTopForStartMm, komaIndexOfStart } from '../komaGrid';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 
 /** R-1g: 出幅は roofs[] からしか読まない。旧 RoofConfig / roofOverhangs[] の建物は
@@ -77,21 +81,41 @@ describe('buildElevationLevels: 電卓 heightToFloors との整合', () => {
     expect(negarami.floors).toBe(2);
   });
 
-  it('コマ格子: ジャッキ上端(150)起点・450刻み・天端以下', () => {
+  // E-8-v2h-fix: 皿(ジャッキ上端)は固定値ではなくスタート端数から逆算する（鮎澤氏）。
+  //   1 コマ目 = 皿+250、以降 450 刻み。ジャッキ巻き（皿の可動域）= 40〜490。
+  it('コマ格子: 皿+250 起点・450刻み・天端以下（スタート基準）', () => {
     const lv = buildElevationLevels(5000);
-    expect(lv.jackTopMm).toBe(DEFAULT_JACK_MM);
-    expect(lv.komaGridMm[0]).toBe(150);
+    // 5000 → スタート 1400・2段。現場の組み方は「皿 250・3 コマ目」
+    expect(lv.startMm).toBe(1400);
+    expect(lv.jackTopMm).toBe(250);
+    expect(lv.komaGridMm[0]).toBe(lv.jackTopMm + FIRST_KOMA_OFFSET_MM); // 500
+    expect(komaIndexOfStart(lv.startMm)).toBe(3);
     for (let i = 1; i < lv.komaGridMm.length; i++) {
       expect(lv.komaGridMm[i] - lv.komaGridMm[i - 1]).toBe(KOMA_PITCH_MM);
     }
     expect(lv.komaGridMm[lv.komaGridMm.length - 1]).toBeLessThanOrEqual(lv.topRailMm);
   });
 
-  it('opts で層/ジャッキ上書き可', () => {
+  it('作業床は必ずコマに乗る（床・手摺・コマ列はすべてスタート基準の450刻み）', () => {
+    for (const h of [3600, 5000, 6500, 7300, 9100, 12000]) {
+      const lv = buildElevationLevels(h);
+      if (lv.floors === 0) continue;
+      for (const f of lv.levels) expect(lv.komaGridMm, `H=${h} 床${f}`).toContain(f);
+      // 皿はジャッキ巻きの可動域に収まる
+      expect(lv.jackTopMm).toBeGreaterThanOrEqual(JACK_WIND_MIN_MM);
+      expect(lv.jackTopMm).toBeLessThanOrEqual(JACK_WIND_MAX_MM);
+    }
+  });
+
+  it('opts で層/ジャッキ上書き可（1 コマ目は皿+250）', () => {
     const lv = buildElevationLevels(3600, { jackMm: 300 });
     expect(lv.jackTopMm).toBe(300);
-    expect(lv.komaGridMm[0]).toBe(300);
+    expect(lv.komaGridMm[0]).toBe(300 + FIRST_KOMA_OFFSET_MM);
     expect(LAYER_HEIGHT_MM).toBe(1800);
+  });
+
+  it('段が無いときだけ既定の皿高さ', () => {
+    expect(buildElevationLevels(1000).jackTopMm).toBe(DEFAULT_JACK_MM);
   });
 });
 

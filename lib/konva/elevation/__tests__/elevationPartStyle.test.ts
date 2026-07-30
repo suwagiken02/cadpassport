@@ -12,7 +12,7 @@ import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToParts, partsToPrimitives } from '../elevationParts';
 import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsMm, nominalSpanMm,
+  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, nominalSpanMm,
   partWidthPx, railColorForSpanMm,
 } from '../elevationPartStyle';
 
@@ -176,22 +176,16 @@ describe('nominalSpanMm: 入隅切断でも部材の呼び寸で色を決める'
 // 実物の支柱には 450 刻みでコマが付いていて、職人はそれを目印に手摺を掛ける。
 // 立面で見えないと手摺位置が読めない（鮎澤氏指摘）。明黄では支柱色に溶けるので濃色にする。
 // ============================================================
-describe('コマの列（ジャッキ上端起点・450 刻み・上端まで）', () => {
-  it('GL+150 から 450 刻みで、上端を超えない', () => {
-    expect(komaLevelsMm(150, 2000)).toEqual([150, 600, 1050, 1500, 1950]);
-    expect(komaLevelsMm(150, 1950)).toEqual([150, 600, 1050, 1500, 1950]); // 上端ちょうどは含む
-    expect(komaLevelsMm(150, 1949)).toEqual([150, 600, 1050, 1500]);
-  });
-
-  it('上端が起点より下なら空、ピッチが 0 以下でも空（無限ループにしない）', () => {
-    expect(komaLevelsMm(150, 100)).toEqual([]);
-    expect(komaLevelsMm(150, 2000, 0)).toEqual([]);
-    expect(komaLevelsMm(150, 2000, -450)).toEqual([]);
-  });
-
+describe('コマの列（皿+250 起点・450 刻み・上端まで）', () => {
+  // 詳細な仕様は komaGrid.test.ts。ここでは描画が同じ列を使っていることだけ見る。
   it('エンジンが持つコマ格子と同じ定義', () => {
     const sg = faceElevationToParts(fe).geom.scaffolds[0];
-    expect(sg.komaGridMm).toEqual(komaLevelsMm(sg.jackTopMm, sg.topRailMm));
+    expect(sg.komaGridMm).toEqual(komaLevelsFromJackMm(sg.jackTopMm, sg.topRailMm));
+  });
+
+  it('作業床はコマ列に乗っている（スタート基準の 450 刻み）', () => {
+    const sg = faceElevationToParts(fe).geom.scaffolds[0];
+    for (const lv of sg.levelsMm) expect(sg.komaGridMm).toContain(lv);
   });
 });
 

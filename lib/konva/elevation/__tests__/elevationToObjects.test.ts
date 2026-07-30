@@ -34,9 +34,11 @@ describe('faceElevationToPrimitives: FaceElevation → プリミティブ(E-4a)'
       p.meta?.kind === 'post' && p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post
       && p.widthGrid === ELEV_PART_STYLE.postWidthGrid);
     expect(posts).toHaveLength(4); // postXs [-90,90,270,450]、嵩上げ無し
-    // px=-90 → lx=0、jackTop150→ly=-15、topRail6500→ly=-650
+    // px=-90 → lx=0、topRail6500→ly=-650。
+    // E-8-v2h-fix: 皿はスタートから逆算（H=6500 → スタート1100 → 皿400）→ ly=-40。
+    expect(fe.scaffolds[0].levels.jackTopMm).toBe(400);
     const p0 = posts.find((p) => p.kind === 'line' && p.x1 === 0);
-    expect(p0 && p0.kind === 'line' && [p0.y1, p0.y2]).toEqual([-15, -650]);
+    expect(p0 && p0.kind === 'line' && [p0.y1, p0.y2]).toEqual([-40, -650]);
   });
 
   it('GL 線＋GL テキスト、天端寸法テキストを含む', () => {
