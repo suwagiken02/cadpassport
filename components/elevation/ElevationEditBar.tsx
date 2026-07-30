@@ -2,16 +2,18 @@
 
 // ============================================================
 // 立面編集モードのバー (E-8b)。
-// 配置済み立面をダブルタップで入り、部材(プリミティブ)を選んで 削除／移動 する。
-// 編集は ElevationView.edits に差分として積むだけなので、元の primitives は保護され、
-// undo/redo は canvasData の履歴にそのまま乗る（差分配列ごと巻き戻る）。
+// 配置済み立面をダブルタップ（または「✏️ 編集」）で入り、部材ブロックを組み立てる。
+//   ・部材(parts)  → 意味データそのものを足し引きする（E-8-v2）
+//   ・背景(寸法線・文字など) → ElevationView.edits に差分として積む（E-8b/c）
+// どちらも canvasData の履歴に乗るので undo/redo はそのまま効く。
 // ============================================================
 import React, { useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { hasEditFor, withHide, withoutEditsFor } from '@/lib/konva/elevation/elevationEdits';
 import { describeEdit } from '@/lib/konva/elevation/elevationRematch';
+import { describePart } from '@/lib/konva/elevation/elevationPartsRematch';
 import { PALETTE_KINDS } from '@/lib/konva/elevation/elevationSlots';
-import type { ElevationPartKind } from '@/lib/konva/elevation/elevationParts';
+import type { ElevationPart, ElevationPartKind } from '@/lib/konva/elevation/elevationParts';
 import type { ElevationPrimitiveKind } from '@/types';
 
 /** パレットの部材名。 */
@@ -31,7 +33,6 @@ export default function ElevationEditBar() {
   const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
-  const addDraft = useCanvasStore((s) => s.elevationAddDraft);
   const mode = useCanvasStore((s) => s.mode);
   const selectedIds = useCanvasStore((s) => s.selectedIds);
   const view = (views ?? []).find((v) => v.id === viewId) ?? null;
@@ -85,11 +86,19 @@ export default function ElevationEditBar() {
   const hide = () => {
     if (!selectedId) return;
     const s = useCanvasStore.getState();
-    // E-8-v2d: 部材ブロックは parts から取り除く（自動生成分も同じ操作で消える）。
-    //   背景（寸法線・文字など）は従来どおり削除マーク（hide 差分）。
-    const isPart = (view.parts ?? []).some((p) => p.id === selectedId);
-    if (isPart) s.setElevationParts(viewId, (view.parts ?? []).filter((p) => p.id !== selectedId));
-    else s.setElevationEdits(viewId, withHide(view.edits, selectedId));
+    const parts = view.parts ?? [];
+    const part = parts.find((p) => p.id === selectedId);
+    if (part) {
+      // E-8-v2e: 自動生成部材の削除は「墓標」を残す。作り直しても消したままにするため。
+      //   手動で足した部材は配列から取り除くだけでよい（元から生えてこない）。
+      const next: ElevationPart[] = part.origin === 'manual'
+        ? parts.filter((p) => p.id !== selectedId)
+        : parts.map((p) => (p.id === selectedId ? { ...p, origin: 'manual' as const, removed: true } : p));
+      s.setElevationParts(viewId, next);
+    } else {
+      // 背景（寸法線・文字など）は従来どおり削除マーク（hide 差分）。
+      s.setElevationEdits(viewId, withHide(view.edits, selectedId));
+    }
     s.setElevationEditSelectedId(null);
   };
   const reset = () => {
@@ -99,6 +108,7 @@ export default function ElevationEditBar() {
   const done = () => useCanvasStore.getState().setElevationEditViewId(null);
 
   const orphans = view.orphanEdits ?? [];
+  const orphanParts = view.orphanParts ?? [];
 
   return (
     <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
@@ -114,13 +124,11 @@ export default function ElevationEditBar() {
             {PART_LABEL[k]}
           </button>
         ))}
-        {addTool && addTool !== 'line' && addTool !== 'text' && (
+        {addTool && addTool !== 'text' && (
           <span className="text-[10px] text-accent ml-1 whitespace-nowrap">はまる位置をタップ</span>
         )}
-        {(addTool === 'line' || addTool === 'text') && (
-          <span className="text-[10px] text-accent ml-1 whitespace-nowrap">
-            {addTool === 'text' ? '位置をタップ' : addDraft ? '終点をタップ' : '始点をタップ'}
-          </span>
+        {addTool === 'text' && (
+          <span className="text-[10px] text-accent ml-1 whitespace-nowrap">位置をタップ</span>
         )}
       </div>
 
@@ -133,6 +141,21 @@ export default function ElevationEditBar() {
           </span>
           <button type="button"
             onClick={() => useCanvasStore.getState().setElevationOrphanEdits(viewId, [])}
+            className="px-2 py-1 bg-dark-surface border border-dark-border rounded text-[10px] text-dimension whitespace-nowrap">
+            削除
+          </button>
+        </div>
+      )}
+
+      {/* E-8-v2e: 作り直しで置き場所が無くなった部材（勝手に消さず一覧で提示する） */}
+      {orphanParts.length > 0 && (
+        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-dark-bg border border-dark-border rounded-lg">
+          <span className="text-[10px] text-dimension truncate max-w-[46vw]">
+            置き場所が無くなった部材 {orphanParts.length} 件: {orphanParts.slice(0, 2).map(describePart).join(' / ')}
+            {orphanParts.length > 2 ? ' …' : ''}
+          </span>
+          <button type="button"
+            onClick={() => useCanvasStore.getState().setElevationOrphanParts(viewId, [])}
             className="px-2 py-1 bg-dark-surface border border-dark-border rounded text-[10px] text-dimension whitespace-nowrap">
             削除
           </button>

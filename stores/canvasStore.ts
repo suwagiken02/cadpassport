@@ -35,6 +35,7 @@ import {
 import { computeContentBounds } from '@/lib/pages/contentBounds';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
+import { rematchElevationParts } from '@/lib/konva/elevation/elevationPartsRematch';
 import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
@@ -475,16 +476,16 @@ type CanvasStore = {
   carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView) => ElevationView;
   /** 孤立した編集の一覧を差し替える (= E-8d、 ユーザーが削除するとき)。 */
   setElevationOrphanEdits: (viewId: string, orphans: import('@/types').ElevationEdit[]) => void;
-  /** 立面編集モードのパレット選択 (= E-8-v2c、 null=選択操作)。部材ブロックの種類。 */
-  elevationAddTool: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'line' | 'text' | null;
-  setElevationAddTool: (t: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'line' | 'text' | null) => void;
+  /** 立面編集モードのパレット選択 (= E-8-v2c、 null=選択操作)。部材ブロックの種類＋文字。
+   *  E-8-v2e: 自由線ツールは撤去（部材はパレット、文字は上書き/追加のみ）。 */
+  elevationAddTool: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'text' | null;
+  setElevationAddTool: (t: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'text' | null) => void;
+  /** 孤立部材の一覧を差し替える (= E-8-v2e、 ユーザーが削除するとき)。 */
+  setElevationOrphanParts: (viewId: string, orphans: import('@/lib/konva/elevation/elevationParts').ElevationPart[]) => void;
   /** 部材ブロックを追加する (= E-8-v2c、 履歴に積む)。 */
   addElevationPart: (viewId: string, part: import('@/lib/konva/elevation/elevationParts').ElevationPart) => void;
   /** 部材ブロックを差し替える (= E-8-v2d、 移動/削除の一括更新)。 */
   setElevationParts: (viewId: string, parts: import('@/lib/konva/elevation/elevationParts').ElevationPart[]) => void;
-  /** 追加ツールの1点目（ビューローカル座標）。 */
-  elevationAddDraft: { x: number; y: number } | null;
-  setElevationAddDraft: (p: { x: number; y: number } | null) => void;
   // 平米計算 modal (= 平米計算 Phase C)
   showAreaCalcModal: boolean;
   setShowAreaCalcModal: (v: boolean) => void;
@@ -1452,15 +1453,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setRoofSettingsTarget: (t) => set({ roofSettingsTarget: t }),
 
   // === 立面ビュー (= E-4) ===
-  /** E-8d: 同じ面の旧ビューに編集があれば、新ビューへ引き継ぐ（引き継げない分は孤立として保持）。 */
+  /** E-8d/E-8-v2e: 同じ面の旧ビューの手当て（編集差分・部材）を新ビューへ引き継ぐ。
+   *  引き継げない分は勝手に消さず孤立として保持し、UI で一覧提示する。 */
   carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView): ElevationView => {
-    if (!prev || ((prev.edits?.length ?? 0) === 0 && (prev.orphanEdits?.length ?? 0) === 0)) return next;
+    const hasManualParts = (prev?.parts ?? []).some((p) => p.origin === 'manual');
+    if (!prev || ((prev.edits?.length ?? 0) === 0 && (prev.orphanEdits?.length ?? 0) === 0
+      && (prev.orphanParts?.length ?? 0) === 0 && !hasManualParts)) return next;
     const r = rematchElevationEdits(prev.primitives, next.primitives, prev.edits);
     const orphans = [...(prev.orphanEdits ?? []), ...r.orphans];
+    // E-8-v2e: 部材の手当て（追加・移動・削除の墓標）は意味データで引き継ぐ。
+    let parts = next.parts;
+    let orphanParts = prev.orphanParts ?? [];
+    if (next.parts && next.geom) {
+      const pr = rematchElevationParts(prev.parts, { parts: next.parts, geom: next.geom });
+      parts = pr.parts;
+      orphanParts = [...orphanParts, ...pr.orphans];
+    }
     return {
       ...next,
+      parts,
       edits: r.edits.length > 0 ? r.edits : undefined,
       orphanEdits: orphans.length > 0 ? orphans : undefined,
+      orphanParts: orphanParts.length > 0 ? orphanParts : undefined,
     };
   },
   addElevationView: (v) => {
@@ -1537,7 +1551,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   elevationAddTool: null,
-  setElevationAddTool: (t) => set({ elevationAddTool: t, elevationAddDraft: null, elevationEditSelectedId: null }),
+  setElevationAddTool: (t) => set({ elevationAddTool: t, elevationEditSelectedId: null }),
+  setElevationOrphanParts: (viewId, orphans) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((e) =>
+          (e.id === viewId ? { ...e, orphanParts: orphans.length > 0 ? orphans : undefined } : e)),
+      },
+      isDirty: true,
+    });
+  },
   addElevationPart: (viewId, part) => {
     const { canvasData, pushHistory } = get();
     pushHistory();
@@ -1562,8 +1588,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
-  elevationAddDraft: null,
-  setElevationAddDraft: (p) => set({ elevationAddDraft: p }),
   setElevationEdits: (viewId, edits) => {
     const { canvasData, pushHistory } = get();
     pushHistory();

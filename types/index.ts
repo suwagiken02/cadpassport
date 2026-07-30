@@ -377,6 +377,8 @@ export type ElevationView = {
   edits?: ElevationEdit[];
   /** 再生成で引き継げなかった編集 (= E-8d)。勝手に消さず一覧提示し、ユーザーが削除する。 */
   orphanEdits?: ElevationEdit[];
+  /** 再生成で置き場所が無くなった手動部材 (= E-8-v2e)。同じく一覧提示してユーザーが削除する。 */
+  orphanParts?: import('@/lib/konva/elevation/elevationParts').ElevationPart[];
 };
 
 // === 寸法線オフセット (= 寸法線移動 Phase 1) ===

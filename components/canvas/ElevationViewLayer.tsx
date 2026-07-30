@@ -151,7 +151,6 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
   const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
   const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
-  const addDraft = useCanvasStore((s) => s.elevationAddDraft);
   const prims = useMemo(() => composeViewPrimitives(view), [view]);
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const groupRef = useRef<Konva.Group>(null);
@@ -190,7 +189,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
 
   // 部材パレット: 有効スロットをゴースト表示し、タップで吸着配置（ローカル座標）。
   const palette = (() => {
-    if (!addTool || !view.geom || addTool === 'line' || addTool === 'text') return null;
+    if (!addTool || !view.geom || addTool === 'text') return null;
     const geom = view.geom;
     const slots = buildElevationSlots(geom, addTool);
     if (slots.length === 0) return null;
@@ -223,32 +222,22 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
     );
   })();
 
-  // 文字追加（E-8c の入口。自由線は v2e で撤去予定）。
+  // 文字追加（E-8c の入口）。E-8-v2e: 自由線ツールは撤去し、文字だけ残す。
   const textSurface = (() => {
-    if (addTool !== 'text' && addTool !== 'line') return null;
+    if (addTool !== 'text') return null;
     const lb = localBounds(view);
     if (!lb) return null;
     const onPoint = () => {
       const L = pointerLocal();
       if (!L) return;
       const st = useCanvasStore.getState();
-      if (addTool === 'text') {
-        const id = nextAddId(view, 'text');
-        st.setElevationEdits(view.id, withAdd(view.edits, {
-          kind: 'text', x: L.x, y: L.y, text: '文字', size: 9, fill: '#c9c9c6', anchor: 'start',
-          meta: { kind: 'text', id, x: Math.round(L.x * 10) / 10 },
-        }));
-        st.setElevationAddTool(null);
-        st.setElevationTextEditTargetId(id);
-        return;
-      }
-      if (!addDraft) { st.setElevationAddDraft(L); return; }
-      const id = nextAddId(view, 'line');
+      const id = nextAddId(view, 'text');
       st.setElevationEdits(view.id, withAdd(view.edits, {
-        kind: 'line', x1: addDraft.x, y1: addDraft.y, x2: L.x, y2: L.y, stroke: '#c9c9c6', width: 1,
-        meta: { kind: 'text', id, x: Math.round(addDraft.x * 10) / 10 },
+        kind: 'text', x: L.x, y: L.y, text: '文字', size: 9, fill: '#c9c9c6', anchor: 'start',
+        meta: { kind: 'text', id, x: Math.round(L.x * 10) / 10 },
       }));
-      st.setElevationAddDraft(null);
+      st.setElevationAddTool(null);
+      st.setElevationTextEditTargetId(id);
     };
     const pad = 4;
     return (
@@ -293,9 +282,6 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
       })}
       {palette}
       {textSurface}
-      {addDraft && (
-        <Rect x={addDraft.x - 4 / s} y={addDraft.y - 4 / s} width={8 / s} height={8 / s} fill="#FF6B35" listening={false} />
-      )}
     </Group>
   );
 }

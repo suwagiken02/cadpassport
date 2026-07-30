@@ -47,6 +47,12 @@ export type ElevationPart = {
   slot?: string;
   /** 嵩上げ手摺のオフセット(mm)。 */
   railOffsetMm?: number;
+  /**
+   * 削除マーク (= E-8-v2e)。ユーザーが自動生成部材を消したことを意味データとして残す墓標。
+   * 描画されず、再生成時は「同じスロットに生えてくる自動部材」を抑止する。
+   * 手動追加部材の削除は配列から取り除くだけなので墓標は作らない。
+   */
+  removed?: boolean;
 };
 
 /** 部材を実座標へ戻すための最小限の幾何（ビューに保存する）。 */
@@ -193,6 +199,7 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
   ) => out.push({ kind: 'line', x1, y1, x2, y2, stroke, width, dash: undefined, opacity, meta });
 
   for (const p of parts) {
+    if (p.removed) continue; // E-8-v2e: 削除マーク（墓標）は描かない
     const sg = geom.scaffolds[p.scaffoldIndex];
     const span = partSpanX(p, sg);
     if (!sg || !span) continue;
