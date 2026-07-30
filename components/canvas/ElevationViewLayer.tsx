@@ -1,31 +1,40 @@
 'use client';
 
 // ============================================================
-// 立面ビューのキャンバス描画レイヤー（E-4b / E-6e-perf / E-6e-perf2）。
+// 立面ビューのキャンバス描画レイヤー（E-4b / E-6e-perf / E-6e-perf2 / E-8-v2）。
 //  ・elevationViews を Konva グループとして描画（primitives→Line/Rect/Text）。
 //  ・パン: Group の x/y 平行移動に逃がし、子ノードは「確定 gridPx」で memo 化（再生成しない）。
 //  ・ズーム(E-6e-perf2): 実測で「毎フレーム子再生成＋再cache」がズーム重の根因と確定。
 //    ズーム中は Group の scale = liveGridPx / cachedGridPx で追従し、子の再生成・再cache をしない。
 //    ズームが止まったら 200ms デバウンスで cachedGridPx を更新 → 1 回だけ再生成＋再cache（鮮明化）。
-//    ズーム中の一時的なボケは許容。停止後は px 一定の元の見た目に戻る。
 //  ・各 Group は cache() でビットマップ化。選択/ドラッグ/消去は従来どおり。
+//
+// E-8-v2d: 編集モードは「変換付き Group の中にローカル座標でそのまま描く」方式に統一した。
+//  ・子は立面ローカル座標（横=グリッド、縦=mm/10・GL=0・上が負）で置き、Group の
+//    x/y/scale が画面へ写す。線幅と文字サイズだけ px 固定に戻す（scale で割る）。
+//  ・当たり判定は Konva 標準（線は hitStrokeWidth）。旧「bbox を覆う透明 Rect」の
+//    手動ヒットテストは撤去した。
+//  ・ポインタ座標は getRelativePointerPosition() で Group ローカルに取る（手計算の逆変換をしない）。
 // ============================================================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
-import { nextAddId, overriddenTextIds, primitiveBounds, withAdd, withMove } from '@/lib/konva/elevation/elevationEdits';
+import { nextAddId, overriddenTextIds, withAdd } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
 import {
-  buildElevationSlots, nextPartId, slotOccupied, slotToPart, type ElevationSlot,
+  buildElevationSlots, nextPartId, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
+import type { ElevationPart } from '@/lib/konva/elevation/elevationParts';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 
 /** ズーム停止後に再cache するまでの待ち時間（ms）。 */
 const RECACHE_DEBOUNCE_MS = 200;
+/** 編集モードで線を掴める幅(px)。 */
+const EDIT_HIT_PX = 14;
 
 /** hex(#rrggbb) を fillOpacity 付き rgba に。fill の半透明は fill 側で表し stroke は不透明を保つ
  *  （E-5-fix2: 従来は opacity=fillOpacity で shape 全体を薄くし、建物外形・屋根の輪郭線＝L 字
@@ -38,10 +47,10 @@ function withAlpha(hex: string | undefined, a: number | undefined): string | und
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, editing = false, overridden = false) {
+function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, overridden = false) {
   if (p.kind === 'line') {
     const a = S(p.x1, p.y1), b = S(p.x2, p.y2);
-    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} strokeScaleEnabled={false} listening={false} hitStrokeWidth={editing ? 10 : 0} />;
+    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} strokeScaleEnabled={false} listening={false} />;
   }
   if (p.kind === 'rect') {
     const a = S(p.x, p.y), b = S(p.x + p.w, p.y + p.h);
@@ -61,7 +70,64 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, editing = fal
   return <Text key={i} x={a.x} y={a.y} text={p.text} fontSize={p.size} fill={fill} offsetX={offX} fontFamily="monospace" listening={false} />;
 }
 
-/** primitives のローカル bbox（生座標・グリッド）。 */
+/**
+ * E-8-v2d: 編集モード用。ローカル座標のままノードを作る（Group の変換が画面へ写す）。
+ * `s` は Group の拡大率で、線幅・文字サイズを px 固定に戻すために使う。
+ */
+function renderPrimLocal(
+  p: ElevationPrimitive, key: string | number, s: number,
+  opts: { selected: boolean; overridden: boolean; interactive: boolean },
+) {
+  const hit = EDIT_HIT_PX / s;
+  const selStroke = '#FF6B35';
+  if (p.kind === 'line') {
+    return (
+      <Line
+        key={key} points={[p.x1, p.y1, p.x2, p.y2]}
+        stroke={opts.selected ? selStroke : p.stroke}
+        strokeWidth={(opts.selected ? p.width + 2 : p.width)}
+        dash={p.dash} opacity={p.opacity ?? 1}
+        strokeScaleEnabled={false}
+        hitStrokeWidth={opts.interactive ? hit : 0}
+        listening={opts.interactive}
+      />
+    );
+  }
+  if (p.kind === 'rect') {
+    return (
+      <Rect
+        key={key} x={p.x} y={p.y} width={p.w} height={p.h}
+        fill={withAlpha(p.fill, p.fillOpacity)}
+        stroke={opts.selected ? selStroke : p.stroke}
+        strokeWidth={(p.width ?? 0) + (opts.selected ? 2 : 0)}
+        strokeScaleEnabled={false} listening={opts.interactive}
+      />
+    );
+  }
+  if (p.kind === 'polygon') {
+    return (
+      <Line
+        key={key} points={p.points} closed
+        fill={withAlpha(p.fill, p.fillOpacity)}
+        stroke={opts.selected ? selStroke : p.stroke}
+        strokeWidth={(p.width ?? 0) + (opts.selected ? 2 : 0)}
+        strokeScaleEnabled={false} listening={opts.interactive}
+      />
+    );
+  }
+  const size = p.size / s;
+  const est = p.text.length * size * 0.6;
+  const offX = p.anchor === 'middle' ? est / 2 : p.anchor === 'end' ? est : 0;
+  return (
+    <Text
+      key={key} x={p.x} y={p.y} text={p.text} fontSize={size}
+      fill={opts.selected ? selStroke : (opts.overridden ? '#FF9F1C' : p.fill)}
+      offsetX={offX} fontFamily="monospace" listening={opts.interactive}
+    />
+  );
+}
+
+/** primitives のローカル bbox（生座標・グリッド）。通常表示の hit 領域と選択枠に使う。 */
 function localBounds(view: ElevationView) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const see = (x: number, y: number) => { if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; };
@@ -75,67 +141,81 @@ function localBounds(view: ElevationView) {
 }
 
 /**
- * E-8b: 立面編集モードの描画。cache() を外して部材(プリミティブ)単位で当たり判定を持たせ、
- * タップで選択・ドラッグで移動差分（move edit）を作る。編集中のビューだけがこの経路。
- * 通常表示は従来どおり cache 済みビットマップ＋bbox 1枚 hit のまま（性能を落とさない）。
+ * 立面編集モードの描画（E-8b → E-8-v2d で座標系を統一）。
+ * 部材ブロック（parts）を Konva 標準の当たり判定で選択・ドラッグし、
+ * ドラッグ終了時は「最寄りの有効スロット」へ吸着させる（はまる場所にしかはまらない）。
  */
 function ElevationEditGroup({ view, gridPx, panX, panY }: {
   view: ElevationView; gridPx: number; panX: number; panY: number;
 }) {
   const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
   const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
-  const prims = useMemo(() => composeViewPrimitives(view), [view]);
-  const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const addDraft = useCanvasStore((s) => s.elevationAddDraft);
+  const prims = useMemo(() => composeViewPrimitives(view), [view]);
+  const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
+  const groupRef = useRef<Konva.Group>(null);
 
-  const S: ToScreen = (lx, ly) => ({
-    x: (view.originGrid.x + lx * view.scale) * gridPx + panX,
-    y: (view.originGrid.y + ly * view.scale) * gridPx + panY,
-  });
-  /** スクリーン px → ビューローカル（グリッド）。 */
-  const toLocal = (sx: number, sy: number) => ({
-    x: ((sx - panX) / gridPx - view.originGrid.x) / view.scale,
-    y: ((sy - panY) / gridPx - view.originGrid.y) / view.scale,
-  });
+  // ローカル → 画面 の変換は Group に持たせる（子はローカル座標のまま置く）。
+  const s = gridPx * view.scale;
+  const gx = view.originGrid.x * gridPx + panX;
+  const gy = view.originGrid.y * gridPx + panY;
 
-  // E-8-v2c: 部材ブロックのパレット配置。有効スロットをゴースト表示し、タップで吸着配置。
-  const partPalette = (() => {
+  /** ポインタの Group ローカル座標（Konva 標準・手計算の逆変換をしない）。 */
+  const pointerLocal = (): { x: number; y: number } | null => {
+    const g = groupRef.current;
+    const p = g?.getRelativePointerPosition();
+    return p ? { x: p.x, y: p.y } : null;
+  };
+
+  const parts = view.parts ?? [];
+  const partById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
+
+  /** 部材を最寄りの有効スロットへ移す（同じスロットなら何もしない）。 */
+  const moveToNearestSlot = (part: ElevationPart) => {
+    const geom = view.geom;
+    const local = pointerLocal();
+    if (!geom || !local) return;
+    const slot = snapToSlot({ x: local.x, yMm: -local.y * 10 }, geom, part.kind);
+    if (!slot) return;
+    const same = slot.spanIndex === part.spanIndex && slot.postIndex === part.postIndex
+      && slot.levelMm === part.levelMm && slot.scaffoldIndex === part.scaffoldIndex;
+    if (same) return;
+    if (slotOccupied(parts.filter((p) => p.id !== part.id), slot)) return; // 埋まっている位置へは移さない
+    const moved: ElevationPart = { ...slotToPart(slot, part.id), origin: 'manual' };
+    useCanvasStore.getState().setElevationParts(
+      view.id, parts.map((p) => (p.id === part.id ? moved : p)),
+    );
+  };
+
+  // 部材パレット: 有効スロットをゴースト表示し、タップで吸着配置（ローカル座標）。
+  const palette = (() => {
     if (!addTool || !view.geom || addTool === 'line' || addTool === 'text') return null;
     const geom = view.geom;
     const slots = buildElevationSlots(geom, addTool);
     if (slots.length === 0) return null;
-    const parts = view.parts ?? [];
-
     const place = (slot: ElevationSlot) => {
-      if (slotOccupied(parts, slot)) return; // 同じ位置に同種は置かない
-      const id = nextPartId(parts, slot.kind);
-      useCanvasStore.getState().addElevationPart(view.id, slotToPart(slot, id));
+      if (slotOccupied(parts, slot)) return;
+      useCanvasStore.getState().addElevationPart(view.id, slotToPart(slot, nextPartId(parts, slot.kind)));
     };
-
     return (
       <>
         {slots.map((slot, i) => {
           const sg = geom.scaffolds[slot.scaffoldIndex];
           const isPostKind = slot.kind === 'post' || slot.kind === 'jack';
-          // ゴーストの当たり範囲: 支柱系は縦長、スパン系はスパン幅×1段ぶん。
-          const yTopMm = isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 225;
-          const yBotMm = isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 225;
-          const a = S(slot.x0, -yTopMm / 10), b = S(slot.x1, -yBotMm / 10);
-          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-          const w = Math.max(Math.abs(b.x - a.x), 10), h = Math.max(Math.abs(b.y - a.y), 10);
+          const topMm = isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 225;
+          const botMm = isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 225;
+          const padX = isPostKind ? 6 / s : 0;
           const taken = slotOccupied(parts, slot);
           return (
             <Rect
               key={`slot-${i}`}
-              x={x - (isPostKind ? 5 : 0)} y={y} width={isPostKind ? w + 10 : w} height={h}
-              fill={taken ? '#888888' : '#FF6B35'}
-              opacity={taken ? 0.06 : 0.14}
-              stroke={taken ? undefined : '#FF6B35'}
-              strokeWidth={taken ? 0 : 0.5}
-              dash={[3, 3]}
-              onClick={() => place(slot)}
-              onTap={() => place(slot)}
+              x={slot.x0 - padX} y={-topMm / 10}
+              width={(slot.x1 - slot.x0) + padX * 2} height={(topMm - botMm) / 10}
+              fill={taken ? '#888888' : '#FF6B35'} opacity={taken ? 0.06 : 0.14}
+              stroke={taken ? undefined : '#FF6B35'} strokeWidth={taken ? 0 : 1}
+              strokeScaleEnabled={false} dash={[3, 3]}
+              onClick={() => place(slot)} onTap={() => place(slot)}
             />
           );
         })}
@@ -143,112 +223,80 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
     );
   })();
 
-  // E-8d: 追加ツールの入力面（ビュー全体を覆う透明 Rect）。2点タップで線、1点で文字。
-  const addSurface = (() => {
-    if (!addTool || (addTool !== 'line' && addTool !== 'text')) return null;
-    const b = prims.reduce<{ minX: number; minY: number; maxX: number; maxY: number } | null>((acc, p) => {
-      const q = primitiveBounds(p);
-      if (!acc) return { ...q };
-      return {
-        minX: Math.min(acc.minX, q.minX), minY: Math.min(acc.minY, q.minY),
-        maxX: Math.max(acc.maxX, q.maxX), maxY: Math.max(acc.maxY, q.maxY),
-      };
-    }, null);
-    if (!b) return null;
-    const pad = 4;
-    const a = S(b.minX - pad, b.minY - pad), c = S(b.maxX + pad, b.maxY + pad);
-    const rect = {
-      x: Math.min(a.x, c.x), y: Math.min(a.y, c.y),
-      w: Math.abs(c.x - a.x), h: Math.abs(c.y - a.y),
-    };
-    const onPoint = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-      const pos = e.target.getStage()?.getPointerPosition();
-      if (!pos) return;
-      const L = toLocal(pos.x, pos.y);
-      const s = useCanvasStore.getState();
+  // 文字追加（E-8c の入口。自由線は v2e で撤去予定）。
+  const textSurface = (() => {
+    if (addTool !== 'text' && addTool !== 'line') return null;
+    const lb = localBounds(view);
+    if (!lb) return null;
+    const onPoint = () => {
+      const L = pointerLocal();
+      if (!L) return;
+      const st = useCanvasStore.getState();
       if (addTool === 'text') {
-        // 文字は1点。空文字で作って、そのまま文字編集モーダルを開く。
         const id = nextAddId(view, 'text');
-        const prim: ElevationPrimitive = {
+        st.setElevationEdits(view.id, withAdd(view.edits, {
           kind: 'text', x: L.x, y: L.y, text: '文字', size: 9, fill: '#c9c9c6', anchor: 'start',
           meta: { kind: 'text', id, x: Math.round(L.x * 10) / 10 },
-        };
-        s.setElevationEdits(view.id, withAdd(view.edits, prim));
-        s.setElevationAddTool(null);
-        s.setElevationTextEditTargetId(id);
+        }));
+        st.setElevationAddTool(null);
+        st.setElevationTextEditTargetId(id);
         return;
       }
-      // 自由線（E-8d の名残・部材は v2c のパレットが担当。v2e で撤去予定）。
-      if (!addDraft) { s.setElevationAddDraft(L); return; }
-      const x1 = addDraft.x, y1 = addDraft.y;
-      const x2 = L.x, y2 = L.y;
-      if (Math.abs(x2 - x1) < 1e-6 && Math.abs(y2 - y1) < 1e-6) { s.setElevationAddDraft(null); return; }
+      if (!addDraft) { st.setElevationAddDraft(L); return; }
       const id = nextAddId(view, 'line');
-      const prim: ElevationPrimitive = {
-        kind: 'line', x1, y1, x2, y2, stroke: '#c9c9c6', width: 1,
-        meta: { kind: 'text', id, x: Math.round(x1 * 10) / 10 },
-      };
-      s.setElevationEdits(view.id, withAdd(view.edits, prim));
-      s.setElevationAddDraft(null);
+      st.setElevationEdits(view.id, withAdd(view.edits, {
+        kind: 'line', x1: addDraft.x, y1: addDraft.y, x2: L.x, y2: L.y, stroke: '#c9c9c6', width: 1,
+        meta: { kind: 'text', id, x: Math.round(addDraft.x * 10) / 10 },
+      }));
+      st.setElevationAddDraft(null);
     };
+    const pad = 4;
     return (
-      <>
-        <Rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="#000" opacity={0.001}
-          onClick={onPoint} onTap={onPoint} />
-        {addDraft && (() => {
-          const d = S(addDraft.x, addDraft.y);
-          return <Rect x={d.x - 4} y={d.y - 4} width={8} height={8} fill="#FF6B35" listening={false} />;
-        })()}
-      </>
+      <Rect
+        x={lb.minX - pad} y={lb.minY - pad}
+        width={(lb.maxX - lb.minX) + pad * 2} height={(lb.maxY - lb.minY) + pad * 2}
+        fill="#000" opacity={0.001} onClick={onPoint} onTap={onPoint}
+      />
     );
   })();
 
   return (
-    <>
+    <Group ref={groupRef} x={gx} y={gy} scaleX={s} scaleY={s}>
       {prims.map((p, i) => {
         const id = p.meta?.id;
-        const isSel = !!id && id === selectedId;
-        const b = primitiveBounds(p);
-        const a = S(b.minX, b.minY), c = S(b.maxX, b.maxY);
-        const box = {
-          x: Math.min(a.x, c.x), y: Math.min(a.y, c.y),
-          w: Math.max(Math.abs(c.x - a.x), 6), h: Math.max(Math.abs(c.y - a.y), 6),
-        };
+        const part = id ? partById.get(id) : undefined;
+        const interactive = !addTool;
+        const node = renderPrimLocal(p, id ?? i, s, {
+          selected: !!id && id === selectedId,
+          overridden: !!id && overridden.has(id),
+          interactive,
+        });
+        if (!interactive || !id) return node;
+        // 部材は掴んで隣の有効位置へ。背景（寸法・文字など）は選択のみ。
         return (
           <Group
-            key={id ?? i}
-            draggable={!!id && !addTool}
-            listening={!addTool}
+            key={id}
+            draggable={!!part}
+            dragDistance={4}
             onDragEnd={(e) => {
-              if (!id) return;
-              const g = e.target;
-              // ローカル(グリッド)へ戻して差分に積む。ノード自体の位置は 0 に戻す。
-              const dx = g.x() / (gridPx * view.scale);
-              const dy = g.y() / (gridPx * view.scale);
-              g.position({ x: 0, y: 0 });
-              if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return;
-              useCanvasStore.getState().setElevationEdits(view.id, withMove(view.edits, id, dx, dy));
+              e.target.position({ x: 0, y: 0 });
+              if (part) moveToNearestSlot(part);
             }}
-            onClick={() => id && setSelectedId(id)}
-            onTap={() => id && setSelectedId(id)}
-            onDblClick={() => { if (id && p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
-            onDblTap={() => { if (id && p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+            onClick={() => setSelectedId(id)}
+            onTap={() => setSelectedId(id)}
+            onDblClick={() => { if (p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+            onDblTap={() => { if (p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
           >
-            {renderPrim(p, i, S, true, !!id && overridden.has(id))}
-            {/* 細い線でも掴めるよう、bbox を覆う透明の当たり判定を重ねる。 */}
-            <Rect x={box.x - 3} y={box.y - 3} width={box.w + 6} height={box.h + 6} fill="#000" opacity={0.001} />
-            {isSel && (
-              <Rect
-                x={box.x - 4} y={box.y - 4} width={box.w + 8} height={box.h + 8}
-                stroke="#FF6B35" strokeWidth={1.5} dash={[4, 3]} listening={false}
-              />
-            )}
+            {node}
           </Group>
         );
       })}
-      {partPalette}
-      {addSurface}
-    </>
+      {palette}
+      {textSurface}
+      {addDraft && (
+        <Rect x={addDraft.x - 4 / s} y={addDraft.y - 4 / s} width={8 / s} height={8 / s} fill="#FF6B35" listening={false} />
+      )}
+    </Group>
   );
 }
 
@@ -283,7 +331,7 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
   const children = useMemo(
     () => {
       const ov = overriddenTextIds(view.edits);
-      return composeViewPrimitives(view).map((p, i) => renderPrim(p, i, worldOf, false, !!p.meta && ov.has(p.meta.id)));
+      return composeViewPrimitives(view).map((p, i) => renderPrim(p, i, worldOf, !!p.meta && ov.has(p.meta.id)));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [view, cachedGridPx],

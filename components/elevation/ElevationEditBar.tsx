@@ -84,8 +84,13 @@ export default function ElevationEditBar() {
 
   const hide = () => {
     if (!selectedId) return;
-    useCanvasStore.getState().setElevationEdits(viewId, withHide(view.edits, selectedId));
-    useCanvasStore.getState().setElevationEditSelectedId(null);
+    const s = useCanvasStore.getState();
+    // E-8-v2d: 部材ブロックは parts から取り除く（自動生成分も同じ操作で消える）。
+    //   背景（寸法線・文字など）は従来どおり削除マーク（hide 差分）。
+    const isPart = (view.parts ?? []).some((p) => p.id === selectedId);
+    if (isPart) s.setElevationParts(viewId, (view.parts ?? []).filter((p) => p.id !== selectedId));
+    else s.setElevationEdits(viewId, withHide(view.edits, selectedId));
+    s.setElevationEditSelectedId(null);
   };
   const reset = () => {
     if (!selectedId) return;
