@@ -21,6 +21,7 @@ export function translatePrimitive(p: ElevationPrimitive, dx: number, dy: number
       const points = p.points.map((v, i) => (i % 2 === 0 ? v + dx : v + dy));
       return { ...p, points };
     }
+    case 'circle':
     case 'text':
       return { ...p, x: p.x + dx, y: p.y + dy };
   }
@@ -41,6 +42,8 @@ export function primitiveBounds(
       for (let i = 0; i < p.points.length; i += 2) { xs.push(p.points[i]); ys.push(p.points[i + 1]); }
       return see(xs, ys);
     }
+    // 丸ハンドルは半径が px 単位なので、bbox は中心点だけで見る（E-8-v2f）。
+    case 'circle': return see([p.x], [p.y]);
     case 'text': {
       // 文字は概算（monospace 前提・renderPrim と同じ 0.6 係数）。単位は px なのでグリッドへ寄せる。
       const w = p.text.length * p.size * 0.6 / 10;

@@ -21,6 +21,19 @@ const prims = faceElevationToPrimitives(fe);
 const metas = prims.map((p) => p.meta);
 const idsOf = (kind: ElevationPrimitiveKind) =>
   prims.filter((p) => p.meta?.kind === kind).map((p) => p.meta!.id);
+/**
+ * E-8-v2f: 1 部材が複数プリミティブ（太線＋丸ハンドル／帯＋輪郭）で描かれるようになった。
+ * 同じ部材の構成要素は同じ id を「連続で」持つので、連なりを畳んで部材単位の id 列にする。
+ */
+const runIds = (xs: typeof prims): string[] => {
+  const out: string[] = [];
+  for (const p of xs) {
+    const id = p.meta?.id;
+    if (id && out[out.length - 1] !== id) out.push(id);
+  }
+  return out;
+};
+const partIdsOf = (kind: ElevationPrimitiveKind) => runIds(prims.filter((p) => p.meta?.kind === kind));
 
 describe('E-8a: 全プリミティブに meta が付く', () => {
   it('meta の無いプリミティブは無い', () => {
@@ -28,8 +41,8 @@ describe('E-8a: 全プリミティブに meta が付く', () => {
     expect(metas.every((m) => m != null)).toBe(true);
   });
 
-  it('id はビュー内で一意', () => {
-    const ids = metas.map((m) => m!.id);
+  it('id は部材ごとに一意（同じ id は 1 部材の構成要素で必ず連続する）', () => {
+    const ids = runIds(prims);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -43,7 +56,7 @@ describe('E-8a: 全プリミティブに meta が付く', () => {
 
 describe('E-8a: 安定 id と再マッチ用ヒント', () => {
   it('支柱は列と番号で id が決まり、面軸座標のヒントを持つ', () => {
-    expect(idsOf('post')).toEqual(['post:0:0', 'post:0:1', 'post:0:2', 'post:0:3']);
+    expect(partIdsOf('post')).toEqual(['post:0:0', 'post:0:1', 'post:0:2', 'post:0:3']);
     const p0 = prims.find((p) => p.meta?.id === 'post:0:0')!;
     expect(p0.meta!.index).toBe(0);
     expect(p0.meta!.x).toBe(0);          // 左端（minXg=-90 基準）
@@ -51,12 +64,13 @@ describe('E-8a: 安定 id と再マッチ用ヒント', () => {
   });
 
   it('踏板・手摺は高さ(mm)を持ち、id にも高さが入る', () => {
-    const boards = prims.filter((p) => p.meta?.kind === 'board');
-    expect(boards.map((p) => p.meta!.heightMm)).toEqual([1100, 2900, 4700]);
-    expect(boards[0].meta!.id).toBe('board:0:1100:0');
+    const boardIds = partIdsOf('board');
+    expect(boardIds.map((id) => prims.find((p) => p.meta?.id === id)!.meta!.heightMm))
+      .toEqual([1100, 2900, 4700]);
+    expect(boardIds[0]).toBe('board:0:1100:0');
     const rails = prims.filter((p) => p.meta?.kind === 'rail');
     expect(rails.every((p) => typeof p.meta!.heightMm === 'number')).toBe(true);
-    expect(rails[0].meta!.id.startsWith('rail:0:')).toBe(true);
+    expect(partIdsOf('rail')[0].startsWith('rail:0:')).toBe(true);
   });
 
   it('建物シルエットは建物 id と段番号を持つ', () => {
@@ -109,8 +123,8 @@ describe('E-8a: 嵩上げ・屋根バンドのタグ', () => {
     expect(raises.some((p) => p.meta!.id.endsWith(':rail450'))).toBe(true);
   });
 
-  it('id はここでも一意', () => {
-    const ids = primsG.map((p) => p.meta!.id);
+  it('id はここでも部材ごとに一意', () => {
+    const ids = runIds(primsG);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

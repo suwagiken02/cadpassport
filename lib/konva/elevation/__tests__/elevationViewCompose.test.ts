@@ -43,7 +43,8 @@ describe('composeViewPrimitives', () => {
     const v = view({ parts: bundle.parts.filter((p) => p.id !== target.id), geom: bundle.geom });
     const out = composeViewPrimitives(v);
     expect(out.some((p) => p.meta?.id === target.id)).toBe(false);
-    expect(out).toHaveLength(prims.length - 1);
+    // E-8-v2f: 1 部材 = 複数プリミティブ（支柱なら太線＋上下の端点マーク）。
+    expect(out).toHaveLength(prims.length - prims.filter((p) => p.meta?.id === target.id).length);
     // 背景（非部材）は 1 つも欠けない
     const bg = (xs: typeof prims) => xs.filter((p) => !isPartPrimitive(p));
     expect(bg(out)).toEqual(bg(prims));

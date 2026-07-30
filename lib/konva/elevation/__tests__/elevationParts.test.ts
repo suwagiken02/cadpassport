@@ -106,11 +106,13 @@ describe('手動追加部材（レンジ未指定はスパン幅で決まる）'
       spanIndex: 1, levelMm: 2900,
     };
     const prims = partsToPrimitives({ geom: bundle.geom, parts: [manual] });
-    expect(prims).toHaveLength(1);
-    const p = prims[0];
+    // E-8-v2f: 踏板は「濃い縁＋本体色」の 2 枚重ねで帯に見せる（部材感を出す）。
+    expect(prims).toHaveLength(2);
     // postXs[1]=-270, postXs[2]=-90 → ローカルは minXg=-450 を引いて 180..360
-    expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([180, 360]);
-    expect(p.meta?.kind).toBe('board');
+    for (const p of prims) {
+      expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([180, 360]);
+      expect(p.meta?.kind).toBe('board');
+    }
   });
 
   it('筋交は手動追加専用（自動生成には出ない）', () => {
@@ -121,7 +123,7 @@ describe('手動追加部材（レンジ未指定はスパン幅で決まる）'
       spanIndex: 0, levelMm: 2900,
     };
     const prims = partsToPrimitives({ geom: bundle.geom, parts: [brace] });
-    expect(prims).toHaveLength(1);
-    expect(prims[0].kind).toBe('line');
+    // E-8-v2f: 太い斜線＋両端の丸ハンドル。
+    expect(prims.map((p) => p.kind)).toEqual(['line', 'circle', 'circle']);
   });
 });

@@ -338,6 +338,9 @@ export type ElevationPrimitive =
   | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: string; width: number; dash?: number[]; opacity?: number; meta?: ElevationPrimitiveMeta }
   | { kind: 'rect'; x: number; y: number; w: number; h: number; fill?: string; fillOpacity?: number; stroke?: string; width?: number; meta?: ElevationPrimitiveMeta }
   | { kind: 'polygon'; points: number[]; fill?: string; fillOpacity?: number; stroke?: string; width?: number; meta?: ElevationPrimitiveMeta }
+  /** 丸ハンドル (= E-8-v2f)。平面の部材と同じ「太線＋両端の●」を立面でも出す。
+   *  x/y はローカル座標、r は screen px（width/size と同じ扱い＝縮尺に依らず一定）。 */
+  | { kind: 'circle'; x: number; y: number; r: number; fill: string; opacity?: number; meta?: ElevationPrimitiveMeta }
   | { kind: 'text'; x: number; y: number; text: string; size: number; fill: string; anchor?: 'start' | 'middle' | 'end'; meta?: ElevationPrimitiveMeta };
 
 /**

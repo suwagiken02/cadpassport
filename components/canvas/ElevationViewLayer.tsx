@@ -2,7 +2,7 @@
 
 // ============================================================
 // 立面ビューのキャンバス描画レイヤー（E-4b / E-6e-perf / E-6e-perf2 / E-8-v2）。
-//  ・elevationViews を Konva グループとして描画（primitives→Line/Rect/Text）。
+//  ・elevationViews を Konva グループとして描画（primitives→Line/Rect/Circle/Text）。
 //  ・パン: Group の x/y 平行移動に逃がし、子ノードは「確定 gridPx」で memo 化（再生成しない）。
 //  ・ズーム(E-6e-perf2): 実測で「毎フレーム子再生成＋再cache」がズーム重の根因と確定。
 //    ズーム中は Group の scale = liveGridPx / cachedGridPx で追従し、子の再生成・再cache をしない。
@@ -15,14 +15,19 @@
 //  ・当たり判定は Konva 標準（線は hitStrokeWidth）。旧「bbox を覆う透明 Rect」の
 //    手動ヒットテストは撤去した。
 //  ・ポインタ座標は getRelativePointerPosition() で Group ローカルに取る（手計算の逆変換をしない）。
+//
+// E-8-v2f: 1 部材が複数プリミティブ（太線＋丸ハンドル、踏板の帯＋輪郭）で描かれるようになった。
+//  ・編集モードでは meta.id が同じ連続プリミティブを 1 つの Group にまとめ、
+//    「部材ごと」に選択・ドラッグできるようにする（平面の部材操作と同じ手触り）。
 // ============================================================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Layer, Group, Line, Rect, Text } from 'react-konva';
+import { Layer, Group, Circle, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { nextAddId, overriddenTextIds, withAdd } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
+import { ELEV_SELECT_COLOR } from '@/lib/konva/elevation/elevationPartStyle';
 import {
   buildElevationSlots, nextPartId, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
@@ -50,7 +55,7 @@ function withAlpha(hex: string | undefined, a: number | undefined): string | und
 function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, overridden = false) {
   if (p.kind === 'line') {
     const a = S(p.x1, p.y1), b = S(p.x2, p.y2);
-    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} strokeScaleEnabled={false} listening={false} />;
+    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} lineCap="round" strokeScaleEnabled={false} listening={false} />;
   }
   if (p.kind === 'rect') {
     const a = S(p.x, p.y), b = S(p.x + p.w, p.y + p.h);
@@ -60,6 +65,11 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, overridden = 
     const pts: number[] = [];
     for (let k = 0; k < p.points.length; k += 2) { const s = S(p.points[k], p.points[k + 1]); pts.push(s.x, s.y); }
     return <Line key={i} points={pts} closed fill={withAlpha(p.fill, p.fillOpacity)} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
+  }
+  // E-8-v2f: 丸ハンドル（半径は px＝縮尺に依らず一定）。
+  if (p.kind === 'circle') {
+    const a = S(p.x, p.y);
+    return <Circle key={i} x={a.x} y={a.y} radius={p.r} fill={p.fill} opacity={p.opacity ?? 1} listening={false} />;
   }
   // text
   const a = S(p.x, p.y);
@@ -79,14 +89,14 @@ function renderPrimLocal(
   opts: { selected: boolean; overridden: boolean; interactive: boolean },
 ) {
   const hit = EDIT_HIT_PX / s;
-  const selStroke = '#FF6B35';
+  const selStroke = ELEV_SELECT_COLOR;
   if (p.kind === 'line') {
     return (
       <Line
         key={key} points={[p.x1, p.y1, p.x2, p.y2]}
         stroke={opts.selected ? selStroke : p.stroke}
         strokeWidth={(opts.selected ? p.width + 2 : p.width)}
-        dash={p.dash} opacity={p.opacity ?? 1}
+        dash={p.dash} opacity={p.opacity ?? 1} lineCap="round"
         strokeScaleEnabled={false}
         hitStrokeWidth={opts.interactive ? hit : 0}
         listening={opts.interactive}
@@ -115,6 +125,16 @@ function renderPrimLocal(
       />
     );
   }
+  if (p.kind === 'circle') {
+    // 半径は px なので Group の拡大率で割る（線幅・文字サイズと同じ扱い）。
+    return (
+      <Circle
+        key={key} x={p.x} y={p.y} radius={(opts.selected ? p.r + 1 : p.r) / s}
+        fill={opts.selected ? selStroke : p.fill} opacity={p.opacity ?? 1}
+        listening={opts.interactive}
+      />
+    );
+  }
   const size = p.size / s;
   const est = p.text.length * size * 0.6;
   const offX = p.anchor === 'middle' ? est / 2 : p.anchor === 'end' ? est : 0;
@@ -127,6 +147,21 @@ function renderPrimLocal(
   );
 }
 
+/**
+ * E-8-v2f: 同じ部材のプリミティブ（太線＋丸ハンドル・帯＋輪郭）をひとまとめにする。
+ * partsToPrimitives は 1 部材分を連続で出すので、meta.id の「連なり」で切ればよい。
+ */
+function groupByPartId(prims: ElevationPrimitive[]): { id?: string; from: number; items: ElevationPrimitive[] }[] {
+  const out: { id?: string; from: number; items: ElevationPrimitive[] }[] = [];
+  prims.forEach((p, i) => {
+    const id = p.meta?.id;
+    const last = out[out.length - 1];
+    if (id && last && last.id === id) last.items.push(p);
+    else out.push({ id, from: i, items: [p] });
+  });
+  return out;
+}
+
 /** primitives のローカル bbox（生座標・グリッド）。通常表示の hit 領域と選択枠に使う。 */
 function localBounds(view: ElevationView) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -135,7 +170,7 @@ function localBounds(view: ElevationView) {
     if (p.kind === 'line') { see(p.x1, p.y1); see(p.x2, p.y2); }
     else if (p.kind === 'rect') { see(p.x, p.y); see(p.x + p.w, p.y + p.h); }
     else if (p.kind === 'polygon') { for (let k = 0; k < p.points.length; k += 2) see(p.points[k], p.points[k + 1]); }
-    else see(p.x, p.y);
+    else see(p.x, p.y); // text / circle（半径は px なので中心点だけ見る）
   }
   return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
 }
@@ -152,6 +187,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
   const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const prims = useMemo(() => composeViewPrimitives(view), [view]);
+  const groups = useMemo(() => groupByPartId(prims), [prims]);
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const groupRef = useRef<Konva.Group>(null);
 
@@ -211,8 +247,8 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
               key={`slot-${i}`}
               x={slot.x0 - padX} y={-topMm / 10}
               width={(slot.x1 - slot.x0) + padX * 2} height={(topMm - botMm) / 10}
-              fill={taken ? '#888888' : '#FF6B35'} opacity={taken ? 0.06 : 0.14}
-              stroke={taken ? undefined : '#FF6B35'} strokeWidth={taken ? 0 : 1}
+              fill={taken ? '#888888' : ELEV_SELECT_COLOR} opacity={taken ? 0.06 : 0.14}
+              stroke={taken ? undefined : ELEV_SELECT_COLOR} strokeWidth={taken ? 0 : 1}
               strokeScaleEnabled={false} dash={[3, 3]}
               onClick={() => place(slot)} onTap={() => place(slot)}
             />
@@ -251,20 +287,21 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
 
   return (
     <Group ref={groupRef} x={gx} y={gy} scaleX={s} scaleY={s}>
-      {prims.map((p, i) => {
-        const id = p.meta?.id;
+      {groups.map(({ id, from, items }) => {
         const part = id ? partById.get(id) : undefined;
         const interactive = !addTool;
-        const node = renderPrimLocal(p, id ?? i, s, {
-          selected: !!id && id === selectedId,
+        const selected = !!id && id === selectedId;
+        const nodes = items.map((p, k) => renderPrimLocal(p, `${from}-${k}`, s, {
+          selected,
           overridden: !!id && overridden.has(id),
           interactive,
-        });
-        if (!interactive || !id) return node;
+        }));
+        if (!interactive || !id) return <React.Fragment key={`g-${from}`}>{nodes}</React.Fragment>;
+        const isText = items.length === 1 && items[0].kind === 'text';
         // 部材は掴んで隣の有効位置へ。背景（寸法・文字など）は選択のみ。
         return (
           <Group
-            key={id}
+            key={`g-${from}`}
             draggable={!!part}
             dragDistance={4}
             onDragEnd={(e) => {
@@ -273,10 +310,10 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
             }}
             onClick={() => setSelectedId(id)}
             onTap={() => setSelectedId(id)}
-            onDblClick={() => { if (p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
-            onDblTap={() => { if (p.kind === 'text') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+            onDblClick={() => { if (isText) useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+            onDblTap={() => { if (isText) useCanvasStore.getState().setElevationTextEditTargetId(id); }}
           >
-            {node}
+            {nodes}
           </Group>
         );
       })}

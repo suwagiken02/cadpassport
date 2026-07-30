@@ -12,9 +12,12 @@
 // 建物シルエット・屋根・GL・寸法・文字は部材ではない＝背景プリミティブとして別扱い
 // （文字上書き E-8c はそのまま維持）。
 // ============================================================
-import type { ElevationPrimitive, ElevationPrimitiveMeta } from '@/types';
+import type { ElevationPrimitive } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import { faceElevationExtent, q } from './elevationToObjects';
+import {
+  nominalSpanMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
+} from './elevationPartStyle';
 
 /** 部材の種類。palette に出すのは post/rail/board/jack/brace。 */
 export type ElevationPartKind =
@@ -75,12 +78,6 @@ export type ElevationPartsBundle = {
   parts: ElevationPart[];
   geom: ElevationPartGeometry;
 };
-
-// 描画色（elevationToObjects と同値。部材の見た目は一箇所で決める）。
-const C_BOARD = '#4ECDC4';
-const C_RAIL = '#378ADD';
-const C_POST = '#FFD700';
-const C_BRACE = '#B08CFF';
 
 /**
  * FaceElevation の足場部分を部材ブロックへ変換する（E-8-v2a）。
@@ -193,52 +190,43 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
   const lx = (gx: number) => gx - geom.minXg;
   const ly = (mm: number) => -(mm / 10);
   const out: ElevationPrimitive[] = [];
-  const line = (
-    x1: number, y1: number, x2: number, y2: number, stroke: string, width: number,
-    opacity: number | undefined, meta: ElevationPrimitiveMeta,
-  ) => out.push({ kind: 'line', x1, y1, x2, y2, stroke, width, dash: undefined, opacity, meta });
 
   for (const p of parts) {
     if (p.removed) continue; // E-8-v2e: 削除マーク（墓標）は描かない
     const sg = geom.scaffolds[p.scaffoldIndex];
     const span = partSpanX(p, sg);
     if (!sg || !span) continue;
-    const si = p.scaffoldIndex;
+    // E-8-v2f: 見た目は elevationPartStyle が single source（旧 primitives 経路と共通）。
+    const spanMm = nominalSpanMm(sg.postXs, span.x0);
 
     switch (p.kind) {
       case 'board':
-        line(lx(span.x0), ly(p.levelMm ?? 0), lx(span.x1), ly(p.levelMm ?? 0), C_BOARD, 3, 0.5,
+        pushBoard(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0),
           { kind: 'board', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
         break;
       case 'rail':
-        line(lx(span.x0), ly(p.levelMm ?? 0), lx(span.x1), ly(p.levelMm ?? 0), C_RAIL, 0.7, 0.5,
+        pushRail(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0), spanMm,
           { kind: 'rail', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
         break;
       case 'post':
-        line(lx(span.x0), ly(sg.jackTopMm), lx(span.x0), ly(sg.topRailMm), C_POST, 1.6, undefined,
+        pushPost(out, lx(span.x0), ly(sg.jackTopMm), ly(sg.topRailMm),
           { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.topRailMm });
         break;
       case 'postExt':
-        line(lx(span.x0), ly(sg.topRailMm), lx(span.x0), ly(p.levelMm ?? sg.topRailMm), C_POST, 1.6, undefined,
+        pushPost(out, lx(span.x0), ly(sg.topRailMm), ly(p.levelMm ?? sg.topRailMm),
           { kind: 'post', id: p.id, x: q(lx(span.x0)), heightMm: p.levelMm });
         break;
-      case 'jack': {
-        const jx = lx(span.x0);
-        out.push({
-          kind: 'polygon',
-          points: [jx - 0.3, ly(sg.jackTopMm), jx + 0.3, ly(sg.jackTopMm), jx + 0.6, 0, jx - 0.6, 0],
-          fill: C_POST, fillOpacity: 0.85, stroke: undefined, width: undefined,
-          meta: { kind: 'jack', id: p.id, index: p.postIndex, x: q(jx), heightMm: sg.jackTopMm },
-        });
+      case 'jack':
+        pushJack(out, lx(span.x0), ly(sg.jackTopMm), 0,
+          { kind: 'jack', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.jackTopMm });
         break;
-      }
       case 'raiseBoard':
-        line(lx(span.x0), ly(p.levelMm ?? 0), lx(span.x1), ly(p.levelMm ?? 0), C_BOARD, 3, 0.6,
+        pushBoard(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0),
           { kind: 'raise', id: p.id, heightMm: p.levelMm, index: p.spanIndex, x: q(lx(span.x0)) });
         break;
       case 'raiseRail': {
         const h = (p.levelMm ?? 0) + (p.railOffsetMm ?? 0);
-        line(lx(span.x0), ly(h), lx(span.x1), ly(h), C_RAIL, 0.8, 0.7,
+        pushRail(out, lx(span.x0), lx(span.x1), ly(h), spanMm,
           { kind: 'raise', id: p.id, heightMm: h, index: p.spanIndex, x: q(lx(span.x0)) });
         break;
       }
@@ -246,12 +234,11 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         // 筋交は手動追加専用。スパンの対角に1本。
         const top = (p.levelMm ?? sg.topRailMm);
         const bottom = top - 1800;
-        line(lx(span.x0), ly(bottom), lx(span.x1), ly(top), C_BRACE, 1.2, 0.9,
+        pushBrace(out, lx(span.x0), ly(bottom), lx(span.x1), ly(top),
           { kind: 'rail', id: p.id, heightMm: top, index: p.spanIndex, x: q(lx(span.x0)) });
         break;
       }
     }
-    void si;
   }
   return out;
 }

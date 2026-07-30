@@ -77,8 +77,9 @@ describe('部材の移動（隣の有効位置へ吸着）', () => {
   it('移動後も絵が起こせる（座標は geom から都度計算）', () => {
     const out = moveToNearest([autoBoard], autoBoard, { x: 450, yMm: 2900 });
     const prims = partsToPrimitives({ parts: out, geom });
-    expect(prims).toHaveLength(1);
-    expect(prims[0].kind === 'line' && [prims[0].x1, prims[0].x2]).toEqual([360, 540]);
+    // E-8-v2f: 踏板は縁＋本体の 2 枚。どちらも移動後のスパン幅で引き直される。
+    expect(prims).toHaveLength(2);
+    for (const p of prims) expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([360, 540]);
   });
 });
 
@@ -87,6 +88,7 @@ describe('部材の削除', () => {
     const parts = [autoBoard, { ...autoBoard, id: 'keep', spanIndex: 0, x0: 0, x1: 180 }];
     const out = parts.filter((p) => p.id !== autoBoard.id);
     expect(out.map((p) => p.id)).toEqual(['keep']);
-    expect(partsToPrimitives({ parts: out, geom })).toHaveLength(1);
+    // E-8-v2f: 残った 1 部材ぶん（踏板 = 縁＋本体の 2 枚）だけが描かれる。
+    expect(partsToPrimitives({ parts: out, geom })).toHaveLength(2);
   });
 });

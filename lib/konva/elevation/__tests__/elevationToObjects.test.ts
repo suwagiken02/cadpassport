@@ -3,6 +3,7 @@ import type { BuildingShape, Point } from '@/types';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToPrimitives, initialPlacementOrigin } from '../elevationToObjects';
+import { ELEV_PART_COLORS, ELEV_PART_STYLE, railColorForSpanMm } from '../elevationPartStyle';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 const bld = (id: string): BuildingShape => ({ id, type: 'polygon', points: RECT, fill: '#3d3d3a', floor: 1 });
@@ -26,8 +27,11 @@ describe('faceElevationToPrimitives: FaceElevation → プリミティブ(E-4a)'
     expect(bo && bo.kind === 'polygon' && bo.points).toEqual([90, 0, 90, -650, 450, -650, 450, 0]);
   });
 
-  it('支柱4本（#FFD700・線）が jackTop〜topRail に', () => {
-    const posts = prims.filter((p) => p.kind === 'line' && p.stroke === '#FFD700' && p.width === 1.6);
+  // E-8-v2f: 部材は「太い色線＋丸ハンドル」になった（平面と同じ視覚言語）。
+  //   太さ・色は elevationPartStyle が single source なので、テストもそこから引く。
+  it('支柱4本（太い縦線）が jackTop〜topRail に', () => {
+    const posts = prims.filter((p) =>
+      p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post && p.width === ELEV_PART_STYLE.postWidth);
     expect(posts).toHaveLength(4); // postXs [-90,90,270,450]、嵩上げ無し
     // px=-90 → lx=0、jackTop150→ly=-15、topRail6500→ly=-650
     const p0 = posts.find((p) => p.kind === 'line' && p.x1 === 0);
@@ -74,7 +78,8 @@ describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)'
   });
 
   it('奥列の手摺が手前区間で切断され、幅の異なる rail 線として現れる', () => {
-    const rails = prims.filter((p) => p.kind === 'line' && p.stroke === '#378ADD' && p.width === 0.7);
+    const rails = prims.filter((p) =>
+      p.kind === 'line' && p.stroke === railColorForSpanMm(1800) && p.width === ELEV_PART_STYLE.railWidth);
     const widths = new Set(rails.map((p) => (p.kind === 'line' ? Math.round(Math.abs(p.x2 - p.x1)) : 0)));
     expect(widths.has(360)).toBe(true); // 手前列 [-90,270] 幅360
     // E-5-fix4: 既定ギャップ=round(全幅540×0.015)=8。奥列は 270+8=278 から → [278,450] 幅172。

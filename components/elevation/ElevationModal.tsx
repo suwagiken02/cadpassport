@@ -16,6 +16,9 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstruction';
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import ElevationPlaceDialog from './ElevationPlaceDialog';
+import {
+  ELEV_PART_COLORS, ELEV_PART_STYLE, nominalSpanMm, railColorForSpanMm,
+} from '@/lib/konva/elevation/elevationPartStyle';
 import type { PillarType } from '@/lib/konva/calculator';
 
 const FACES: { id: Face; label: string }[] = [
@@ -222,12 +225,52 @@ function ElevationSVG({
     null,
   );
 
+  // E-8-v2f: 部材の見た目（色・太さ・ハンドル径）は elevationPartStyle を参照して
+  //   キャンバス配置版と揃える。「太い色線＋両端の●」で一目で部材と分かるようにする。
+  const PS = ELEV_PART_STYLE, PC = ELEV_PART_COLORS;
+
+  /** 手摺: 長さ別カラーの太線＋両端の丸ハンドル（平面と同じ表現）。 */
+  const railLine = (key: string, x0: number, x1: number, mm: number, postXs: number[]) => {
+    const c = railColorForSpanMm(nominalSpanMm(postXs, x0));
+    const a = sxg(x0), b = sxg(x1), y = sy(mm);
+    return (
+      <g key={key} opacity={0.95}>
+        <line x1={a} y1={y} x2={b} y2={y} stroke={c} strokeWidth={PS.railWidth} strokeLinecap="round" />
+        <circle cx={a} cy={y} r={PS.railHandleR} fill={c} />
+        <circle cx={b} cy={y} r={PS.railHandleR} fill={c} />
+      </g>
+    );
+  };
+
+  /** 踏板: 濃い縁の上に本体色を重ねた「輪郭付きの帯」。 */
+  const boardLine = (key: string, x0: number, x1: number, mm: number) => {
+    const a = sxg(x0), b = sxg(x1), y = sy(mm);
+    return (
+      <g key={key}>
+        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.boardEdge} strokeWidth={PS.boardEdgeWidth} strokeOpacity={0.9} strokeLinecap="round" />
+        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.board} strokeWidth={PS.boardWidth} strokeOpacity={0.95} strokeLinecap="round" />
+      </g>
+    );
+  };
+
+  /** 支柱: 太い縦線＋上下端の端点マーク。 */
+  const postLine = (key: string, px: number, bottomMm: number, topMm: number) => {
+    const x = sxg(px), y0 = sy(bottomMm), y1 = sy(topMm);
+    return (
+      <g key={key}>
+        <line x1={x} y1={y0} x2={x} y2={y1} stroke={PC.post} strokeWidth={PS.postWidth} strokeLinecap="round" />
+        <circle cx={x} cy={y0} r={PS.postCapR} fill={PC.post} />
+        <circle cx={x} cy={y1} r={PS.postCapR} fill={PC.post} />
+      </g>
+    );
+  };
+
   // 段違い作業床 1 セット（床帯＋手摺 +450/+900）を描く helper。
-  const floorGroup = (key: string, floorMm: number, x0: number, x1: number) => (
+  const floorGroup = (key: string, floorMm: number, x0: number, x1: number, postXs: number[]) => (
     <g key={key}>
-      <rect x={sxg(x0)} y={sy(floorMm) - 2} width={Math.max(0, sxg(x1) - sxg(x0))} height={4} fill="#4ECDC4" fillOpacity={0.6} />
-      <line x1={sxg(x0)} y1={sy(floorMm + 450)} x2={sxg(x1)} y2={sy(floorMm + 450)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
-      <line x1={sxg(x0)} y1={sy(floorMm + 900)} x2={sxg(x1)} y2={sy(floorMm + 900)} stroke="#378ADD" strokeWidth={0.7} strokeOpacity={0.7} />
+      {boardLine(`${key}-bd`, x0, x1, floorMm)}
+      {railLine(`${key}-r450`, x0, x1, floorMm + 450, postXs)}
+      {railLine(`${key}-r900`, x0, x1, floorMm + 900, postXs)}
     </g>
   );
 
@@ -313,67 +356,40 @@ function ElevationSVG({
         }
         return (
           <g key={`sc-${si}`} opacity={0.95}>
-            {/* 踏板（薄い帯） */}
-            {sc.boards.map((b, i) => (
-              <rect
-                key={`bd-${i}`}
-                x={sxg(b.x0)}
-                y={sy(b.levelMm) - 2}
-                width={Math.max(0, sxg(b.x1) - sxg(b.x0))}
-                height={4}
-                fill="#4ECDC4"
-                fillOpacity={0.5}
-              />
-            ))}
-            {/* 手摺（コマ位置の横線） */}
-            {sc.rails.map((r, i) => (
-              <line
-                key={`rl-${i}`}
-                x1={sxg(r.x0)}
-                y1={sy(r.heightMm)}
-                x2={sxg(r.x1)}
-                y2={sy(r.heightMm)}
-                stroke="#378ADD"
-                strokeWidth={0.7}
-                strokeOpacity={0.5}
-              />
-            ))}
-            {/* 支柱（縦線） */}
-            {sc.postXs.map((px, i) => (
-              <line
-                key={`ps-${i}`}
-                x1={sxg(px)}
-                y1={sy(jackTop)}
-                x2={sxg(px)}
-                y2={sy(topRail)}
-                stroke="#FFD700"
-                strokeWidth={1.6}
-              />
-            ))}
-            {/* ジャッキ（支柱下端の小台形: 下広がり） */}
+            {/* 踏板（輪郭付きの帯） */}
+            {sc.boards.map((b, i) => boardLine(`bd-${i}`, b.x0, b.x1, b.levelMm))}
+            {/* 手摺（コマ位置の横線・両端に●） */}
+            {sc.rails.map((r, i) => railLine(`rl-${i}`, r.x0, r.x1, r.heightMm, sc.postXs))}
+            {/* 支柱（太い縦線＋端点マーク） */}
+            {sc.postXs.map((px, i) => postLine(`ps-${i}`, px, jackTop, topRail))}
+            {/* ジャッキ（ベース記号: 下広がりの台形＋底辺の太線） */}
             {sc.postXs.map((px, i) => {
               const cx = sxg(px);
               const yTop = sy(jackTop);
               const yGL = glY;
+              // ベースの幅は SVG px 固定（縮尺が小さくても記号として読めるように）。
+              const h = PS.jackBaseHalfGrid * 3;
               return (
-                <polygon
-                  key={`jk-${i}`}
-                  points={`${cx - 2},${yTop} ${cx + 2},${yTop} ${cx + 4},${yGL} ${cx - 4},${yGL}`}
-                  fill="#FFD700"
-                  fillOpacity={0.85}
-                />
+                <g key={`jk-${i}`}>
+                  <polygon
+                    points={`${cx - h / 3},${yTop} ${cx + h / 3},${yTop} ${cx + h},${yGL} ${cx - h},${yGL}`}
+                    fill={PC.post}
+                    fillOpacity={0.9}
+                  />
+                  <line x1={cx - h} y1={yGL} x2={cx + h} y2={yGL} stroke={PC.post} strokeWidth={PS.jackBaseWidth} strokeLinecap="round" />
+                </g>
               );
             })}
             {/* 妻嵩上げ: 4+1 分解の中間フル段＋最終床（各段に床帯＋手摺 +450/+900） */}
             {sc.spanRaises.map((r, i) => (
               <g key={`sr-${i}`}>
-                {r.intermediateFloorsMm.map((fmm, j) => floorGroup(`im-${i}-${j}`, fmm, r.x0, r.x1))}
-                {floorGroup(`rf-${i}`, r.raisedFloorMm, r.x0, r.x1)}
+                {r.intermediateFloorsMm.map((fmm, j) => floorGroup(`im-${i}-${j}`, fmm, r.x0, r.x1, sc.postXs))}
+                {floorGroup(`rf-${i}`, r.raisedFloorMm, r.x0, r.x1, sc.postXs)}
               </g>
             ))}
             {/* 妻嵩上げの支柱延長（天端→要求上端） */}
             {Array.from(postExtendTop.entries()).map(([px, top], i) => (
-              <line key={`pe-${i}`} x1={sxg(px)} y1={sy(topRail)} x2={sxg(px)} y2={sy(top)} stroke="#FFD700" strokeWidth={1.6} />
+              postLine(`pe-${i}`, px, topRail, top)
             ))}
           </g>
         );

@@ -16,6 +16,9 @@ import type {
   BuildingShape, ElevationPrimitive, ElevationPrimitiveMeta, Point,
 } from '@/types';
 import type { FaceElevation } from './elevationEngine';
+import {
+  nominalSpanMm, pushBoard, pushJack, pushPost, pushRail,
+} from './elevationPartStyle';
 
 /** 立面ビューの初期配置位置（グループローカル原点 = 左下=GL・左端）。
  *  平面建物 bbox の右側に固定オフセット、GL(ローカル0)を建物下端 y に合わせる。建物無しは既定。 */
@@ -28,9 +31,6 @@ export function initialPlacementOrigin(buildings: BuildingShape[]): Point {
 const C_OUTLINE = '#8a8a86';
 const C_RIDGE = '#6b6b67';
 const C_RIDGE_TXT = '#c9c9c6';
-const C_BOARD = '#4ECDC4';
-const C_RAIL = '#378ADD';
-const C_POST = '#FFD700';
 const C_DIM = '#8a8a86';
 const C_DIM_TXT = '#9a9a96';
 
@@ -146,12 +146,15 @@ export function faceElevationToPrimitives(
   });
 
   // 段違い作業床 1 セット（床帯＋手摺 +450/+900）。
-  const floorSet = (floorMm: number, x0: number, x1: number, idPrefix: string, spanIndex: number) => {
-    line(lx(x0), ly(floorMm), lx(x1), ly(floorMm), C_BOARD, 3, undefined, 0.6,
+  // E-8-v2f: 見た目は elevationPartStyle が single source（部材ブロック経路と共通）。
+  const floorSet = (
+    floorMm: number, x0: number, x1: number, idPrefix: string, spanIndex: number, spanMm: number,
+  ) => {
+    pushBoard(prims, lx(x0), lx(x1), ly(floorMm),
       { kind: 'raise', id: `${idPrefix}:board`, heightMm: floorMm, index: spanIndex, x: q(lx(x0)) });
-    line(lx(x0), ly(floorMm + 450), lx(x1), ly(floorMm + 450), C_RAIL, 0.8, undefined, 0.7,
+    pushRail(prims, lx(x0), lx(x1), ly(floorMm + 450), spanMm,
       { kind: 'raise', id: `${idPrefix}:rail450`, heightMm: floorMm + 450, index: spanIndex, x: q(lx(x0)) });
-    line(lx(x0), ly(floorMm + 900), lx(x1), ly(floorMm + 900), C_RAIL, 0.8, undefined, 0.7,
+    pushRail(prims, lx(x0), lx(x1), ly(floorMm + 900), spanMm,
       { kind: 'raise', id: `${idPrefix}:rail900`, heightMm: floorMm + 900, index: spanIndex, x: q(lx(x0)) });
   };
 
@@ -160,36 +163,35 @@ export function faceElevationToPrimitives(
     const jackTop = sc.levels.jackTopMm;
     const topRail = sc.levels.topRailMm;
     for (const b of sc.boards) {
-      line(lx(b.x0), ly(b.levelMm), lx(b.x1), ly(b.levelMm), C_BOARD, 3, undefined, 0.5,
+      pushBoard(prims, lx(b.x0), lx(b.x1), ly(b.levelMm),
         { kind: 'board', id: `board:${si}:${b.levelMm}:${q(lx(b.x0))}`, heightMm: b.levelMm, x: q(lx(b.x0)) });
     }
     for (const r of sc.rails) {
-      line(lx(r.x0), ly(r.heightMm), lx(r.x1), ly(r.heightMm), C_RAIL, 0.7, undefined, 0.5,
+      pushRail(prims, lx(r.x0), lx(r.x1), ly(r.heightMm), nominalSpanMm(sc.postXs, r.x0),
         { kind: 'rail', id: `rail:${si}:${r.heightMm}:${q(lx(r.x0))}`, heightMm: r.heightMm, x: q(lx(r.x0)) });
     }
     sc.postXs.forEach((px, pi) => {
-      line(lx(px), ly(jackTop), lx(px), ly(topRail), C_POST, 1.6, undefined, undefined,
+      pushPost(prims, lx(px), ly(jackTop), ly(topRail),
         { kind: 'post', id: `post:${si}:${pi}`, index: pi, x: q(lx(px)), heightMm: topRail });
     });
-    // ジャッキ（支柱下端の小台形・グリッド）
+    // ジャッキ（支柱下端のベース記号）
     sc.postXs.forEach((px, pi) => {
-      const jx = lx(px);
-      poly([jx - 0.3, ly(jackTop), jx + 0.3, ly(jackTop), jx + 0.6, 0, jx - 0.6, 0], C_POST, 0.85,
-        undefined, undefined,
-        { kind: 'jack', id: `jack:${si}:${pi}`, index: pi, x: q(jx), heightMm: jackTop });
+      pushJack(prims, lx(px), ly(jackTop), 0,
+        { kind: 'jack', id: `jack:${si}:${pi}`, index: pi, x: q(lx(px)), heightMm: jackTop });
     });
     // 妻嵩上げ: 中間フル段＋最終床、支柱延長
     const postExtendTop = new Map<number, number>();
     for (const r of sc.spanRaises) {
+      const spanMm = nominalSpanMm(sc.postXs, r.x0);
       r.intermediateFloorsMm.forEach((fmm, fi) => {
-        floorSet(fmm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:mid${fi}`, r.spanIndex);
+        floorSet(fmm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:mid${fi}`, r.spanIndex, spanMm);
       });
-      floorSet(r.raisedFloorMm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:top`, r.spanIndex);
+      floorSet(r.raisedFloorMm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:top`, r.spanIndex, spanMm);
       const top = r.raisedFloorMm + 900;
       for (const px of [r.x0, r.x1]) postExtendTop.set(px, Math.max(postExtendTop.get(px) ?? topRail, top));
     }
     postExtendTop.forEach((top, px) => {
-      line(lx(px), ly(topRail), lx(px), ly(top), C_POST, 1.6, undefined, undefined,
+      pushPost(prims, lx(px), ly(topRail), ly(top),
         { kind: 'post', id: `postExt:${si}:${q(lx(px))}`, x: q(lx(px)), heightMm: top });
     });
   });
