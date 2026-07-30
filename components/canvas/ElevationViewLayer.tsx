@@ -15,7 +15,8 @@ import { Layer, Group, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
-import { applyElevationEdits, nextAddId, overriddenTextIds, primitiveBounds, withAdd, withMove } from '@/lib/konva/elevation/elevationEdits';
+import { nextAddId, overriddenTextIds, primitiveBounds, withAdd, withMove } from '@/lib/konva/elevation/elevationEdits';
+import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -80,7 +81,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
 }) {
   const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
   const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
-  const prims = useMemo(() => applyElevationEdits(view), [view]);
+  const prims = useMemo(() => composeViewPrimitives(view), [view]);
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const addDraft = useCanvasStore((s) => s.elevationAddDraft);
@@ -238,7 +239,7 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
   const children = useMemo(
     () => {
       const ov = overriddenTextIds(view.edits);
-      return applyElevationEdits(view).map((p, i) => renderPrim(p, i, worldOf, false, !!p.meta && ov.has(p.meta.id)));
+      return composeViewPrimitives(view).map((p, i) => renderPrim(p, i, worldOf, false, !!p.meta && ov.has(p.meta.id)));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [view, cachedGridPx],

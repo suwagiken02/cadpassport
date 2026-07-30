@@ -35,6 +35,7 @@ import {
 import { computeContentBounds } from '@/lib/pages/contentBounds';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
+import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -460,6 +461,8 @@ type CanvasStore = {
   /** 立面編集モードの対象ビュー id (= E-8b、 null=通常モード)。 */
   elevationEditViewId: string | null;
   setElevationEditViewId: (id: string | null) => void;
+  /** 旧ビュー(parts 無し)を開いたときに現在の平面から部材を再生成して移行する (= E-8-v2b)。 */
+  ensureElevationParts: (viewId: string) => void;
   /** 立面編集モードで選択中の部材(プリミティブ)の安定 id。 */
   elevationEditSelectedId: string | null;
   setElevationEditSelectedId: (id: string | null) => void;
@@ -1492,7 +1495,27 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   elevationEditViewId: null,
-  setElevationEditViewId: (id) => set({ elevationEditViewId: id, elevationEditSelectedId: null }),
+  setElevationEditViewId: (id) => {
+    // E-8-v2b: 編集に入る時点で部材ブロックを用意する（旧ビューはここで移行）。
+    if (id) get().ensureElevationParts(id);
+    set({ elevationEditViewId: id, elevationEditSelectedId: null });
+  },
+  ensureElevationParts: (viewId) => {
+    const { canvasData } = get();
+    const view = (canvasData.elevationViews ?? []).find((v) => v.id === viewId);
+    if (!view || (view.parts && view.geom)) return;
+    // 現在の平面から同じ面の立面を作り直し、その部材を採用する（絵は保存済みのものを背景に使う）。
+    const bundle = facePartsForCanvas(canvasData, view.face);
+    if (bundle.parts.length === 0) return;
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((v) =>
+          (v.id === viewId ? { ...v, parts: bundle.parts, geom: bundle.geom } : v)),
+      },
+      isDirty: true,
+    });
+  },
   elevationEditSelectedId: null,
   setElevationEditSelectedId: (id) => set({ elevationEditSelectedId: id }),
   elevationTextEditTargetId: null,

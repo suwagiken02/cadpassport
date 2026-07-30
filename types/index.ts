@@ -365,6 +365,14 @@ export type ElevationView = {
   originGrid: Point;
   scale: number;
   primitives: ElevationPrimitive[];
+  /**
+   * 部材ブロック (= E-8-v2)。立面編集の一次データ。
+   * これがあるビューは「背景プリミティブ＋parts から都度生成した部材」で描く。
+   * 旧ビュー(undefined)は primitives をそのまま描き、編集を開いたときに再生成して移行する。
+   */
+  parts?: import('@/lib/konva/elevation/elevationParts').ElevationPart[];
+  /** 部材を実座標へ戻すための幾何(支柱位置・段構成)。parts とセット。 */
+  geom?: import('@/lib/konva/elevation/elevationParts').ElevationPartGeometry;
   /** ユーザー編集の差分 (= E-8a)。未編集は undefined。primitives は再生成で入れ替わるが差分は残る。 */
   edits?: ElevationEdit[];
   /** 再生成で引き継げなかった編集 (= E-8d)。勝手に消さず一覧提示し、ユーザーが削除する。 */

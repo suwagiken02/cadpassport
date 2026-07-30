@@ -15,6 +15,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstruction';
 import { buildFaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import { faceElevationToPrimitives, initialPlacementOrigin } from '@/lib/konva/elevation/elevationToObjects';
+import { faceElevationToParts } from '@/lib/konva/elevation/elevationParts';
 import { computeQuadLayout, elevationPrimitivesBounds, type FaceKey } from '@/lib/pages/quadLayout';
 import { sortPages, nextPageTitle, type PageMeta } from '@/lib/pages/pageOps';
 import { saveCurrentPageIfDirty } from '@/lib/pages/pageSave';
@@ -75,12 +76,18 @@ export default function ElevationPlaceDialog({
     });
   };
 
+  /** E-8-v2b: 部材ブロック（編集の一次データ）を添えてビューを作る。 */
+  const withParts = (v: ElevationView, f: Face): ElevationView => {
+    const b = faceElevationToParts(feFor(f));
+    return { ...v, parts: b.parts, geom: b.geom };
+  };
+
   /** 配置する ElevationView[] を組み立てる。base は配置先の基準位置。 */
   const buildViews = (base: Point): ElevationView[] | null => {
     if (mode === 'single') {
       const prims = faceElevationToPrimitives(feFor(face), fillOf);
       if (prims.length === 0) return null;
-      return [{ id: uuidv4(), face, originGrid: base, scale: 1, primitives: prims }];
+      return [withParts({ id: uuidv4(), face, originGrid: base, scale: 1, primitives: prims }, face)];
     }
     // 4 面一括
     const faceData = QUAD_FACES.map((f) => {
@@ -91,7 +98,10 @@ export default function ElevationPlaceDialog({
     if (!layout) return null;
     return layout.placements.map((pl) => {
       const d = faceData.find((x) => x.face === pl.face)!;
-      return { id: uuidv4(), face: pl.face, originGrid: pl.originGrid, scale: layout.scale, primitives: d.prims };
+      return withParts(
+        { id: uuidv4(), face: pl.face, originGrid: pl.originGrid, scale: layout.scale, primitives: d.prims },
+        pl.face,
+      );
     });
   };
 
