@@ -459,12 +459,9 @@ type CanvasStore = {
   addElevationViews: (views: ElevationView[]) => void;
   removeElevationView: (id: string) => void;
   moveElevationView: (id: string, originGrid: import('@/types').Point) => void;
-  /** 立面編集モードの対象ビュー id (= E-8b、 null=通常モード)。 */
-  elevationEditViewId: string | null;
-  setElevationEditViewId: (id: string | null) => void;
-  /** 旧ビュー(parts 無し)を開いたときに現在の平面から部材を再生成して移行する (= E-8-v2b)。 */
+  /** 旧ビュー(parts 無し)を選んだときに現在の平面から部材を再生成して移行する (= E-8-v2b)。 */
   ensureElevationParts: (viewId: string) => void;
-  /** 立面編集モードで選択中の部材(プリミティブ)の安定 id。 */
+  /** 選択中の立面部材(プリミティブ)の安定 id (= E-8-v2j で select モード直接選択に)。 */
   elevationEditSelectedId: string | null;
   setElevationEditSelectedId: (id: string | null) => void;
   /** 立面ビューの編集差分を差し替える (= E-8b、 履歴に積む)。 */
@@ -1511,12 +1508,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       canvasData: { ...canvasData, elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id) },
       isDirty: true,
     });
-  },
-  elevationEditViewId: null,
-  setElevationEditViewId: (id) => {
-    // E-8-v2b: 編集に入る時点で部材ブロックを用意する（旧ビューはここで移行）。
-    if (id) get().ensureElevationParts(id);
-    set({ elevationEditViewId: id, elevationEditSelectedId: null });
   },
   ensureElevationParts: (viewId) => {
     const { canvasData } = get();

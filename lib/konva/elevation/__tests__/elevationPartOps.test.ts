@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
-import { partsToPrimitives } from '../elevationParts';
+import { partsToPrimitives, withPartDeleted } from '../elevationParts';
 import { buildElevationSlots, slotOccupied, slotToPart, snapToSlot } from '../elevationSlots';
 
 // ============================================================
@@ -91,5 +91,23 @@ describe('部材の削除', () => {
     expect(out.map((p) => p.id)).toEqual(['keep']);
     // E-8-v2f: 残った 1 部材ぶん（踏板 = 縁＋本体の 2 枚）だけが描かれる。
     expect(partsToPrimitives({ parts: out, geom })).toHaveLength(2);
+  });
+
+  // E-8-v2j: 消去ツールでも編集バーでも同じ意味になるよう withPartDeleted に集約した。
+  it('自動生成分は墓標を残す（作り直してもぶり返さない）', () => {
+    const out = withPartDeleted([autoBoard], autoBoard.id);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ id: autoBoard.id, origin: 'manual', removed: true });
+    expect(partsToPrimitives({ parts: out, geom })).toEqual([]);   // 墓標は描かない
+  });
+
+  it('手動追加分は配列から取り除くだけ（墓標を作らない）', () => {
+    const manual = { ...autoBoard, id: 'manual:board:1', origin: 'manual' as const };
+    expect(withPartDeleted([manual], manual.id)).toEqual([]);
+  });
+
+  it('知らない id なら何もしない（同じ配列を返す）', () => {
+    const parts = [autoBoard];
+    expect(withPartDeleted(parts, 'nope')).toBe(parts);
   });
 });

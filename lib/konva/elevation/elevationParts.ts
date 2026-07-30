@@ -279,6 +279,20 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
   return out;
 }
 
+/**
+ * 部材を 1 つ消す (= E-8-v2e/v2j)。
+ *   ・自動生成分 → 墓標(removed) を残す。作り直しても同じ場所に生えてこない
+ *   ・手動追加分 → 配列から取り除くだけ（元から生えてこない）
+ * 消去ツールでも編集バーでも同じ意味になるよう、判断はここ 1 箇所に置く。
+ */
+export function withPartDeleted(parts: ElevationPart[], id: string): ElevationPart[] {
+  const target = parts.find((p) => p.id === id);
+  if (!target) return parts;
+  return target.origin === 'manual'
+    ? parts.filter((p) => p.id !== id)
+    : parts.map((p) => (p.id === id ? { ...p, origin: 'manual' as const, removed: true } : p));
+}
+
 /** 部材レイヤのプリミティブか（背景と部材の切り分け・E-8a のタグを使う）。 */
 export function isPartPrimitive(p: ElevationPrimitive): boolean {
   const k = p.meta?.kind;

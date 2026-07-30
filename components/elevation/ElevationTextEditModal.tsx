@@ -20,10 +20,13 @@ function findPrimitive(
 }
 
 export default function ElevationTextEditModal() {
-  const viewId = useCanvasStore((s) => s.elevationEditViewId);
   const targetId = useCanvasStore((s) => s.elevationTextEditTargetId);
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
-  const view = (views ?? []).find((v) => v.id === viewId) ?? null;
+  // E-8-v2j: 編集モードを廃止したので、対象の文字を持っているビューを id から引く。
+  const view = targetId
+    ? (views ?? []).find((v) => findPrimitive(v.primitives, v.edits, targetId) != null) ?? null
+    : null;
+  const viewId = view?.id ?? null;
 
   const target = view && targetId ? findPrimitive(view.primitives, view.edits, targetId) : null;
   /** 上書き前の生成値（エンジンが計算した文字）。 */

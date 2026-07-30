@@ -4,51 +4,50 @@
 // 立面ビューのキャンバス描画レイヤー（E-4b / E-6e-perf / E-6e-perf2 / E-8-v2）。
 //  ・elevationViews を Konva グループとして描画（primitives→Line/Rect/Circle/Text）。
 //  ・パン: Group の x/y 平行移動に逃がし、子ノードは「確定 gridPx」で memo 化（再生成しない）。
-//  ・ズーム(E-6e-perf2): 実測で「毎フレーム子再生成＋再cache」がズーム重の根因と確定。
-//    ズーム中は Group の scale = liveGridPx / cachedGridPx で追従し、子の再生成・再cache をしない。
-//    ズームが止まったら 200ms デバウンスで cachedGridPx を更新 → 1 回だけ再生成＋再cache（鮮明化）。
-//  ・各 Group は cache() でビットマップ化。選択/ドラッグ/消去は従来どおり。
+//  ・ズーム(E-6e-perf2): ズーム中は Group の scale で追従し、子の再生成・再cache をしない。
+//    ズームが止まったら 200ms デバウンスで確定倍率を更新 → 1 回だけ再生成（鮮明化）。
 //
-// E-8-v2d: 編集モードは「変換付き Group の中にローカル座標でそのまま描く」方式に統一した。
-//  ・子は立面ローカル座標（横=グリッド、縦=mm/10・GL=0・上が負）で置き、Group の
-//    x/y/scale が画面へ写す。線幅と文字サイズだけ px 固定に戻す（scale で割る）。
-//  ・当たり判定は Konva 標準（線は hitStrokeWidth）。旧「bbox を覆う透明 Rect」の
-//    手動ヒットテストは撤去した。
-//  ・ポインタ座標は getRelativePointerPosition() で Group ローカルに取る（手計算の逆変換をしない）。
-//
-// E-8-v2f: 1 部材が複数プリミティブ（太線＋丸ハンドル、踏板の帯＋輪郭）で描かれるようになった。
-//  ・編集モードでは meta.id が同じ連続プリミティブを 1 つの Group にまとめ、
-//    「部材ごと」に選択・ドラッグできるようにする（平面の部材操作と同じ手触り）。
-//
-// E-8-v2g: スロット座標は「面軸の生グリッド」、描画は「ローカル（minXg を引いた値）」。
-//  ・ここを混ぜていたため吸着が別スパンへ飛び、パレットのゴーストも minXg ぶんズレていた
-//    （＝「手摺をドラッグしてもコマ位置にスナップしない」の原因）。境界で必ず変換する。
-//  ・ドラッグ中は最寄りコマを一時ハイライトして、どこにはまるかを見せる。
+// E-8-v2j: 「編集モード」を廃止した。平面に編集モードが無いのと同じで、立面の部材も
+//   通常の select でそのまま触れるべき（鮎澤氏）。
+//   ・素の select / 消去モード → 部材ごとに当たり判定を持つ対話版で描く
+//       部材タップ = 選択 / 部材ドラッグ = コマ吸着移動 / 消去ツール = 部材削除
+//   ・それ以外（閲覧・他ツール中）→ 従来どおり cache() した 1 枚絵（軽い）
+//   ・図全体は「背景」で扱う。変換 Group の“下”に画面座標の透明 Rect を敷き、
+//     そこをタップ＝ビュー選択、ドラッグ＝ビュー移動、消去＝ビュー削除。
+//     部材は Group 側（上）にあるので部材が優先して拾う。
+//     ※ドラッグ可能な Group を入れ子にすると Konva が両方掴んでしまうので、
+//       ビュー移動は「入れ子にしない兄弟の Rect」で受ける。
+//  ・座標系: 子は立面ローカル（横=グリッド、縦=mm/10・GL=0・上が負）で置き、Group の
+//    x/y/scale が画面へ写す。線幅・文字サイズだけ px 固定に戻す（scale で割る）。
+//  ・スロットは面軸の生グリッド、描画はローカル（minXg を引いた値）。境界で必ず変換する。
 // ============================================================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Layer, Group, Circle, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
-import { nextAddId, overriddenTextIds, withAdd } from '@/lib/konva/elevation/elevationEdits';
+import { isPlainSelectMode } from '@/lib/konva/toolMode';
+import { nextAddId, overriddenTextIds, withAdd, withHide } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
 import { ELEV_PART_STYLE, ELEV_SELECT_COLOR, partWidthPx } from '@/lib/konva/elevation/elevationPartStyle';
 import {
   buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
-import type { ElevationPart } from '@/lib/konva/elevation/elevationParts';
+import { withPartDeleted, type ElevationPart } from '@/lib/konva/elevation/elevationParts';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 
-/** ズーム停止後に再cache するまでの待ち時間（ms）。 */
+/** ズーム停止後に再cache / 再生成するまでの待ち時間（ms）。 */
 const RECACHE_DEBOUNCE_MS = 200;
-/** 編集モードで線を掴める幅(px)。 */
+/** 部材を掴める幅(px)。 */
 const EDIT_HIT_PX = 14;
 /** 吸着プレビューの帯の太さ(px)。部材より太く、下に敷く。 */
 const SNAP_BAND_PX = 12;
 /** 埋まっている位置のプレビュー色（そこには置けない）。 */
 const SNAP_TAKEN_COLOR = '#8a8a86';
+/** 当たり判定用に bbox を広げる余白（ローカル・グリッド）。 */
+const BG_PAD = 4;
 
 /** hex(#rrggbb) を fillOpacity 付き rgba に。fill の半透明は fill 側で表し stroke は不透明を保つ
  *  （E-5-fix2: 従来は opacity=fillOpacity で shape 全体を薄くし、建物外形・屋根の輪郭線＝L 字
@@ -80,13 +79,11 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, pxPerGrid: nu
     for (let k = 0; k < p.points.length; k += 2) { const s = S(p.points[k], p.points[k + 1]); pts.push(s.x, s.y); }
     return <Line key={i} points={pts} closed fill={withAlpha(p.fill, p.fillOpacity)} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
   }
-  // E-8-v2f: 丸ハンドル。半径は実寸比＋下限 px（線幅と同じ扱い）。
   if (p.kind === 'circle') {
     const a = S(p.x, p.y);
     const r = partWidthPx(p.r, p.rGrid, pxPerGrid);
     return <Circle key={i} x={a.x} y={a.y} radius={r} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth ?? 0} strokeScaleEnabled={false} opacity={p.opacity ?? 1} listening={false} />;
   }
-  // text
   const a = S(p.x, p.y);
   const est = p.text.length * p.size * 0.6;
   const offX = p.anchor === 'middle' ? est / 2 : p.anchor === 'end' ? est : 0;
@@ -96,8 +93,8 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, pxPerGrid: nu
 }
 
 /**
- * E-8-v2d: 編集モード用。ローカル座標のままノードを作る（Group の変換が画面へ写す）。
- * `s` は Group の拡大率で、線幅・文字サイズを px 固定に戻すために使う。
+ * 対話版の描画。ローカル座標のままノードを作る（Group の変換が画面へ写す）。
+ * `s` は Group の拡大率（= pxPerGrid）で、線幅・文字サイズを px 固定に戻すために使う。
  */
 function renderPrimLocal(
   p: ElevationPrimitive, key: string | number, s: number,
@@ -106,7 +103,6 @@ function renderPrimLocal(
   const hit = EDIT_HIT_PX / s;
   const selStroke = ELEV_SELECT_COLOR;
   if (p.kind === 'line') {
-    // s は 1 グリッドの画面 px（= pxPerGrid）そのもの。
     const w = partWidthPx(p.width, p.widthGrid, s);
     return (
       <Line
@@ -143,7 +139,6 @@ function renderPrimLocal(
     );
   }
   if (p.kind === 'circle') {
-    // 半径は px なので Group の拡大率で割る（線幅・文字サイズと同じ扱い）。
     const r = partWidthPx(p.r, p.rGrid, s);
     return (
       <Circle
@@ -182,7 +177,7 @@ function groupByPartId(prims: ElevationPrimitive[]): { id?: string; from: number
   return out;
 }
 
-/** primitives のローカル bbox（生座標・グリッド）。通常表示の hit 領域と選択枠に使う。 */
+/** primitives のローカル bbox（生座標・グリッド）。当たり判定と選択枠に使う。 */
 function localBounds(view: ElevationView) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const see = (x: number, y: number) => { if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; };
@@ -195,16 +190,27 @@ function localBounds(view: ElevationView) {
   return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
 }
 
+type CommonProps = {
+  view: ElevationView;
+  gridPx: number;
+  panX: number;
+  panY: number;
+  mode: string;
+  selected: boolean;
+  setSelectedIds: (ids: string[]) => void;
+  moveElevationView: (id: string, originGrid: { x: number; y: number }) => void;
+};
+
 /**
- * 立面編集モードの描画（E-8b → E-8-v2d で座標系を統一）。
+ * 対話版（E-8-v2j）。素の select / 消去モードで使う。
  * 部材ブロック（parts）を Konva 標準の当たり判定で選択・ドラッグし、
  * ドラッグ終了時は「最寄りの有効スロット」へ吸着させる（はまる場所にしかはまらない）。
  */
-function ElevationEditGroup({ view, gridPx, panX, panY }: {
-  view: ElevationView; gridPx: number; panX: number; panY: number;
-}) {
-  const selectedId = useCanvasStore((s) => s.elevationEditSelectedId);
-  const setSelectedId = useCanvasStore((s) => s.setElevationEditSelectedId);
+function ElevationInteractiveGroup({
+  view, gridPx, panX, panY, mode, selected, setSelectedIds, moveElevationView,
+}: CommonProps) {
+  const selectedPartId = useCanvasStore((s) => s.elevationEditSelectedId);
+  const setSelectedPartId = useCanvasStore((s) => s.setElevationEditSelectedId);
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const prims = useMemo(() => composeViewPrimitives(view), [view]);
   const groups = useMemo(() => groupByPartId(prims), [prims]);
@@ -264,6 +270,19 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
     );
   };
 
+  /** 部材／背景要素をタップしたとき。消去ツール中は削除、そうでなければ選択。 */
+  const onPrimitiveTap = (id: string) => {
+    const st = useCanvasStore.getState();
+    if (mode === 'erase') {
+      if (partById.has(id)) st.setElevationParts(view.id, withPartDeleted(parts, id));
+      else st.setElevationEdits(view.id, withHide(view.edits, id));   // 寸法・文字は削除マーク
+      if (selectedPartId === id) setSelectedPartId(null);
+      return;
+    }
+    setSelectedIds([view.id]);   // 部材を触ったビューを選択状態にする（パレットが出る）
+    setSelectedPartId(id);
+  };
+
   /** 吸着先スロットのハイライト。部材と同じ場所に敷いて「ここにはまる」を見せる。 */
   const snapPreview = (() => {
     if (!preview || !view.geom) return null;
@@ -302,9 +321,9 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
     );
   })();
 
-  // 部材パレット: 有効スロットをゴースト表示し、タップで吸着配置（ローカル座標）。
+  // 部材パレット: 有効スロットをゴースト表示し、タップで吸着配置（選択中のビューだけ）。
   const palette = (() => {
-    if (!addTool || !view.geom || addTool === 'text') return null;
+    if (!selected || !addTool || !view.geom || addTool === 'text') return null;
     const geom = view.geom;
     const slots = buildElevationSlots(geom, addTool);
     if (slots.length === 0) return null;
@@ -337,11 +356,11 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
     );
   })();
 
-  // 文字追加（E-8c の入口）。E-8-v2e: 自由線ツールは撤去し、文字だけ残す。
+  const lb = localBounds(view);
+
+  // 文字追加（E-8c の入口）。選択中のビューで「文字」ツールを選んだときだけ。
   const textSurface = (() => {
-    if (addTool !== 'text') return null;
-    const lb = localBounds(view);
-    if (!lb) return null;
+    if (!selected || addTool !== 'text' || !lb) return null;
     const onPoint = () => {
       const L = pointerLocal();
       if (!L) return;
@@ -354,68 +373,106 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
       st.setElevationAddTool(null);
       st.setElevationTextEditTargetId(id);
     };
-    const pad = 4;
     return (
       <Rect
-        x={lb.minX - pad} y={lb.minY - pad}
-        width={(lb.maxX - lb.minX) + pad * 2} height={(lb.maxY - lb.minY) + pad * 2}
+        x={lb.minX - BG_PAD} y={lb.minY - BG_PAD}
+        width={(lb.maxX - lb.minX) + BG_PAD * 2} height={(lb.maxY - lb.minY) + BG_PAD * 2}
         fill="#000" opacity={0.001} onClick={onPoint} onTap={onPoint}
       />
     );
   })();
 
+  // 背景（＝図全体）の当たり判定。変換 Group の「下」に画面座標で敷く。
+  //   タップ＝ビュー選択 / ドラッグ＝ビュー移動 / 消去＝ビュー削除。
+  //   部材は Group 側（上）にあるので部材が優先して拾う。
+  const bg = lb ? (() => {
+    const ax = gx + (lb.minX - BG_PAD) * s, ay = gy + (lb.minY - BG_PAD) * s;
+    const bx = gx + (lb.maxX + BG_PAD) * s, by = gy + (lb.maxY + BG_PAD) * s;
+    return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };
+  })() : null;
+
+  const onBgTap = () => {
+    if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
+    setSelectedIds([view.id]);
+    setSelectedPartId(null);
+  };
+  /** ドラッグ中は変換 Group を一緒に動かして見た目を追従させる（Rect は透明なので単体では見えない）。 */
+  const onBgDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    const g = groupRef.current;
+    if (!g || !bg) return;
+    g.position({ x: gx + (e.target.x() - bg.x), y: gy + (e.target.y() - bg.y) });
+  };
+  const onBgDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    const g = groupRef.current;
+    if (!bg) return;
+    const dx = (e.target.x() - bg.x) / gridPx, dy = (e.target.y() - bg.y) / gridPx;
+    e.target.position({ x: bg.x, y: bg.y });
+    g?.position({ x: gx, y: gy });
+    const nx = Math.round(view.originGrid.x + dx), ny = Math.round(view.originGrid.y + dy);
+    if (nx === view.originGrid.x && ny === view.originGrid.y) return; // 動いていなければ履歴を汚さない
+    moveElevationView(view.id, { x: nx, y: ny });
+  };
+
+  // 選択枠（ビュー自体が選択されているとき）。
+  const selRect = selected && bg ? { x: bg.x, y: bg.y, w: bg.w, h: bg.h } : null;
+
   return (
-    <Group ref={groupRef} x={gx} y={gy} scaleX={s} scaleY={s}>
-      {snapPreview}
-      {groups.map(({ id, from, items }) => {
-        const part = id ? partById.get(id) : undefined;
-        const interactive = !addTool;
-        const selected = !!id && id === selectedId;
-        const nodes = items.map((p, k) => renderPrimLocal(p, `${from}-${k}`, s, {
-          selected,
-          overridden: !!id && overridden.has(id),
-          interactive,
-        }));
-        if (!interactive || !id) return <React.Fragment key={`g-${from}`}>{nodes}</React.Fragment>;
-        const isText = items.length === 1 && items[0].kind === 'text';
-        // 部材は掴んで隣の有効位置へ。背景（寸法・文字など）は選択のみ。
-        return (
-          <Group
-            key={`g-${from}`}
-            draggable={!!part}
-            dragDistance={4}
-            onDragMove={() => { if (part) onPartDragMove(part); }}
-            onDragEnd={(e) => {
-              e.target.position({ x: 0, y: 0 });
-              if (part) moveToNearestSlot(part);
-            }}
-            onClick={() => setSelectedId(id)}
-            onTap={() => setSelectedId(id)}
-            onDblClick={() => { if (isText) useCanvasStore.getState().setElevationTextEditTargetId(id); }}
-            onDblTap={() => { if (isText) useCanvasStore.getState().setElevationTextEditTargetId(id); }}
-          >
-            {nodes}
-          </Group>
-        );
-      })}
-      {palette}
-      {textSurface}
-    </Group>
+    <>
+      {bg && (
+        <Rect
+          x={bg.x} y={bg.y} width={bg.w} height={bg.h}
+          fill="#000" opacity={0}
+          draggable={mode === 'select'} dragDistance={6}
+          onDragMove={onBgDragMove} onDragEnd={onBgDragEnd}
+          onClick={onBgTap} onTap={onBgTap}
+        />
+      )}
+      <Group ref={groupRef} x={gx} y={gy} scaleX={s} scaleY={s}>
+        {snapPreview}
+        {groups.map(({ id, from, items }) => {
+          const part = id ? partById.get(id) : undefined;
+          const interactive = !addTool;
+          const isSel = !!id && id === selectedPartId;
+          const nodes = items.map((p, k) => renderPrimLocal(p, `${from}-${k}`, s, {
+            selected: isSel,
+            overridden: !!id && overridden.has(id),
+            interactive,
+          }));
+          if (!interactive || !id) return <React.Fragment key={`g-${from}`}>{nodes}</React.Fragment>;
+          const isText = items.length === 1 && items[0].kind === 'text';
+          // 部材は掴んで隣の有効位置へ。背景要素（寸法・文字）は選択のみ。
+          return (
+            <Group
+              key={`g-${from}`}
+              draggable={!!part && mode === 'select'}
+              dragDistance={4}
+              onDragMove={() => { if (part) onPartDragMove(part); }}
+              onDragEnd={(e) => {
+                e.target.position({ x: 0, y: 0 });
+                if (part) moveToNearestSlot(part);
+              }}
+              onClick={() => onPrimitiveTap(id)}
+              onTap={() => onPrimitiveTap(id)}
+              onDblClick={() => { if (isText && mode === 'select') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+              onDblTap={() => { if (isText && mode === 'select') useCanvasStore.getState().setElevationTextEditTargetId(id); }}
+            >
+              {nodes}
+            </Group>
+          );
+        })}
+        {palette}
+        {textSurface}
+      </Group>
+      {selRect && (
+        <Rect x={selRect.x - 4} y={selRect.y - 4} width={selRect.w + 8} height={selRect.h + 8}
+          stroke="#378ADD" strokeWidth={1} dash={[6, 4]} listening={false} />
+      )}
+    </>
   );
 }
 
-type GroupProps = {
-  view: ElevationView;
-  gridPx: number;
-  panX: number;
-  panY: number;
-  mode: string;
-  selected: boolean;
-  setSelectedIds: (ids: string[]) => void;
-  moveElevationView: (id: string, originGrid: { x: number; y: number }) => void;
-};
-
-function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelectedIds, moveElevationView }: GroupProps) {
+/** 閲覧・他ツール中の描画（cache() した 1 枚絵。従来どおり軽い）。 */
+function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelectedIds, moveElevationView }: CommonProps) {
   // 「確定 gridPx」: 子ノード/キャッシュはこの値で作る。ズーム中は据え置き、停止後に追従。
   const [cachedGridPx, setCachedGridPx] = useState(gridPx);
 
@@ -467,10 +524,8 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     return () => { g.clearCache(); };
   }, [view, cachedGridPx, mode]);
 
-  // E-8-fix: 閲覧(view)モードでも当たり判定は生かす。ただし単タップでは何もせず、
-  //   ダブルタップのときだけ編集モードへ入る（閲覧中に選択・移動が起きる従来の挙動は変えない）。
+  // 閲覧中も当たり判定は生かす（タップで選択できる）。
   const listening = mode === 'select' || mode === 'erase' || mode === 'move-select' || mode === 'view';
-  // ズーム中の追従倍率。停止時は 1。
   const followScale = gridPx / cachedGridPx;
 
   const onClick = () => {
@@ -478,20 +533,11 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
     setSelectedIds([view.id]);
   };
-  /** E-8b: ダブルタップで立面編集モードへ（部材単位の編集）。 */
-  const onDblTap = () => {
-    if (mode !== 'select' && mode !== 'view') return;
-    useCanvasStore.getState().setSelectedIds([view.id]);
-    useCanvasStore.getState().setElevationEditViewId(view.id);
-  };
   const onDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const g = e.target;
-    // ドラッグは position(x/y) を親(Layer)px で動かす。scale は無関係。
     const dx = (g.x() - panX) / gridPx, dy = (g.y() - panY) / gridPx;
     g.x(panX); g.y(panY);
     const gx = Math.round(view.originGrid.x + dx), gy = Math.round(view.originGrid.y + dy);
-    // E-8-fix: 動いていない「ドラッグ」で履歴を汚さない（タップの取りこぼし対策で dragDistance を
-    //   入れたが、それでも 1 グリッド未満のドラッグは位置が変わらないため書き込まない）。
     if (gx === view.originGrid.x && gy === view.originGrid.y) return;
     moveElevationView(view.id, { x: gx, y: gy });
   };
@@ -507,9 +553,7 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
 
   return (
     <>
-      {/* E-8-fix: dragDistance を入れないと、押下中の 1px の揺れでもドラッグ扱いになり
-          Konva が click/tap を発火しない＝ダブルクリック/ダブルタップが成立しない（指では特に顕著）。 */}
-      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} dragDistance={6} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} onDblClick={onDblTap} onDblTap={onDblTap} listening={listening}>
+      <Group ref={groupRef} x={panX} y={panY} scaleX={followScale} scaleY={followScale} draggable={mode === 'select'} dragDistance={6} onDragEnd={onDragEnd} onClick={onClick} onTap={onClick} listening={listening}>
         {children}
         {/* cached hit canvas は listening=false 子を無視するため、bbox を覆う透明 Rect を hit 領域に。 */}
         {wboxCached && <Rect x={wboxCached.x} y={wboxCached.y} width={wboxCached.w} height={wboxCached.h} fill="#000" opacity={0} listening={listening} />}
@@ -530,32 +574,38 @@ export default function ElevationViewLayer() {
   const selectedIds = useCanvasStore((s) => s.selectedIds);
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds);
   const moveElevationView = useCanvasStore((s) => s.moveElevationView);
-  const editingViewId = useCanvasStore((s) => s.elevationEditViewId);
+  const selectActive = useCanvasStore((s) => s.selectActive);
+  const toolFlags = useCanvasStore((s) => ({
+    mode: s.mode,
+    isHeightMarkerMode: s.isHeightMarkerMode,
+    isRidgeLineMode: s.isRidgeLineMode,
+    isMeasuring: s.isMeasuring,
+    isMagnetPinMode: s.isMagnetPinMode,
+    isAreaDesignationMode: s.isAreaDesignationMode,
+    isReorderMode: s.isReorderMode,
+    moveSelectActive: s.mode === 'move-select',
+    pendingTargetType: s.pendingTargetType,
+  }));
 
   const gridPx = INITIAL_GRID_PX * zoom;
   const arr = views ?? [];
+  // E-8-v2j: 素の select（選択ON）と消去モードでは部材を直接触れる対話版で描く。
+  //   それ以外（閲覧・他ツール中）はキャッシュ版のままにして軽さを保つ。
+  const interactive = (isPlainSelectMode(toolFlags) && selectActive) || mode === 'erase';
   if (arr.length === 0) return null;
 
   return (
     <Layer>
-      {arr.map((view) => (
-        editingViewId === view.id ? (
-          // E-8b: 編集中のビューは cache を外して部材単位で扱う。
-          <ElevationEditGroup key={view.id} view={view} gridPx={gridPx} panX={panX} panY={panY} />
-        ) : (
-        <ElevationViewGroup
-          key={view.id}
-          view={view}
-          gridPx={gridPx}
-          panX={panX}
-          panY={panY}
-          mode={mode}
-          selected={selectedIds.includes(view.id)}
-          setSelectedIds={setSelectedIds}
-          moveElevationView={moveElevationView}
-        />
-        )
-      ))}
+      {arr.map((view) => {
+        const common = {
+          view, gridPx, panX, panY, mode,
+          selected: selectedIds.includes(view.id),
+          setSelectedIds, moveElevationView,
+        };
+        return interactive
+          ? <ElevationInteractiveGroup key={view.id} {...common} />
+          : <ElevationViewGroup key={view.id} {...common} />;
+      })}
     </Layer>
   );
 }
