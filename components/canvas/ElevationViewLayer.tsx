@@ -19,6 +19,11 @@
 // E-8-v2f: 1 部材が複数プリミティブ（太線＋丸ハンドル、踏板の帯＋輪郭）で描かれるようになった。
 //  ・編集モードでは meta.id が同じ連続プリミティブを 1 つの Group にまとめ、
 //    「部材ごと」に選択・ドラッグできるようにする（平面の部材操作と同じ手触り）。
+//
+// E-8-v2g: スロット座標は「面軸の生グリッド」、描画は「ローカル（minXg を引いた値）」。
+//  ・ここを混ぜていたため吸着が別スパンへ飛び、パレットのゴーストも minXg ぶんズレていた
+//    （＝「手摺をドラッグしてもコマ位置にスナップしない」の原因）。境界で必ず変換する。
+//  ・ドラッグ中は最寄りコマを一時ハイライトして、どこにはまるかを見せる。
 // ============================================================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Layer, Group, Circle, Line, Rect, Text } from 'react-konva';
@@ -27,9 +32,9 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { nextAddId, overriddenTextIds, withAdd } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
-import { ELEV_SELECT_COLOR } from '@/lib/konva/elevation/elevationPartStyle';
+import { ELEV_PART_STYLE, ELEV_SELECT_COLOR } from '@/lib/konva/elevation/elevationPartStyle';
 import {
-  buildElevationSlots, nextPartId, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
+  buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
 import type { ElevationPart } from '@/lib/konva/elevation/elevationParts';
 import type { ElevationPrimitive, ElevationView } from '@/types';
@@ -40,6 +45,10 @@ type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 const RECACHE_DEBOUNCE_MS = 200;
 /** 編集モードで線を掴める幅(px)。 */
 const EDIT_HIT_PX = 14;
+/** 吸着プレビューの帯の太さ(px)。部材より太く、下に敷く。 */
+const SNAP_BAND_PX = 12;
+/** 埋まっている位置のプレビュー色（そこには置けない）。 */
+const SNAP_TAKEN_COLOR = '#8a8a86';
 
 /** hex(#rrggbb) を fillOpacity 付き rgba に。fill の半透明は fill 側で表し stroke は不透明を保つ
  *  （E-5-fix2: 従来は opacity=fillOpacity で shape 全体を薄くし、建物外形・屋根の輪郭線＝L 字
@@ -190,6 +199,8 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
   const groups = useMemo(() => groupByPartId(prims), [prims]);
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const groupRef = useRef<Konva.Group>(null);
+  /** ドラッグ中の吸着先（E-8-v2g のスナップフィードバック）。 */
+  const [preview, setPreview] = useState<{ slot: ElevationSlot; taken: boolean } | null>(null);
 
   // ローカル → 画面 の変換は Group に持たせる（子はローカル座標のまま置く）。
   const s = gridPx * view.scale;
@@ -205,13 +216,32 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
 
   const parts = view.parts ?? [];
   const partById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
+  const minXg = view.geom?.minXg ?? 0;
+  /** スロットの生グリッド → 描画のローカル座標。 */
+  const toLocalX = (rawX: number) => rawX - minXg;
+
+  /** ポインタ位置に最も近い有効スロット（生グリッドで比較する）。 */
+  const nearestSlot = (kind: ElevationPart['kind']): ElevationSlot | null => {
+    const geom = view.geom;
+    const local = pointerLocal();
+    if (!geom || !local) return null;
+    return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind);
+  };
+
+  /** ドラッグ中: 最寄りコマを一時ハイライト（置けるかどうかも色で見せる）。 */
+  const onPartDragMove = (part: ElevationPart) => {
+    const slot = nearestSlot(part.kind);
+    if (!slot) { if (preview) setPreview(null); return; }
+    const taken = slotOccupied(parts.filter((p) => p.id !== part.id), slot);
+    if (!preview || slotKey(preview.slot) !== slotKey(slot) || preview.taken !== taken) {
+      setPreview({ slot, taken });
+    }
+  };
 
   /** 部材を最寄りの有効スロットへ移す（同じスロットなら何もしない）。 */
   const moveToNearestSlot = (part: ElevationPart) => {
-    const geom = view.geom;
-    const local = pointerLocal();
-    if (!geom || !local) return;
-    const slot = snapToSlot({ x: local.x, yMm: -local.y * 10 }, geom, part.kind);
+    setPreview(null);
+    const slot = nearestSlot(part.kind);
     if (!slot) return;
     const same = slot.spanIndex === part.spanIndex && slot.postIndex === part.postIndex
       && slot.levelMm === part.levelMm && slot.scaffoldIndex === part.scaffoldIndex;
@@ -222,6 +252,44 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
       view.id, parts.map((p) => (p.id === part.id ? moved : p)),
     );
   };
+
+  /** 吸着先スロットのハイライト。部材と同じ場所に敷いて「ここにはまる」を見せる。 */
+  const snapPreview = (() => {
+    if (!preview || !view.geom) return null;
+    const sg = view.geom.scaffolds[preview.slot.scaffoldIndex];
+    if (!sg) return null;
+    const c = preview.taken ? SNAP_TAKEN_COLOR : ELEV_SELECT_COLOR;
+    const x0 = toLocalX(preview.slot.x0), x1 = toLocalX(preview.slot.x1);
+    const isPostKind = preview.slot.kind === 'post' || preview.slot.kind === 'jack';
+    if (isPostKind) {
+      return (
+        <Line
+          points={[x0, -sg.jackTopMm / 10, x0, -sg.topRailMm / 10]}
+          stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
+          strokeScaleEnabled={false} listening={false}
+        />
+      );
+    }
+    const y = -(preview.slot.levelMm ?? 0) / 10;
+    const kh = ELEV_PART_STYLE.komaHalfGrid;
+    return (
+      <>
+        <Line
+          points={[x0, y, x1, y]}
+          stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
+          strokeScaleEnabled={false} listening={false}
+        />
+        {/* 吸着先のコマ（両端の支柱の受け金具）を強調する */}
+        {[x0, x1].map((cx, i) => (
+          <Line
+            key={`koma-${i}`} points={[cx - kh, y, cx + kh, y]}
+            stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidth + 2} opacity={0.95}
+            strokeScaleEnabled={false} listening={false}
+          />
+        ))}
+      </>
+    );
+  })();
 
   // 部材パレット: 有効スロットをゴースト表示し、タップで吸着配置（ローカル座標）。
   const palette = (() => {
@@ -238,14 +306,14 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
         {slots.map((slot, i) => {
           const sg = geom.scaffolds[slot.scaffoldIndex];
           const isPostKind = slot.kind === 'post' || slot.kind === 'jack';
-          const topMm = isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 225;
-          const botMm = isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 225;
+          const topMm = isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 150;
+          const botMm = isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 150;
           const padX = isPostKind ? 6 / s : 0;
           const taken = slotOccupied(parts, slot);
           return (
             <Rect
               key={`slot-${i}`}
-              x={slot.x0 - padX} y={-topMm / 10}
+              x={toLocalX(slot.x0) - padX} y={-topMm / 10}
               width={(slot.x1 - slot.x0) + padX * 2} height={(topMm - botMm) / 10}
               fill={taken ? '#888888' : ELEV_SELECT_COLOR} opacity={taken ? 0.06 : 0.14}
               stroke={taken ? undefined : ELEV_SELECT_COLOR} strokeWidth={taken ? 0 : 1}
@@ -287,6 +355,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
 
   return (
     <Group ref={groupRef} x={gx} y={gy} scaleX={s} scaleY={s}>
+      {snapPreview}
       {groups.map(({ id, from, items }) => {
         const part = id ? partById.get(id) : undefined;
         const interactive = !addTool;
@@ -304,6 +373,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
             key={`g-${from}`}
             draggable={!!part}
             dragDistance={4}
+            onDragMove={() => { if (part) onPartDragMove(part); }}
             onDragEnd={(e) => {
               e.target.position({ x: 0, y: 0 });
               if (part) moveToNearestSlot(part);

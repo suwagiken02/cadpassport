@@ -1,5 +1,5 @@
 // ============================================================
-// 立面の部材の見た目 (E-8-v2f・pure・node 安全)
+// 立面の部材の見た目 (E-8-v2f/v2g・pure・node 安全)
 //
 // 実機指摘: 平面図の部材は「太い色線＋両端の丸ハンドル」で一目で部材と分かるのに、
 // 立面図は全部が細い線で「部材がそもそもわからない、線じゃん」。
@@ -20,6 +20,7 @@
 //     平面の「線の太さとハンドル径の比率」だけを写している。
 // ============================================================
 import { HANDRAIL_COLORS, getHandrailColor } from '@/lib/konva/handrailColors';
+import { KOMA_PITCH_MM } from './elevationEngine';
 import type { ElevationPrimitive, ElevationPrimitiveMeta, HandrailLengthMm } from '@/types';
 
 /** 選択色。平面(ScaffoldLayer)の選択色と同値。 */
@@ -34,9 +35,11 @@ export const ELEV_PART_COLORS = {
   /** 手摺の既定色 = 平面の 1800 手摺と同色。 */
   rail: getHandrailColor(1800),
   brace: '#B08CFF',
+  /** コマ(受け金具)の印。支柱より明るく細く＝部材より控えめ、グリッドより主張 (= E-8-v2g)。 */
+  koma: '#FFE873',
 } as const;
 
-/** 部材の太さ・ハンドル径（screen px）と、ジャッキのベース幅（グリッド）。 */
+/** 部材の太さ・ハンドル径（screen px）と、記号の横幅（グリッド）。 */
 export const ELEV_PART_STYLE = {
   railWidth: 3.2,
   railHandleR: 3,
@@ -50,7 +53,25 @@ export const ELEV_PART_STYLE = {
   jackBaseWidth: 5,
   /** 同・底辺の片側幅（グリッド＝実寸 14mm 相当）。 */
   jackBaseHalfGrid: 1.4,
+  /** コマの印の太さ(px)。支柱(4.2)より細くして「支柱に付いた金具」に見せる。 */
+  komaWidth: 1.8,
+  /** コマの印の片側の張り出し（グリッド＝実寸 30mm 相当）。支柱より少し広い横チョン。 */
+  komaHalfGrid: 3,
 } as const;
+
+/**
+ * コマ（楔ポケット＝手摺の受け金具）の高さ列(mm)。
+ * fromMm から 450 刻みで toMm 以下まで。ジャッキ上端(GL+150)起点で使う。
+ * エンジンの ElevationLevels.komaGridMm と同じ定義（そちらは buildElevationLevels が持つ）。
+ */
+export function komaLevelsMm(
+  fromMm: number, toMm: number, pitchMm: number = KOMA_PITCH_MM,
+): number[] {
+  const out: number[] = [];
+  if (!(pitchMm > 0) || !(toMm >= fromMm)) return out;
+  for (let h = fromMm; h <= toMm + 1e-6; h += pitchMm) out.push(Math.round(h));
+  return out;
+}
 
 /**
  * スパン長(mm)から手摺色を引く。平面と同じ長さ別カラー。
@@ -109,10 +130,20 @@ export function pushBoard(out: Out, x0: number, x1: number, y: number, meta: Ele
   line(out, x0, y, x1, y, C.board, S.boardWidth, 0.95, meta);
 }
 
-/** 支柱: 太い縦線＋上下端の端点マーク。 */
-export function pushPost(out: Out, x: number, yBottom: number, yTop: number, meta: ElevationPrimitiveMeta): void {
+/**
+ * 支柱: 太い縦線＋上下端の端点マーク、＋コマの印 (= E-8-v2g)。
+ * komaYs はコマの縦位置（ローカル y）。実物の支柱には 450 刻みでコマが付いており、
+ * 職人はそれを目印に手摺を掛けるので、立面でも見えないと手摺位置が読めない（鮎澤氏指摘）。
+ */
+export function pushPost(
+  out: Out, x: number, yBottom: number, yTop: number, meta: ElevationPrimitiveMeta,
+  komaYs?: number[],
+): void {
   const C = ELEV_PART_COLORS, S = ELEV_PART_STYLE;
   line(out, x, yBottom, x, yTop, C.post, S.postWidth, undefined, meta);
+  for (const ky of komaYs ?? []) {
+    line(out, x - S.komaHalfGrid, ky, x + S.komaHalfGrid, ky, C.koma, S.komaWidth, 0.85, meta);
+  }
   dot(out, x, yTop, S.postCapR, C.post, undefined, meta);
   dot(out, x, yBottom, S.postCapR, C.post, undefined, meta);
 }

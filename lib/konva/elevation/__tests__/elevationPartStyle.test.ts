@@ -9,7 +9,9 @@ import { HANDRAIL_COLORS } from '@/lib/konva/handrailColors';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToParts, partsToPrimitives } from '../elevationParts';
-import { ELEV_PART_COLORS, ELEV_PART_STYLE, nominalSpanMm, railColorForSpanMm } from '../elevationPartStyle';
+import {
+  ELEV_PART_COLORS, ELEV_PART_STYLE, komaLevelsMm, nominalSpanMm, railColorForSpanMm,
+} from '../elevationPartStyle';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 const bld = (id: string): BuildingShape => ({ id, type: 'polygon', points: RECT, fill: '#3d3d3a', floor: 1 });
@@ -35,7 +37,9 @@ describe('部材の太さ（細線に潰れない）', () => {
     const railLines = byKind('rail').filter((p) => p.kind === 'line');
     expect(railLines.length).toBeGreaterThan(0);
     expect(railLines.every((p) => p.kind === 'line' && p.width === ELEV_PART_STYLE.railWidth)).toBe(true);
-    const postLines = byKind('post').filter((p) => p.kind === 'line');
+    // 支柱本体（コマの印は別色・別太さなので stroke で分ける）
+    const postLines = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post);
+    expect(postLines.length).toBeGreaterThan(0);
     expect(postLines.every((p) => p.kind === 'line' && p.width === ELEV_PART_STYLE.postWidth)).toBe(true);
   });
 });
@@ -61,10 +65,66 @@ describe('丸ハンドル（平面と同じ「両端の●」）', () => {
     expect(d0.r).toBe(ELEV_PART_STYLE.railHandleR);
   });
 
-  it('支柱は上下端に端点マークを持つ', () => {
+  it('支柱は上下端に端点マークを持つ（1 本につき 2 つ）', () => {
     const posts = byKind('post');
-    expect(posts.filter((p) => p.kind === 'circle')).toHaveLength(
-      posts.filter((p) => p.kind === 'line').length * 2);
+    const postIds = new Set(posts.map((p) => p.meta!.id));
+    expect(postIds.size).toBeGreaterThan(0);
+    for (const id of Array.from(postIds)) {
+      expect(posts.filter((p) => p.meta!.id === id && p.kind === 'circle')).toHaveLength(2);
+    }
+  });
+});
+
+// ============================================================
+// E-8-v2g: コマ（450 刻みの受け金具）。
+// 実物の支柱には 450 刻みでコマが付いていて、職人はそれを目印に手摺を掛ける。
+// 立面で見えないと手摺位置が読めない（鮎澤氏指摘）。
+// ============================================================
+describe('コマの列（ジャッキ上端起点・450 刻み・上端まで）', () => {
+  it('GL+150 から 450 刻みで、上端を超えない', () => {
+    expect(komaLevelsMm(150, 2000)).toEqual([150, 600, 1050, 1500, 1950]);
+    expect(komaLevelsMm(150, 1950)).toEqual([150, 600, 1050, 1500, 1950]); // 上端ちょうどは含む
+    expect(komaLevelsMm(150, 1949)).toEqual([150, 600, 1050, 1500]);
+  });
+
+  it('上端が起点より下なら空、ピッチが 0 以下でも空（無限ループにしない）', () => {
+    expect(komaLevelsMm(150, 100)).toEqual([]);
+    expect(komaLevelsMm(150, 2000, 0)).toEqual([]);
+    expect(komaLevelsMm(150, 2000, -450)).toEqual([]);
+  });
+
+  it('エンジンが持つコマ格子と同じ定義', () => {
+    const sg = faceElevationToParts(fe).geom.scaffolds[0];
+    expect(sg.komaGridMm).toEqual(komaLevelsMm(sg.jackTopMm, sg.topRailMm));
+  });
+});
+
+describe('コマの描画', () => {
+  const komaMarks = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.koma);
+  const sg = faceElevationToParts(fe).geom.scaffolds[0];
+
+  it('支柱 1 本ごとにコマ列ぶんの印が出る', () => {
+    const postCount = sg.postXs.length;
+    expect(komaMarks).toHaveLength(postCount * sg.komaGridMm.length);
+  });
+
+  it('コマは水平の短い印で、支柱の中心に左右対称', () => {
+    const m = komaMarks[0];
+    if (m.kind !== 'line') throw new Error('line が出ていない');
+    expect(m.y1).toBe(m.y2);                                  // 水平
+    expect(m.x2 - m.x1).toBe(ELEV_PART_STYLE.komaHalfGrid * 2); // 支柱をまたぐ幅
+  });
+
+  it('コマの高さはコマ列そのもの（ローカル y = -mm/10）', () => {
+    const ys = new Set(komaMarks.map((p) => (p.kind === 'line' ? p.y1 : NaN)));
+    expect(ys).toEqual(new Set(sg.komaGridMm.map((mm) => -mm / 10)));
+  });
+
+  it('部材より控えめ・グリッドより主張（支柱より細く、不透明度も落とす）', () => {
+    expect(ELEV_PART_STYLE.komaWidth).toBeLessThan(ELEV_PART_STYLE.postWidth);
+    expect(ELEV_PART_STYLE.komaWidth).toBeGreaterThan(1); // 縮小しても消えない太さ
+    const m = komaMarks[0];
+    expect(m.kind === 'line' && m.opacity).toBe(0.85);
   });
 });
 

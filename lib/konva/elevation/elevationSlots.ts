@@ -31,7 +31,13 @@ export type ElevationSlot = {
 /** パレットに出す部材（自動生成されない筋交も含む）。 */
 export const PALETTE_KINDS: ElevationPartKind[] = ['post', 'rail', 'board', 'jack', 'brace'];
 
-/** その部材が使う縦位置の一覧。 */
+/**
+ * 縦位置は「コマ列（ジャッキ上端から 450 刻み）」を基準にする (= E-8-v2g)。
+ * 実物の支柱には 450 刻みでコマが付いていて、そこにしか部材は掛からない。
+ * 自動生成の作業床は 1800 ピッチ（スタート端数ぶんズレる）でコマ列に乗らないので、
+ * 踏板・筋交は「作業床の高さ ∪ コマ列」にする。既存の自動部材の置き場所を保ったまま、
+ * 手で置く/動かすときはコマ全段が使える（＝現場の掛け方に合う）。
+ */
 function levelsFor(
   kind: ElevationPartKind, sg: ElevationPartGeometry['scaffolds'][number],
 ): (number | undefined)[] {
@@ -39,15 +45,14 @@ function levelsFor(
     case 'post':
     case 'jack':
       return [undefined];                  // 足元〜天端で 1 本
+    case 'rail':
+    case 'raiseRail':
+      return sg.komaGridMm;                // コマ列そのまま
     case 'board':
     case 'brace':
     case 'raiseBoard':
-      return sg.levelsMm;                  // 作業床の高さ
-    case 'rail':
-    case 'raiseRail':
-      return sg.komaGridMm;                // 450 刻み
     default:
-      return sg.levelsMm;
+      return Array.from(new Set([...sg.levelsMm, ...sg.komaGridMm])).sort((a, b) => a - b);
   }
 }
 
@@ -73,6 +78,12 @@ export function buildElevationSlots(
     }
   });
   return out;
+}
+
+/** スロットの同一判定キー (= E-8-v2g、 ドラッグ中の吸着先が変わったかの比較用)。 */
+export function slotKey(slot: ElevationSlot): string {
+  const pos = slot.postIndex != null ? `p${slot.postIndex}` : `s${slot.spanIndex ?? '-'}`;
+  return `${slot.kind}@${slot.scaffoldIndex}:${pos}:${slot.levelMm ?? '-'}`;
 }
 
 /** スロットの代表点（吸着距離の基準）。横はスパン中央、縦は高さ。 */

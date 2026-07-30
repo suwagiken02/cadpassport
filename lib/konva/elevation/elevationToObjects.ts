@@ -17,7 +17,7 @@ import type {
 } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import {
-  nominalSpanMm, pushBoard, pushJack, pushPost, pushRail,
+  komaLevelsMm, nominalSpanMm, pushBoard, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 
 /** 立面ビューの初期配置位置（グループローカル原点 = 左下=GL・左端）。
@@ -170,9 +170,11 @@ export function faceElevationToPrimitives(
       pushRail(prims, lx(r.x0), lx(r.x1), ly(r.heightMm), nominalSpanMm(sc.postXs, r.x0),
         { kind: 'rail', id: `rail:${si}:${r.heightMm}:${q(lx(r.x0))}`, heightMm: r.heightMm, x: q(lx(r.x0)) });
     }
+    // E-8-v2g: コマ(450 刻みの受け金具)を支柱上に描く。
+    const komaYs = sc.levels.komaGridMm.map(ly);
     sc.postXs.forEach((px, pi) => {
       pushPost(prims, lx(px), ly(jackTop), ly(topRail),
-        { kind: 'post', id: `post:${si}:${pi}`, index: pi, x: q(lx(px)), heightMm: topRail });
+        { kind: 'post', id: `post:${si}:${pi}`, index: pi, x: q(lx(px)), heightMm: topRail }, komaYs);
     });
     // ジャッキ（支柱下端のベース記号）
     sc.postXs.forEach((px, pi) => {
@@ -192,7 +194,8 @@ export function faceElevationToPrimitives(
     }
     postExtendTop.forEach((top, px) => {
       pushPost(prims, lx(px), ly(topRail), ly(top),
-        { kind: 'post', id: `postExt:${si}:${q(lx(px))}`, x: q(lx(px)), heightMm: top });
+        { kind: 'post', id: `postExt:${si}:${q(lx(px))}`, x: q(lx(px)), heightMm: top },
+        komaLevelsMm(jackTop, top).filter((h) => h > topRail + 1e-6).map(ly));
     });
   });
 

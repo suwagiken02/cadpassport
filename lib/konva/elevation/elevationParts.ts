@@ -16,7 +16,7 @@ import type { ElevationPrimitive } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import { faceElevationExtent, q } from './elevationToObjects';
 import {
-  nominalSpanMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
+  komaLevelsMm, nominalSpanMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 
 /** 部材の種類。palette に出すのは post/rail/board/jack/brace。 */
@@ -209,13 +209,19 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
           { kind: 'rail', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
         break;
       case 'post':
+        // E-8-v2g: コマ(450 刻みの受け金具)を支柱上に描く。列は geom が持つコマ格子。
         pushPost(out, lx(span.x0), ly(sg.jackTopMm), ly(sg.topRailMm),
-          { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.topRailMm });
+          { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.topRailMm },
+          sg.komaGridMm.map(ly));
         break;
-      case 'postExt':
-        pushPost(out, lx(span.x0), ly(sg.topRailMm), ly(p.levelMm ?? sg.topRailMm),
-          { kind: 'post', id: p.id, x: q(lx(span.x0)), heightMm: p.levelMm });
+      case 'postExt': {
+        // 延長部も同じピッチでコマが続く（基準はジャッキ上端のまま）。
+        const top = p.levelMm ?? sg.topRailMm;
+        pushPost(out, lx(span.x0), ly(sg.topRailMm), ly(top),
+          { kind: 'post', id: p.id, x: q(lx(span.x0)), heightMm: p.levelMm },
+          komaLevelsMm(sg.jackTopMm, top).filter((h) => h > sg.topRailMm + 1e-6).map(ly));
         break;
+      }
       case 'jack':
         pushJack(out, lx(span.x0), ly(sg.jackTopMm), 0,
           { kind: 'jack', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.jackTopMm });
