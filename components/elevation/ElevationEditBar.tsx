@@ -10,7 +10,15 @@ import React, { useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { hasEditFor, withHide, withoutEditsFor } from '@/lib/konva/elevation/elevationEdits';
 import { describeEdit } from '@/lib/konva/elevation/elevationRematch';
+import { PALETTE_KINDS } from '@/lib/konva/elevation/elevationSlots';
+import type { ElevationPartKind } from '@/lib/konva/elevation/elevationParts';
 import type { ElevationPrimitiveKind } from '@/types';
+
+/** パレットの部材名。 */
+const PART_LABEL: Record<ElevationPartKind, string> = {
+  post: '支柱', postExt: '支柱延長', jack: 'ジャッキ', board: '踏板',
+  rail: '手摺', raiseBoard: '嵩上げ床', raiseRail: '嵩上げ手摺', brace: '筋交',
+};
 
 const KIND_LABEL: Record<ElevationPrimitiveKind, string> = {
   building: '建物外形', roof: '屋根', ridge: '棟', gl: 'GL',
@@ -89,19 +97,22 @@ export default function ElevationEditBar() {
 
   return (
     <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
-      {/* E-8d: 追加ツール */}
-      <div className="flex items-center gap-1 mb-2">
-        <span className="text-[10px] text-dimension mr-1">追加</span>
-        {([['rail', '手摺'], ['post', '支柱'], ['line', '自由線'], ['text', '文字']] as const).map(([t, label]) => (
-          <button key={t} type="button"
-            onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === t ? null : t)}
+      {/* E-8-v2c: 部材ブロックのパレット。選ぶと有効位置がゴースト表示され、タップで吸着配置。 */}
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        <span className="text-[10px] text-dimension mr-1">部材</span>
+        {PALETTE_KINDS.map((k) => (
+          <button key={k} type="button"
+            onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === k ? null : k)}
             className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
-              addTool === t ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
+              addTool === k ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
             }`}>
-            {label}
+            {PART_LABEL[k]}
           </button>
         ))}
-        {addTool && (
+        {addTool && addTool !== 'line' && addTool !== 'text' && (
+          <span className="text-[10px] text-accent ml-1 whitespace-nowrap">はまる位置をタップ</span>
+        )}
+        {(addTool === 'line' || addTool === 'text') && (
           <span className="text-[10px] text-accent ml-1 whitespace-nowrap">
             {addTool === 'text' ? '位置をタップ' : addDraft ? '終点をタップ' : '始点をタップ'}
           </span>

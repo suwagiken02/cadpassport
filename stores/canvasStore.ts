@@ -475,9 +475,13 @@ type CanvasStore = {
   carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView) => ElevationView;
   /** 孤立した編集の一覧を差し替える (= E-8d、 ユーザーが削除するとき)。 */
   setElevationOrphanEdits: (viewId: string, orphans: import('@/types').ElevationEdit[]) => void;
-  /** 立面編集モードの追加ツール (= E-8d、 null=選択操作)。 */
-  elevationAddTool: 'rail' | 'post' | 'line' | 'text' | null;
-  setElevationAddTool: (t: 'rail' | 'post' | 'line' | 'text' | null) => void;
+  /** 立面編集モードのパレット選択 (= E-8-v2c、 null=選択操作)。部材ブロックの種類。 */
+  elevationAddTool: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'line' | 'text' | null;
+  setElevationAddTool: (t: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'line' | 'text' | null) => void;
+  /** 部材ブロックを追加する (= E-8-v2c、 履歴に積む)。 */
+  addElevationPart: (viewId: string, part: import('@/lib/konva/elevation/elevationParts').ElevationPart) => void;
+  /** 部材ブロックを差し替える (= E-8-v2d、 移動/削除の一括更新)。 */
+  setElevationParts: (viewId: string, parts: import('@/lib/konva/elevation/elevationParts').ElevationPart[]) => void;
   /** 追加ツールの1点目（ビューローカル座標）。 */
   elevationAddDraft: { x: number; y: number } | null;
   setElevationAddDraft: (p: { x: number; y: number } | null) => void;
@@ -1534,6 +1538,30 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
   elevationAddTool: null,
   setElevationAddTool: (t) => set({ elevationAddTool: t, elevationAddDraft: null, elevationEditSelectedId: null }),
+  addElevationPart: (viewId, part) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((v) =>
+          (v.id === viewId ? { ...v, parts: [...(v.parts ?? []), part] } : v)),
+      },
+      isDirty: true,
+    });
+  },
+  setElevationParts: (viewId, parts) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        elevationViews: (canvasData.elevationViews ?? []).map((v) =>
+          (v.id === viewId ? { ...v, parts } : v)),
+      },
+      isDirty: true,
+    });
+  },
   elevationAddDraft: null,
   setElevationAddDraft: (p) => set({ elevationAddDraft: p }),
   setElevationEdits: (viewId, edits) => {

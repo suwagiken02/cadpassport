@@ -17,6 +17,9 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { nextAddId, overriddenTextIds, primitiveBounds, withAdd, withMove } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
+import {
+  buildElevationSlots, nextPartId, slotOccupied, slotToPart, type ElevationSlot,
+} from '@/lib/konva/elevation/elevationSlots';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -96,9 +99,53 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
     y: ((sy - panY) / gridPx - view.originGrid.y) / view.scale,
   });
 
+  // E-8-v2c: 部材ブロックのパレット配置。有効スロットをゴースト表示し、タップで吸着配置。
+  const partPalette = (() => {
+    if (!addTool || !view.geom || addTool === 'line' || addTool === 'text') return null;
+    const geom = view.geom;
+    const slots = buildElevationSlots(geom, addTool);
+    if (slots.length === 0) return null;
+    const parts = view.parts ?? [];
+
+    const place = (slot: ElevationSlot) => {
+      if (slotOccupied(parts, slot)) return; // 同じ位置に同種は置かない
+      const id = nextPartId(parts, slot.kind);
+      useCanvasStore.getState().addElevationPart(view.id, slotToPart(slot, id));
+    };
+
+    return (
+      <>
+        {slots.map((slot, i) => {
+          const sg = geom.scaffolds[slot.scaffoldIndex];
+          const isPostKind = slot.kind === 'post' || slot.kind === 'jack';
+          // ゴーストの当たり範囲: 支柱系は縦長、スパン系はスパン幅×1段ぶん。
+          const yTopMm = isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 225;
+          const yBotMm = isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 225;
+          const a = S(slot.x0, -yTopMm / 10), b = S(slot.x1, -yBotMm / 10);
+          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+          const w = Math.max(Math.abs(b.x - a.x), 10), h = Math.max(Math.abs(b.y - a.y), 10);
+          const taken = slotOccupied(parts, slot);
+          return (
+            <Rect
+              key={`slot-${i}`}
+              x={x - (isPostKind ? 5 : 0)} y={y} width={isPostKind ? w + 10 : w} height={h}
+              fill={taken ? '#888888' : '#FF6B35'}
+              opacity={taken ? 0.06 : 0.14}
+              stroke={taken ? undefined : '#FF6B35'}
+              strokeWidth={taken ? 0 : 0.5}
+              dash={[3, 3]}
+              onClick={() => place(slot)}
+              onTap={() => place(slot)}
+            />
+          );
+        })}
+      </>
+    );
+  })();
+
   // E-8d: 追加ツールの入力面（ビュー全体を覆う透明 Rect）。2点タップで線、1点で文字。
   const addSurface = (() => {
-    if (!addTool) return null;
+    if (!addTool || (addTool !== 'line' && addTool !== 'text')) return null;
     const b = prims.reduce<{ minX: number; minY: number; maxX: number; maxY: number } | null>((acc, p) => {
       const q = primitiveBounds(p);
       if (!acc) return { ...q };
@@ -131,19 +178,15 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
         s.setElevationTextEditTargetId(id);
         return;
       }
+      // 自由線（E-8d の名残・部材は v2c のパレットが担当。v2e で撤去予定）。
       if (!addDraft) { s.setElevationAddDraft(L); return; }
-      // 2点目: ツールごとに軸を固定（手摺=水平・支柱=垂直・自由線=そのまま）。
       const x1 = addDraft.x, y1 = addDraft.y;
-      const x2 = addTool === 'post' ? x1 : L.x;
-      const y2 = addTool === 'rail' ? y1 : L.y;
+      const x2 = L.x, y2 = L.y;
       if (Math.abs(x2 - x1) < 1e-6 && Math.abs(y2 - y1) < 1e-6) { s.setElevationAddDraft(null); return; }
-      const kindMeta = addTool === 'rail' ? 'rail' : addTool === 'post' ? 'post' : 'text';
-      const id = nextAddId(view, addTool);
+      const id = nextAddId(view, 'line');
       const prim: ElevationPrimitive = {
-        kind: 'line', x1, y1, x2, y2,
-        stroke: addTool === 'post' ? '#FFD700' : addTool === 'rail' ? '#378ADD' : '#c9c9c6',
-        width: addTool === 'post' ? 1.6 : addTool === 'rail' ? 0.7 : 1,
-        meta: { kind: kindMeta, id, heightMm: addTool === 'rail' ? Math.round(-y1 * 10) : undefined, x: Math.round(x1 * 10) / 10 },
+        kind: 'line', x1, y1, x2, y2, stroke: '#c9c9c6', width: 1,
+        meta: { kind: 'text', id, x: Math.round(x1 * 10) / 10 },
       };
       s.setElevationEdits(view.id, withAdd(view.edits, prim));
       s.setElevationAddDraft(null);
@@ -203,6 +246,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
           </Group>
         );
       })}
+      {partPalette}
       {addSurface}
     </>
   );
