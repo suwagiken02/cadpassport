@@ -17,7 +17,8 @@ import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstru
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import ElevationPlaceDialog from './ElevationPlaceDialog';
 import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, nominalSpanMm, railColorForSpanMm,
+  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsMm, nominalSpanMm,
+  partWidthPx, railColorForSpanMm,
 } from '@/lib/konva/elevation/elevationPartStyle';
 import type { PillarType } from '@/lib/konva/calculator';
 
@@ -225,42 +226,53 @@ function ElevationSVG({
     null,
   );
 
-  // E-8-v2f: 部材の見た目（色・太さ・ハンドル径）は elevationPartStyle を参照して
-  //   キャンバス配置版と揃える。「太い色線＋両端の●」で一目で部材と分かるようにする。
+  // E-8-v2f/v2h: 部材の見た目（色・寸法）は elevationPartStyle を参照してキャンバス配置版と揃える。
+  //   平面と同じ実寸比（○Grid）で太らせ、縮小時は下限 px（○MinPx）で潰さない。
+  //   この SVG は 1 グリッド = 10mm × scale px なので pxPerGrid = scale * 10。
   const PS = ELEV_PART_STYLE, PC = ELEV_PART_COLORS;
+  const pxPerGrid = scale * 10;
+  const wpx = (minPx: number, grid?: number) => partWidthPx(minPx, grid, pxPerGrid);
 
-  /** 手摺: 長さ別カラーの太線＋両端の丸ハンドル（平面と同じ表現）。 */
+  /** 手摺: 長さ別カラーの太線＋両端の丸ハンドル（平面と同じ表現）。端は内側に寄せて切れ目を作る。 */
   const railLine = (key: string, x0: number, x1: number, mm: number, postXs: number[]) => {
     const c = railColorForSpanMm(nominalSpanMm(postXs, x0));
-    const a = sxg(x0), b = sxg(x1), y = sy(mm);
+    const r = insetRange(x0, x1, PS.railInsetGrid);
+    const a = sxg(r.a), b = sxg(r.b), y = sy(mm);
+    const hr = wpx(PS.railHandleMinPx, PS.railHandleGrid);
     return (
-      <g key={key} opacity={0.95}>
-        <line x1={a} y1={y} x2={b} y2={y} stroke={c} strokeWidth={PS.railWidth} strokeLinecap="round" />
-        <circle cx={a} cy={y} r={PS.railHandleR} fill={c} />
-        <circle cx={b} cy={y} r={PS.railHandleR} fill={c} />
+      <g key={key}>
+        <line x1={a} y1={y} x2={b} y2={y} stroke={c} strokeWidth={wpx(PS.railWidthMinPx, PS.railWidthGrid)} strokeLinecap="round" />
+        <circle cx={a} cy={y} r={hr} fill={c} />
+        <circle cx={b} cy={y} r={hr} fill={c} />
       </g>
     );
   };
 
-  /** 踏板: 濃い縁の上に本体色を重ねた「輪郭付きの帯」。 */
+  /** 踏板: 濃い縁の上に本体色を重ねた 1 枚のパネル。 */
   const boardLine = (key: string, x0: number, x1: number, mm: number) => {
-    const a = sxg(x0), b = sxg(x1), y = sy(mm);
+    const r = insetRange(x0, x1, PS.boardInsetGrid);
+    const a = sxg(r.a), b = sxg(r.b), y = sy(mm);
     return (
       <g key={key}>
-        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.boardEdge} strokeWidth={PS.boardEdgeWidth} strokeOpacity={0.9} strokeLinecap="round" />
-        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.board} strokeWidth={PS.boardWidth} strokeOpacity={0.95} strokeLinecap="round" />
+        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.boardEdge} strokeWidth={wpx(PS.boardEdgeMinPx, PS.boardEdgeGrid)} strokeLinecap="round" />
+        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.board} strokeWidth={wpx(PS.boardWidthMinPx, PS.boardWidthGrid)} strokeLinecap="round" />
       </g>
     );
   };
 
-  /** 支柱: 太い縦線＋上下端の端点マーク。 */
-  const postLine = (key: string, px: number, bottomMm: number, topMm: number) => {
+  /** 支柱: 1 本の棒（太い縦線＋上下端キャップ）＋コマの印。 */
+  const postLine = (key: string, px: number, bottomMm: number, topMm: number, komaMm: number[] = []) => {
     const x = sxg(px), y0 = sy(bottomMm), y1 = sy(topMm);
+    const cr = wpx(PS.postCapMinPx, PS.postCapGrid);
+    const kh = PS.komaHalfGrid * pxPerGrid;
     return (
       <g key={key}>
-        <line x1={x} y1={y0} x2={x} y2={y1} stroke={PC.post} strokeWidth={PS.postWidth} strokeLinecap="round" />
-        <circle cx={x} cy={y0} r={PS.postCapR} fill={PC.post} />
-        <circle cx={x} cy={y1} r={PS.postCapR} fill={PC.post} />
+        <line x1={x} y1={y0} x2={x} y2={y1} stroke={PC.post} strokeWidth={wpx(PS.postWidthMinPx, PS.postWidthGrid)} strokeLinecap="round" />
+        {komaMm.map((mm, i) => (
+          <line key={`k-${i}`} x1={x - kh} y1={sy(mm)} x2={x + kh} y2={sy(mm)} stroke={PC.koma} strokeWidth={PS.komaWidthPx} strokeLinecap="round" />
+        ))}
+        <circle cx={x} cy={y0} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />
+        <circle cx={x} cy={y1} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />
       </g>
     );
   };
@@ -360,8 +372,8 @@ function ElevationSVG({
             {sc.boards.map((b, i) => boardLine(`bd-${i}`, b.x0, b.x1, b.levelMm))}
             {/* 手摺（コマ位置の横線・両端に●） */}
             {sc.rails.map((r, i) => railLine(`rl-${i}`, r.x0, r.x1, r.heightMm, sc.postXs))}
-            {/* 支柱（太い縦線＋端点マーク） */}
-            {sc.postXs.map((px, i) => postLine(`ps-${i}`, px, jackTop, topRail))}
+            {/* 支柱（太い縦線＋端点キャップ＋コマの印） */}
+            {sc.postXs.map((px, i) => postLine(`ps-${i}`, px, jackTop, topRail, sc.levels.komaGridMm))}
             {/* ジャッキ（ベース記号: 下広がりの台形＋底辺の太線） */}
             {sc.postXs.map((px, i) => {
               const cx = sxg(px);
@@ -376,7 +388,7 @@ function ElevationSVG({
                     fill={PC.post}
                     fillOpacity={0.9}
                   />
-                  <line x1={cx - h} y1={yGL} x2={cx + h} y2={yGL} stroke={PC.post} strokeWidth={PS.jackBaseWidth} strokeLinecap="round" />
+                  <line x1={cx - h} y1={yGL} x2={cx + h} y2={yGL} stroke={PC.post} strokeWidth={wpx(PS.jackBaseMinPx, PS.jackBaseWidthGrid)} strokeLinecap="round" />
                 </g>
               );
             })}
@@ -389,7 +401,8 @@ function ElevationSVG({
             ))}
             {/* 妻嵩上げの支柱延長（天端→要求上端） */}
             {Array.from(postExtendTop.entries()).map(([px, top], i) => (
-              postLine(`pe-${i}`, px, topRail, top)
+              postLine(`pe-${i}`, px, topRail, top,
+                komaLevelsMm(jackTop, top).filter((h) => h > topRail + 1e-6))
             ))}
           </g>
         );

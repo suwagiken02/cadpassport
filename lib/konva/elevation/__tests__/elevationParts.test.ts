@@ -108,9 +108,10 @@ describe('手動追加部材（レンジ未指定はスパン幅で決まる）'
     const prims = partsToPrimitives({ geom: bundle.geom, parts: [manual] });
     // E-8-v2f: 踏板は「濃い縁＋本体色」の 2 枚重ねで帯に見せる（部材感を出す）。
     expect(prims).toHaveLength(2);
-    // postXs[1]=-270, postXs[2]=-90 → ローカルは minXg=-450 を引いて 180..360
+    // postXs[1]=-270, postXs[2]=-90 → ローカルは minXg=-450 を引いて 180..360。
+    // E-8-v2h: 1 枚ずつ切れて見えるよう端を boardInsetGrid(2.5) だけ内側に寄せる。
     for (const p of prims) {
-      expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([180, 360]);
+      expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([182.5, 357.5]);
       expect(p.meta?.kind).toBe('board');
     }
   });

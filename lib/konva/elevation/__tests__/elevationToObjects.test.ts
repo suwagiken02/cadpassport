@@ -31,7 +31,8 @@ describe('faceElevationToPrimitives: FaceElevation → プリミティブ(E-4a)'
   //   太さ・色は elevationPartStyle が single source なので、テストもそこから引く。
   it('支柱4本（太い縦線）が jackTop〜topRail に', () => {
     const posts = prims.filter((p) =>
-      p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post && p.width === ELEV_PART_STYLE.postWidth);
+      p.meta?.kind === 'post' && p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post
+      && p.widthGrid === ELEV_PART_STYLE.postWidthGrid);
     expect(posts).toHaveLength(4); // postXs [-90,90,270,450]、嵩上げ無し
     // px=-90 → lx=0、jackTop150→ly=-15、topRail6500→ly=-650
     const p0 = posts.find((p) => p.kind === 'line' && p.x1 === 0);
@@ -79,10 +80,13 @@ describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)'
 
   it('奥列の手摺が手前区間で切断され、幅の異なる rail 線として現れる', () => {
     const rails = prims.filter((p) =>
-      p.kind === 'line' && p.stroke === railColorForSpanMm(1800) && p.width === ELEV_PART_STYLE.railWidth);
+      p.kind === 'line' && p.stroke === railColorForSpanMm(1800)
+      && p.widthGrid === ELEV_PART_STYLE.railWidthGrid);
+    // E-8-v2h: 支柱位置に切れ目を作るため両端を railInsetGrid ずつ内側に寄せて描く。
+    const inset = ELEV_PART_STYLE.railInsetGrid * 2;
     const widths = new Set(rails.map((p) => (p.kind === 'line' ? Math.round(Math.abs(p.x2 - p.x1)) : 0)));
-    expect(widths.has(360)).toBe(true); // 手前列 [-90,270] 幅360
+    expect(widths.has(360 - inset)).toBe(true); // 手前列 [-90,270] 幅360
     // E-5-fix4: 既定ギャップ=round(全幅540×0.015)=8。奥列は 270+8=278 から → [278,450] 幅172。
-    expect(widths.has(172)).toBe(true); // 奥列(切断+ギャップ後) 幅172
+    expect(widths.has(172 - inset)).toBe(true); // 奥列(切断+ギャップ後) 幅172
   });
 });

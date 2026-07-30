@@ -78,8 +78,9 @@ describe('部材の移動（隣の有効位置へ吸着）', () => {
     const out = moveToNearest([autoBoard], autoBoard, { x: 450, yMm: 2900 });
     const prims = partsToPrimitives({ parts: out, geom });
     // E-8-v2f: 踏板は縁＋本体の 2 枚。どちらも移動後のスパン幅で引き直される。
+    // E-8-v2h: 端は boardInsetGrid(2.5) だけ内側（1 枚ずつ切れて見えるように）。
     expect(prims).toHaveLength(2);
-    for (const p of prims) expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([360, 540]);
+    for (const p of prims) expect(p.kind === 'line' && [p.x1, p.x2]).toEqual([362.5, 537.5]);
   });
 });
 

@@ -32,7 +32,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { nextAddId, overriddenTextIds, withAdd } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
-import { ELEV_PART_STYLE, ELEV_SELECT_COLOR } from '@/lib/konva/elevation/elevationPartStyle';
+import { ELEV_PART_STYLE, ELEV_SELECT_COLOR, partWidthPx } from '@/lib/konva/elevation/elevationPartStyle';
 import {
   buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
@@ -61,10 +61,15 @@ function withAlpha(hex: string | undefined, a: number | undefined): string | und
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, overridden = false) {
+/**
+ * E-8-v2h: 部材の線幅・半径は「平面と同じ実寸比」で描き、縮小時は下限 px で潰さない。
+ * pxPerGrid は 1 グリッドの画面 px（= gridPx × view.scale）。
+ */
+function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, pxPerGrid: number, overridden = false) {
   if (p.kind === 'line') {
     const a = S(p.x1, p.y1), b = S(p.x2, p.y2);
-    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={p.width} dash={p.dash} opacity={p.opacity ?? 1} lineCap="round" strokeScaleEnabled={false} listening={false} />;
+    const w = partWidthPx(p.width, p.widthGrid, pxPerGrid);
+    return <Line key={i} points={[a.x, a.y, b.x, b.y]} stroke={p.stroke} strokeWidth={w} dash={p.dash} opacity={p.opacity ?? 1} lineCap="round" strokeScaleEnabled={false} listening={false} />;
   }
   if (p.kind === 'rect') {
     const a = S(p.x, p.y), b = S(p.x + p.w, p.y + p.h);
@@ -75,10 +80,11 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, overridden = 
     for (let k = 0; k < p.points.length; k += 2) { const s = S(p.points[k], p.points[k + 1]); pts.push(s.x, s.y); }
     return <Line key={i} points={pts} closed fill={withAlpha(p.fill, p.fillOpacity)} stroke={p.stroke} strokeWidth={p.width ?? 0} strokeScaleEnabled={false} listening={false} />;
   }
-  // E-8-v2f: 丸ハンドル（半径は px＝縮尺に依らず一定）。
+  // E-8-v2f: 丸ハンドル。半径は実寸比＋下限 px（線幅と同じ扱い）。
   if (p.kind === 'circle') {
     const a = S(p.x, p.y);
-    return <Circle key={i} x={a.x} y={a.y} radius={p.r} fill={p.fill} opacity={p.opacity ?? 1} listening={false} />;
+    const r = partWidthPx(p.r, p.rGrid, pxPerGrid);
+    return <Circle key={i} x={a.x} y={a.y} radius={r} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth ?? 0} strokeScaleEnabled={false} opacity={p.opacity ?? 1} listening={false} />;
   }
   // text
   const a = S(p.x, p.y);
@@ -100,11 +106,13 @@ function renderPrimLocal(
   const hit = EDIT_HIT_PX / s;
   const selStroke = ELEV_SELECT_COLOR;
   if (p.kind === 'line') {
+    // s は 1 グリッドの画面 px（= pxPerGrid）そのもの。
+    const w = partWidthPx(p.width, p.widthGrid, s);
     return (
       <Line
         key={key} points={[p.x1, p.y1, p.x2, p.y2]}
         stroke={opts.selected ? selStroke : p.stroke}
-        strokeWidth={(opts.selected ? p.width + 2 : p.width)}
+        strokeWidth={opts.selected ? w + 2 : w}
         dash={p.dash} opacity={p.opacity ?? 1} lineCap="round"
         strokeScaleEnabled={false}
         hitStrokeWidth={opts.interactive ? hit : 0}
@@ -136,10 +144,13 @@ function renderPrimLocal(
   }
   if (p.kind === 'circle') {
     // 半径は px なので Group の拡大率で割る（線幅・文字サイズと同じ扱い）。
+    const r = partWidthPx(p.r, p.rGrid, s);
     return (
       <Circle
-        key={key} x={p.x} y={p.y} radius={(opts.selected ? p.r + 1 : p.r) / s}
-        fill={opts.selected ? selStroke : p.fill} opacity={p.opacity ?? 1}
+        key={key} x={p.x} y={p.y} radius={(opts.selected ? r + 1 : r) / s}
+        fill={opts.selected ? selStroke : p.fill}
+        stroke={p.stroke} strokeWidth={p.strokeWidth ?? 0} strokeScaleEnabled={false}
+        opacity={p.opacity ?? 1}
         listening={opts.interactive}
       />
     );
@@ -283,7 +294,7 @@ function ElevationEditGroup({ view, gridPx, panX, panY }: {
         {[x0, x1].map((cx, i) => (
           <Line
             key={`koma-${i}`} points={[cx - kh, y, cx + kh, y]}
-            stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidth + 2} opacity={0.95}
+            stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 2} opacity={0.95}
             strokeScaleEnabled={false} listening={false}
           />
         ))}
@@ -424,7 +435,9 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
   const children = useMemo(
     () => {
       const ov = overriddenTextIds(view.edits);
-      return composeViewPrimitives(view).map((p, i) => renderPrim(p, i, worldOf, !!p.meta && ov.has(p.meta.id)));
+      const pxPerGrid = cachedGridPx * view.scale;
+      return composeViewPrimitives(view)
+        .map((p, i) => renderPrim(p, i, worldOf, pxPerGrid, !!p.meta && ov.has(p.meta.id)));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [view, cachedGridPx],
