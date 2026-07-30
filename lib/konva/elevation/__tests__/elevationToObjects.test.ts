@@ -3,7 +3,7 @@ import type { BuildingShape, Point } from '@/types';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToPrimitives, initialPlacementOrigin } from '../elevationToObjects';
-import { ELEV_PART_COLORS, ELEV_PART_STYLE, railColorForSpanMm } from '../elevationPartStyle';
+import { ELEV_PART_COLORS, ELEV_PART_STYLE } from '../elevationPartStyle';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 const bld = (id: string): BuildingShape => ({ id, type: 'polygon', points: RECT, fill: '#3d3d3a', floor: 1 });
@@ -29,16 +29,19 @@ describe('faceElevationToPrimitives: FaceElevation → プリミティブ(E-4a)'
 
   // E-8-v2f: 部材は「太い色線＋丸ハンドル」になった（平面と同じ視覚言語）。
   //   太さ・色は elevationPartStyle が single source なので、テストもそこから引く。
-  it('支柱4本（太い縦線）が jackTop〜topRail に', () => {
+  it('支柱4本が規格部材2段（下から[6,8]）で jackTop〜topRail を覆う', () => {
     const posts = prims.filter((p) =>
       p.meta?.kind === 'post' && p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post
       && p.widthGrid === ELEV_PART_STYLE.postWidthGrid);
-    expect(posts).toHaveLength(4); // postXs [-90,90,270,450]、嵩上げ無し
+    // E-8-v2j: postXs [-90,90,270,450] × 規格部材 2 段（14 コマ → [6,8]）
+    expect(posts).toHaveLength(4 * 2);
     // px=-90 → lx=0、topRail6500→ly=-650。
     // E-8-v2h-fix: 皿はスタートから逆算（H=6500 → スタート1100 → 皿400）→ ly=-40。
     expect(fe.scaffolds[0].levels.jackTopMm).toBe(400);
-    const p0 = posts.find((p) => p.kind === 'line' && p.x1 === 0);
-    expect(p0 && p0.kind === 'line' && [p0.y1, p0.y2]).toEqual([-40, -650]);
+    const at0 = posts.filter((p) => p.kind === 'line' && p.x1 === 0);
+    expect(at0).toHaveLength(2);
+    // 下段: 皿400 → 400+450×6=3100、上段: 3100 → 天端6500（隙間なく積む）
+    expect(at0.map((p) => (p.kind === 'line' ? [p.y1, p.y2] : []))).toEqual([[-40, -310], [-310, -650]]);
   });
 
   it('GL 線＋GL テキスト、天端寸法テキストを含む', () => {
@@ -82,7 +85,7 @@ describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)'
 
   it('奥列の手摺が手前区間で切断され、幅の異なる rail 線として現れる', () => {
     const rails = prims.filter((p) =>
-      p.kind === 'line' && p.stroke === railColorForSpanMm(1800)
+      p.kind === 'line' && p.stroke === ELEV_PART_COLORS.rail
       && p.widthGrid === ELEV_PART_STYLE.railWidthGrid);
     // E-8-v2h: 支柱位置に切れ目を作るため両端を railInsetGrid ずつ内側に寄せて描く。
     const inset = ELEV_PART_STYLE.railInsetGrid * 2;

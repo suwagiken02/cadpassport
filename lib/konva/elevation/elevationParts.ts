@@ -16,7 +16,7 @@ import type { ElevationPrimitive } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import { faceElevationExtent, q } from './elevationToObjects';
 import {
-  komaLevelsFromJackMm, nominalSpanMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
+  komaLevelsFromJackMm, postSegmentsMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 
 /** 部材の種類。palette に出すのは post/rail/board/jack/brace。 */
@@ -46,6 +46,13 @@ export type ElevationPart = {
   /** 描画レンジ（面軸グリッド）。自動分は生成時の実測（入隅切断を含む）、手動分はスパン幅。 */
   x0?: number;
   x1?: number;
+  /**
+   * 支柱の規格部材の段番号（0=最下段・E-8-v2j）。
+   * 支柱は 8/6/4/2/1 コマ品の積み重ねなので、1 本が複数部材に分かれる。
+   * 上下端は splitPostKoma の結果から都度計算する（部材ブロックは意味データだけ持つ）。
+   * 未指定＝分割しない 1 本（手動追加・旧データ）。
+   */
+  segmentIndex?: number;
   /** 嵩上げのスロット識別（'mid0' | 'top' 等）。同じ高さの重複を避ける。 */
   slot?: string;
   /** 嵩上げ手摺のオフセット(mm)。 */
@@ -118,8 +125,20 @@ export function faceElevationToParts(fe: FaceElevation): ElevationPartsBundle {
         levelMm: r.heightMm, spanIndex: spanOf(r.x0), x0: r.x0, x1: r.x1,
       });
     }
+    // E-8-v2j: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ね。1 本の連続線ではなく
+    //   ジョイントで分割された部材として持つ（上合わせ・端数の小部材を下に）。
+    const segs = postSegmentsMm(sc.levels.jackTopMm, sc.levels.komaGridMm.length, sc.levels.topRailMm);
     sc.postXs.forEach((px, pi) => {
-      parts.push({ id: `post:${si}:${pi}`, kind: 'post', scaffoldIndex: si, origin: 'auto', postIndex: pi });
+      if (segs.length === 0) {
+        parts.push({ id: `post:${si}:${pi}`, kind: 'post', scaffoldIndex: si, origin: 'auto', postIndex: pi });
+        return;
+      }
+      segs.forEach((_seg, gi) => {
+        parts.push({
+          id: `post:${si}:${pi}:${gi}`, kind: 'post', scaffoldIndex: si, origin: 'auto',
+          postIndex: pi, segmentIndex: gi,
+        });
+      });
     });
     sc.postXs.forEach((px, pi) => {
       parts.push({ id: `jack:${si}:${pi}`, kind: 'jack', scaffoldIndex: si, origin: 'auto', postIndex: pi });
@@ -197,7 +216,6 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
     const span = partSpanX(p, sg);
     if (!sg || !span) continue;
     // E-8-v2f: 見た目は elevationPartStyle が single source（旧 primitives 経路と共通）。
-    const spanMm = nominalSpanMm(sg.postXs, span.x0);
 
     switch (p.kind) {
       case 'board':
@@ -205,21 +223,33 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
           { kind: 'board', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
         break;
       case 'rail':
-        pushRail(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0), spanMm,
+        pushRail(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0),
           { kind: 'rail', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
         break;
-      case 'post':
+      case 'post': {
         // E-8-v2g: コマ(450 刻みの受け金具)を支柱上に描く。列は geom が持つコマ格子。
-        pushPost(out, lx(span.x0), ly(sg.jackTopMm), ly(sg.topRailMm),
-          { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.topRailMm },
-          sg.komaGridMm.map(ly));
+        // E-8-v2j: segmentIndex があれば規格部材 1 本ぶんだけを描き、継ぎ目に印を出す。
+        const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+        const seg = p.segmentIndex != null ? segs[p.segmentIndex] : undefined;
+        const bottomMm = seg ? seg.bottomMm : sg.jackTopMm;
+        const topMm = seg ? seg.topMm : sg.topRailMm;
+        const isLast = !seg || p.segmentIndex === segs.length - 1;
+        pushPost(out, lx(span.x0), ly(bottomMm), ly(topMm),
+          { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm },
+          {
+            komaYs: sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6).map(ly),
+            capBottom: !seg || p.segmentIndex === 0,
+            capTop: isLast,
+            jointY: isLast ? undefined : ly(topMm),
+          });
         break;
+      }
       case 'postExt': {
         // 延長部も同じピッチでコマが続く（基準はジャッキ上端のまま）。
         const top = p.levelMm ?? sg.topRailMm;
         pushPost(out, lx(span.x0), ly(sg.topRailMm), ly(top),
           { kind: 'post', id: p.id, x: q(lx(span.x0)), heightMm: p.levelMm },
-          komaLevelsFromJackMm(sg.jackTopMm, top).filter((h) => h > sg.topRailMm + 1e-6).map(ly));
+          { komaYs: komaLevelsFromJackMm(sg.jackTopMm, top).filter((h) => h > sg.topRailMm + 1e-6).map(ly) });
         break;
       }
       case 'jack':
@@ -232,7 +262,7 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         break;
       case 'raiseRail': {
         const h = (p.levelMm ?? 0) + (p.railOffsetMm ?? 0);
-        pushRail(out, lx(span.x0), lx(span.x1), ly(h), spanMm,
+        pushRail(out, lx(span.x0), lx(span.x1), ly(h),
           { kind: 'raise', id: p.id, heightMm: h, index: p.spanIndex, x: q(lx(span.x0)) });
         break;
       }

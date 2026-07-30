@@ -15,7 +15,7 @@ import {
   LAYER_HEIGHT_MM,
   type FaceElevationOpts,
 } from '../elevationEngine';
-import { jackTopForStartMm, komaIndexOfStart } from '../komaGrid';
+import { jackTopForStartMm, komaIndexOfStart, railKomaLevelsMm } from '../komaGrid';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 
 /** R-1g: 出幅は roofs[] からしか読まない。旧 RoofConfig / roofOverhangs[] の建物は
@@ -452,11 +452,15 @@ describe('buildFaceElevation: 矩形2階 × H=6500', () => {
     expect(sc.postXs).toEqual([-450, -270, -90, 90]);
   });
 
-  it('踏板帯=段数・横線=コマ格子数', () => {
+  it('踏板帯=段数・手摺=現場ルールのコマだけ', () => {
     const sc = fe.scaffolds[0];
     expect(sc.boards.length).toBe(sc.levels.floors); // 3
     expect(sc.boards.map(b => b.levelMm)).toEqual([1100, 2900, 4700]);
-    expect(sc.rails.length).toBe(sc.levels.komaGridMm.length);
+    // E-8-v2j: 全コマではなく「下端コマ・上端コマ・各作業床の +450/+900」だけ。
+    expect(sc.rails.map(r => r.heightMm))
+      .toEqual(railKomaLevelsMm(sc.levels.komaGridMm, sc.levels.levels));
+    expect(sc.rails.map(r => r.heightMm))
+      .toEqual([650, 1550, 2000, 3350, 3800, 5150, 5600, 6500]);
     // E-5-fix: 北立面は左右反転。踏板 x[-90,450]→[-450,90]。
     expect(sc.boards[0].x0).toBe(-450);
     expect(sc.boards[0].x1).toBe(90);

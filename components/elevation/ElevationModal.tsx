@@ -17,8 +17,7 @@ import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstru
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import ElevationPlaceDialog from './ElevationPlaceDialog';
 import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, nominalSpanMm,
-  partWidthPx, railColorForSpanMm,
+  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, partWidthPx, postSegmentsMm,
 } from '@/lib/konva/elevation/elevationPartStyle';
 import type { PillarType } from '@/lib/konva/calculator';
 
@@ -233,9 +232,9 @@ function ElevationSVG({
   const pxPerGrid = scale * 10;
   const wpx = (minPx: number, grid?: number) => partWidthPx(minPx, grid, pxPerGrid);
 
-  /** 手摺: 長さ別カラーの太線＋両端の丸ハンドル（平面と同じ表現）。端は内側に寄せて切れ目を作る。 */
-  const railLine = (key: string, x0: number, x1: number, mm: number, postXs: number[]) => {
-    const c = railColorForSpanMm(nominalSpanMm(postXs, x0));
+  /** 手摺: 太線＋両端の丸ハンドル（平面と同じ表現・全面統一色）。端は内側に寄せて切れ目を作る。 */
+  const railLine = (key: string, x0: number, x1: number, mm: number) => {
+    const c = PC.rail;
     const r = insetRange(x0, x1, PS.railInsetGrid);
     const a = sxg(r.a), b = sxg(r.b), y = sy(mm);
     const hr = wpx(PS.railHandleMinPx, PS.railHandleGrid);
@@ -260,29 +259,36 @@ function ElevationSVG({
     );
   };
 
-  /** 支柱: 1 本の棒（太い縦線＋上下端キャップ）＋コマの印。 */
-  const postLine = (key: string, px: number, bottomMm: number, topMm: number, komaMm: number[] = []) => {
+  /** 支柱: 規格部材 1 本ぶんの棒（縦線＋端キャップ）＋コマの印＋継ぎ目の印。 */
+  const postLine = (
+    key: string, px: number, bottomMm: number, topMm: number, komaMm: number[] = [],
+    opt?: { capBottom?: boolean; capTop?: boolean; joint?: boolean },
+  ) => {
     const x = sxg(px), y0 = sy(bottomMm), y1 = sy(topMm);
     const cr = wpx(PS.postCapMinPx, PS.postCapGrid);
     const kh = PS.komaHalfGrid * pxPerGrid;
+    const jh = PS.jointHalfGrid * pxPerGrid;
     return (
       <g key={key}>
         <line x1={x} y1={y0} x2={x} y2={y1} stroke={PC.post} strokeWidth={wpx(PS.postWidthMinPx, PS.postWidthGrid)} strokeLinecap="round" />
         {komaMm.map((mm, i) => (
           <line key={`k-${i}`} x1={x - kh} y1={sy(mm)} x2={x + kh} y2={sy(mm)} stroke={PC.koma} strokeWidth={PS.komaWidthPx} strokeLinecap="round" />
         ))}
-        <circle cx={x} cy={y0} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />
-        <circle cx={x} cy={y1} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />
+        {opt?.joint && (
+          <line x1={x - jh} y1={y1} x2={x + jh} y2={y1} stroke={PC.joint} strokeWidth={PS.jointWidthPx} strokeLinecap="round" />
+        )}
+        {opt?.capBottom !== false && <circle cx={x} cy={y0} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />}
+        {opt?.capTop !== false && <circle cx={x} cy={y1} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />}
       </g>
     );
   };
 
   // 段違い作業床 1 セット（床帯＋手摺 +450/+900）を描く helper。
-  const floorGroup = (key: string, floorMm: number, x0: number, x1: number, postXs: number[]) => (
+  const floorGroup = (key: string, floorMm: number, x0: number, x1: number) => (
     <g key={key}>
       {boardLine(`${key}-bd`, x0, x1, floorMm)}
-      {railLine(`${key}-r450`, x0, x1, floorMm + 450, postXs)}
-      {railLine(`${key}-r900`, x0, x1, floorMm + 900, postXs)}
+      {railLine(`${key}-r450`, x0, x1, floorMm + 450)}
+      {railLine(`${key}-r900`, x0, x1, floorMm + 900)}
     </g>
   );
 
@@ -370,10 +376,22 @@ function ElevationSVG({
           <g key={`sc-${si}`} opacity={0.95}>
             {/* 踏板（輪郭付きの帯） */}
             {sc.boards.map((b, i) => boardLine(`bd-${i}`, b.x0, b.x1, b.levelMm))}
-            {/* 手摺（コマ位置の横線・両端に●） */}
-            {sc.rails.map((r, i) => railLine(`rl-${i}`, r.x0, r.x1, r.heightMm, sc.postXs))}
-            {/* 支柱（太い縦線＋端点キャップ＋コマの印） */}
-            {sc.postXs.map((px, i) => postLine(`ps-${i}`, px, jackTop, topRail, sc.levels.komaGridMm))}
+            {/* 手摺（下端コマ・上端コマ・各作業床 +450/+900） */}
+            {sc.rails.map((r, i) => railLine(`rl-${i}`, r.x0, r.x1, r.heightMm))}
+            {/* 支柱（規格部材の積み重ね: 段ごとの棒＋コマの印＋継ぎ目） */}
+            {sc.postXs.map((px, i) => {
+              const segs = postSegmentsMm(jackTop, sc.levels.komaGridMm.length, topRail);
+              if (segs.length === 0) return postLine(`ps-${i}`, px, jackTop, topRail, sc.levels.komaGridMm);
+              return (
+                <g key={`ps-${i}`}>
+                  {segs.map((seg, gi) => postLine(
+                    `ps-${i}-${gi}`, px, seg.bottomMm, seg.topMm,
+                    sc.levels.komaGridMm.filter((h) => h >= seg.bottomMm && h <= seg.topMm),
+                    { capBottom: gi === 0, capTop: gi === segs.length - 1, joint: gi < segs.length - 1 },
+                  ))}
+                </g>
+              );
+            })}
             {/* ジャッキ（ベース記号: 下広がりの台形＋底辺の太線） */}
             {sc.postXs.map((px, i) => {
               const cx = sxg(px);
@@ -395,8 +413,8 @@ function ElevationSVG({
             {/* 妻嵩上げ: 4+1 分解の中間フル段＋最終床（各段に床帯＋手摺 +450/+900） */}
             {sc.spanRaises.map((r, i) => (
               <g key={`sr-${i}`}>
-                {r.intermediateFloorsMm.map((fmm, j) => floorGroup(`im-${i}-${j}`, fmm, r.x0, r.x1, sc.postXs))}
-                {floorGroup(`rf-${i}`, r.raisedFloorMm, r.x0, r.x1, sc.postXs)}
+                {r.intermediateFloorsMm.map((fmm, j) => floorGroup(`im-${i}-${j}`, fmm, r.x0, r.x1))}
+                {floorGroup(`rf-${i}`, r.raisedFloorMm, r.x0, r.x1)}
               </g>
             ))}
             {/* 妻嵩上げの支柱延長（天端→要求上端） */}

@@ -61,6 +61,69 @@ export function jackTopForStartMm(startMm: number, pitchMm: number = KOMA_PITCH_
   return Math.round(JACK_WIND_MIN_MM + r);
 }
 
+/**
+ * 手摺が付くコマの高さ列(mm) (= E-8-v2j)。現場ルール（鮎澤氏）:
+ *   ・支柱の一番下のコマ / 一番上のコマ
+ *   ・各作業床の +1 コマ(450 = 中さん) と +2 コマ(900 = 上さん)
+ * 全コマに手摺を出していた従来は誤り。作業床そのものの高さには手摺は付かない。
+ */
+export function railKomaLevelsMm(
+  komaGridMm: number[], floorLevelsMm: number[], pitchMm: number = KOMA_PITCH_MM,
+): number[] {
+  if (komaGridMm.length === 0) return [];
+  const lo = komaGridMm[0], hi = komaGridMm[komaGridMm.length - 1];
+  const out = new Set<number>([lo, hi]);
+  for (const f of floorLevelsMm) {
+    for (const k of [1, 2]) {
+      const h = f + pitchMm * k;   // 作業床はコマに乗るので +450×k もコマ上
+      if (h >= lo && h <= hi) out.add(h);
+    }
+  }
+  return Array.from(out).sort((a, b) => a - b);
+}
+
+// ── 支柱の規格部材 (= E-8-v2j) ──
+/** 支柱の規格品（コマ数）。大きい順に並べる＝貪欲の探索順。 */
+export const POST_KOMA_SIZES = [8, 6, 4, 2, 1];
+
+/**
+ * n コマの支柱を規格部材に割る。返り値は「下から上」のコマ数列。
+ * 上合わせ＝大きい部材を上に、端数の小部材を下に。大きい物から順に使う（貪欲）。
+ *   10 → [2, 8] / 9 → [1, 8] / 7 → [1, 6] / 5 → [1, 4] / 3 → [1, 2] / 14 → [6, 8]
+ */
+export function splitPostKoma(n: number, sizes: number[] = POST_KOMA_SIZES): number[] {
+  const desc = [...sizes].filter((s) => s > 0).sort((a, b) => b - a);
+  const topDown: number[] = [];
+  let rest = Math.max(0, Math.floor(n));
+  while (rest > 0) {
+    const pick = desc.find((s) => s <= rest);
+    if (pick == null) break;   // 最小規格より小さい端数は落とす（1 コマ品があるので通常起きない）
+    topDown.push(pick);
+    rest -= pick;
+  }
+  return topDown.reverse();    // 上から取ったので反転して下→上に
+}
+
+/**
+ * 支柱を規格部材に割った各段の実座標(mm, GL 基準)。
+ * 部材長 = 450 × コマ数、部材の下端から 1 コマ目が 250 なので、継ぎ目をまたいでも
+ * コマ格子は連続する（下段の天 = 上段の底、上段の 1 コマ目はそのままコマ列に乗る）。
+ * 最上段は topLimitMm（足場天端）でクリップする＝描画範囲を変えない。
+ */
+export function postSegmentsMm(
+  jackTopMm: number, komaCount: number, topLimitMm: number, pitchMm: number = KOMA_PITCH_MM,
+): { komaCount: number; bottomMm: number; topMm: number }[] {
+  const segs = splitPostKoma(komaCount);
+  const out: { komaCount: number; bottomMm: number; topMm: number }[] = [];
+  let cum = 0;
+  for (const k of segs) {
+    const bottomMm = jackTopMm + pitchMm * cum;
+    cum += k;
+    out.push({ komaCount: k, bottomMm, topMm: Math.min(jackTopMm + pitchMm * cum, topLimitMm) });
+  }
+  return out;
+}
+
 /** そのスタートで作業床が何コマ目に乗るか（1 始まり・現場の数え方）。 */
 export function komaIndexOfStart(startMm: number, pitchMm: number = KOMA_PITCH_MM): number {
   const jack = jackTopForStartMm(startMm, pitchMm);

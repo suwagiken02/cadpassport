@@ -17,7 +17,7 @@ import type {
 } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import {
-  komaLevelsFromJackMm, nominalSpanMm, pushBoard, pushJack, pushPost, pushRail,
+  komaLevelsFromJackMm, postSegmentsMm, pushBoard, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 
 /** 立面ビューの初期配置位置（グループローカル原点 = 左下=GL・左端）。
@@ -148,13 +148,13 @@ export function faceElevationToPrimitives(
   // 段違い作業床 1 セット（床帯＋手摺 +450/+900）。
   // E-8-v2f: 見た目は elevationPartStyle が single source（部材ブロック経路と共通）。
   const floorSet = (
-    floorMm: number, x0: number, x1: number, idPrefix: string, spanIndex: number, spanMm: number,
+    floorMm: number, x0: number, x1: number, idPrefix: string, spanIndex: number,
   ) => {
     pushBoard(prims, lx(x0), lx(x1), ly(floorMm),
       { kind: 'raise', id: `${idPrefix}:board`, heightMm: floorMm, index: spanIndex, x: q(lx(x0)) });
-    pushRail(prims, lx(x0), lx(x1), ly(floorMm + 450), spanMm,
+    pushRail(prims, lx(x0), lx(x1), ly(floorMm + 450),
       { kind: 'raise', id: `${idPrefix}:rail450`, heightMm: floorMm + 450, index: spanIndex, x: q(lx(x0)) });
-    pushRail(prims, lx(x0), lx(x1), ly(floorMm + 900), spanMm,
+    pushRail(prims, lx(x0), lx(x1), ly(floorMm + 900),
       { kind: 'raise', id: `${idPrefix}:rail900`, heightMm: floorMm + 900, index: spanIndex, x: q(lx(x0)) });
   };
 
@@ -167,14 +167,31 @@ export function faceElevationToPrimitives(
         { kind: 'board', id: `board:${si}:${b.levelMm}:${q(lx(b.x0))}`, heightMm: b.levelMm, x: q(lx(b.x0)) });
     }
     for (const r of sc.rails) {
-      pushRail(prims, lx(r.x0), lx(r.x1), ly(r.heightMm), nominalSpanMm(sc.postXs, r.x0),
+      pushRail(prims, lx(r.x0), lx(r.x1), ly(r.heightMm),
         { kind: 'rail', id: `rail:${si}:${r.heightMm}:${q(lx(r.x0))}`, heightMm: r.heightMm, x: q(lx(r.x0)) });
     }
     // E-8-v2g: コマ(450 刻みの受け金具)を支柱上に描く。
-    const komaYs = sc.levels.komaGridMm.map(ly);
+    // E-8-v2j: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ねなので段ごとに描き、継ぎ目に印を出す。
+    const segs = postSegmentsMm(jackTop, sc.levels.komaGridMm.length, topRail);
     sc.postXs.forEach((px, pi) => {
-      pushPost(prims, lx(px), ly(jackTop), ly(topRail),
-        { kind: 'post', id: `post:${si}:${pi}`, index: pi, x: q(lx(px)), heightMm: topRail }, komaYs);
+      if (segs.length === 0) {
+        pushPost(prims, lx(px), ly(jackTop), ly(topRail),
+          { kind: 'post', id: `post:${si}:${pi}`, index: pi, x: q(lx(px)), heightMm: topRail },
+          { komaYs: sc.levels.komaGridMm.map(ly) });
+        return;
+      }
+      segs.forEach((seg, gi) => {
+        const isLast = gi === segs.length - 1;
+        pushPost(prims, lx(px), ly(seg.bottomMm), ly(seg.topMm),
+          { kind: 'post', id: `post:${si}:${pi}:${gi}`, index: pi, x: q(lx(px)), heightMm: seg.topMm },
+          {
+            komaYs: sc.levels.komaGridMm
+              .filter((h) => h >= seg.bottomMm - 1e-6 && h <= seg.topMm + 1e-6).map(ly),
+            capBottom: gi === 0,
+            capTop: isLast,
+            jointY: isLast ? undefined : ly(seg.topMm),
+          });
+      });
     });
     // ジャッキ（支柱下端のベース記号）
     sc.postXs.forEach((px, pi) => {
@@ -184,18 +201,17 @@ export function faceElevationToPrimitives(
     // 妻嵩上げ: 中間フル段＋最終床、支柱延長
     const postExtendTop = new Map<number, number>();
     for (const r of sc.spanRaises) {
-      const spanMm = nominalSpanMm(sc.postXs, r.x0);
       r.intermediateFloorsMm.forEach((fmm, fi) => {
-        floorSet(fmm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:mid${fi}`, r.spanIndex, spanMm);
+        floorSet(fmm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:mid${fi}`, r.spanIndex);
       });
-      floorSet(r.raisedFloorMm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:top`, r.spanIndex, spanMm);
+      floorSet(r.raisedFloorMm, r.x0, r.x1, `raise:${si}:${r.spanIndex}:top`, r.spanIndex);
       const top = r.raisedFloorMm + 900;
       for (const px of [r.x0, r.x1]) postExtendTop.set(px, Math.max(postExtendTop.get(px) ?? topRail, top));
     }
     postExtendTop.forEach((top, px) => {
       pushPost(prims, lx(px), ly(topRail), ly(top),
         { kind: 'post', id: `postExt:${si}:${q(lx(px))}`, x: q(lx(px)), heightMm: top },
-        komaLevelsFromJackMm(jackTop, top).filter((h) => h > topRail + 1e-6).map(ly));
+        { komaYs: komaLevelsFromJackMm(jackTop, top).filter((h) => h > topRail + 1e-6).map(ly) });
     });
   });
 

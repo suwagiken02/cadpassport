@@ -55,12 +55,17 @@ describe('E-8a: 全プリミティブに meta が付く', () => {
 });
 
 describe('E-8a: 安定 id と再マッチ用ヒント', () => {
-  it('支柱は列と番号で id が決まり、面軸座標のヒントを持つ', () => {
-    expect(partIdsOf('post')).toEqual(['post:0:0', 'post:0:1', 'post:0:2', 'post:0:3']);
-    const p0 = prims.find((p) => p.meta?.id === 'post:0:0')!;
+  it('支柱は列と番号と規格部材の段で id が決まり、面軸座標のヒントを持つ', () => {
+    // E-8-v2j: 支柱は規格部材の積み重ね（H=6500 は 14 コマ → 下から [6,8]）。
+    expect(partIdsOf('post')).toEqual([
+      'post:0:0:0', 'post:0:0:1', 'post:0:1:0', 'post:0:1:1',
+      'post:0:2:0', 'post:0:2:1', 'post:0:3:0', 'post:0:3:1',
+    ]);
+    const p0 = prims.find((p) => p.meta?.id === 'post:0:0:0')!;
     expect(p0.meta!.index).toBe(0);
     expect(p0.meta!.x).toBe(0);          // 左端（minXg=-90 基準）
-    expect(p0.meta!.heightMm).toBe(6500); // 天端
+    const top = prims.find((p) => p.meta?.id === 'post:0:0:1')!;
+    expect(top.meta!.heightMm).toBe(6500); // 最上段の天が足場天端
   });
 
   it('踏板・手摺は高さ(mm)を持ち、id にも高さが入る', () => {

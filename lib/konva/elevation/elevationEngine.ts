@@ -38,7 +38,7 @@ import {
 import type { Face, FaceSpanColumn } from './faceReconstruction';
 import {
   FIRST_KOMA_OFFSET_MM, JACK_WIND_MAX_MM, JACK_WIND_MIN_MM, KOMA_PITCH_MM,
-  jackTopForStartMm, komaLevelsFromJackMm,
+  jackTopForStartMm, komaLevelsFromJackMm, railKomaLevelsMm,
 } from './komaGrid';
 
 // ── 定数（1 箇所に集約）──
@@ -969,7 +969,10 @@ export function buildFaceElevation(
     const x0 = column.xStart;
     const x1 = column.xEnd;
     const boards: ElevationBoard[] = levels.levels.map(levelMm => ({ levelMm, x0, x1 }));
-    const rails: ElevationRail[] = levels.komaGridMm.map(heightMmK => ({ heightMm: heightMmK, x0, x1 }));
+    // E-8-v2j: 手摺が付くコマは決まっている（下端コマ・上端コマ・各作業床の +450/+900）。
+    //   従来の「全コマに手摺」は誤り（鮎澤氏）。
+    const rails: ElevationRail[] = railKomaLevelsMm(levels.komaGridMm, levels.levels, opts?.komaMm)
+      .map(heightMmK => ({ heightMm: heightMmK, x0, x1 }));
 
     // 妻面のコマ嵩上げ: 各スパンで壁最高点まで届かない分だけ 450 コマを追加（基準=壁の形）。
     const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, opts);

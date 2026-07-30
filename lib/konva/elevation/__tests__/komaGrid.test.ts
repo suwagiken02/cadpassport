@@ -8,8 +8,9 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import {
-  FIRST_KOMA_OFFSET_MM, JACK_WIND_MAX_MM, JACK_WIND_MIN_MM, KOMA_PITCH_MM,
+  FIRST_KOMA_OFFSET_MM, JACK_WIND_MAX_MM, JACK_WIND_MIN_MM, KOMA_PITCH_MM, POST_KOMA_SIZES,
   jackTopForStartMm, komaIndexOfStart, komaLevelsFromJackMm, komaLevelsMm,
+  postSegmentsMm, railKomaLevelsMm, splitPostKoma,
 } from '../komaGrid';
 
 describe('定数（現場仕様）', () => {
@@ -76,5 +77,102 @@ describe('komaLevelsMm / komaLevelsFromJackMm', () => {
       const jack = jackTopForStartMm(start);
       expect(komaLevelsFromJackMm(jack, start + 3600), `start=${start}`).toContain(start);
     }
+  });
+});
+
+// ============================================================
+// E-8-v2j: 手摺が付くコマは決まっている（従来の「全コマに手摺」は誤り）。
+//   下端コマ / 上端コマ / 各作業床の +1 コマ(450=中さん)・+2 コマ(900=上さん)
+// ============================================================
+describe('railKomaLevelsMm: 手摺が付くコマ', () => {
+  // H=5000 → スタート1400・2段・皿250。コマ列は 500 から 450 刻みで 5000 まで。
+  const koma = komaLevelsFromJackMm(250, 5000);
+  const floors = [1400, 3200];
+
+  it('床2段の物件は 下端 / 各床+450・+900 / 上端 のみ', () => {
+    expect(koma).toEqual([500, 950, 1400, 1850, 2300, 2750, 3200, 3650, 4100, 4550, 5000]);
+    expect(railKomaLevelsMm(koma, floors)).toEqual([500, 1850, 2300, 3650, 4100, 5000]);
+  });
+
+  it('作業床そのものの高さには手摺は付かない', () => {
+    const rails = railKomaLevelsMm(koma, floors);
+    for (const f of floors) expect(rails).not.toContain(f);
+  });
+
+  it('手摺は必ずコマ列の上に乗る', () => {
+    for (const h of railKomaLevelsMm(koma, floors)) expect(koma).toContain(h);
+  });
+
+  it('コマ列の外へははみ出さない（最上段の +900 が天端を超えても足さない）', () => {
+    const rails = railKomaLevelsMm(koma, [...floors, 4550]);
+    expect(Math.max(...rails)).toBeLessThanOrEqual(5000);
+    expect(rails).toContain(5000);
+  });
+
+  it('コマが無ければ空', () => {
+    expect(railKomaLevelsMm([], floors)).toEqual([]);
+  });
+});
+
+// ============================================================
+// E-8-v2j: 支柱は規格部材（8/6/4/2/1 コマ品）の組み合わせ。
+//   上合わせ＝大きい部材を上に、端数の小部材を下に。大きい物から順に使う。
+// ============================================================
+describe('splitPostKoma: 支柱の規格部材への分割', () => {
+  it('規格は 8/6/4/2/1 コマ品', () => {
+    expect(POST_KOMA_SIZES).toEqual([8, 6, 4, 2, 1]);
+  });
+
+  it('現場の例どおりに割れる（下から上の並び）', () => {
+    expect(splitPostKoma(10)).toEqual([2, 8]);
+    expect(splitPostKoma(9)).toEqual([1, 8]);
+    expect(splitPostKoma(7)).toEqual([1, 6]);
+    expect(splitPostKoma(5)).toEqual([1, 4]);
+    expect(splitPostKoma(3)).toEqual([1, 2]);
+  });
+
+  it('規格ちょうどなら 1 部材', () => {
+    for (const n of POST_KOMA_SIZES) expect(splitPostKoma(n)).toEqual([n]);
+  });
+
+  it('大きい部材が必ず上に来る（下から昇順）', () => {
+    for (let n = 1; n <= 30; n++) {
+      const segs = splitPostKoma(n);
+      expect(segs.reduce((a, b) => a + b, 0), `n=${n}`).toBe(n);
+      expect(segs, `n=${n}`).toEqual([...segs].sort((a, b) => a - b));
+      expect(segs[segs.length - 1], `n=${n}`).toBe(Math.max(...segs));
+    }
+  });
+
+  it('0 以下は空', () => {
+    expect(splitPostKoma(0)).toEqual([]);
+    expect(splitPostKoma(-3)).toEqual([]);
+  });
+});
+
+describe('postSegmentsMm: 分割した支柱の実座標', () => {
+  it('部材長は 450×コマ数で、下から隙間なく積まれる', () => {
+    const segs = postSegmentsMm(250, 10, 99999);
+    expect(segs.map((s) => s.komaCount)).toEqual([2, 8]);
+    expect(segs[0]).toMatchObject({ bottomMm: 250, topMm: 250 + 450 * 2 });
+    expect(segs[1]).toMatchObject({ bottomMm: 1150, topMm: 250 + 450 * 10 });
+  });
+
+  it('最上段は天端でクリップする（描画範囲を変えない）', () => {
+    const segs = postSegmentsMm(250, 10, 4000);
+    expect(segs[segs.length - 1].topMm).toBe(4000);
+  });
+
+  it('継ぎ目をまたいでもコマ格子が連続する（上段の1コマ目もコマ列上）', () => {
+    const jack = 250;
+    const n = 14;
+    const koma = komaLevelsFromJackMm(jack, jack + 450 * n);
+    for (const seg of postSegmentsMm(jack, n, jack + 450 * n)) {
+      expect(koma).toContain(seg.bottomMm + FIRST_KOMA_OFFSET_MM);
+    }
+  });
+
+  it('コマ 0 なら段も無い', () => {
+    expect(postSegmentsMm(250, 0, 5000)).toEqual([]);
   });
 });

@@ -1,8 +1,9 @@
 // ============================================================
-// E-8-v2f/v2h: 部材が「線」ではなく「1 本ずつのモノ」に見えること。
+// E-8-v2f/v2h/v2j: 部材が「線」ではなく「1 本ずつのモノ」に見えること。
 // 実機指摘の回帰テスト:
 //   v2f 前: 全部が細い線で部材と分からない
 //   v2h 前: 太くはなったがモジュール感が弱い / コマが支柱色に溶けて見えない
+//   v2j 前: 4 面配置で面ごとに手摺の色が違う（長さ別カラーの引き継ぎ）
 // 平面(ScaffoldLayer)の視覚言語 = 太い色線（実寸 8 グリッド）＋大きな丸ハンドル（半径 8 グリッド）。
 // ============================================================
 import { describe, it, expect } from 'vitest';
@@ -12,8 +13,7 @@ import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToParts, partsToPrimitives } from '../elevationParts';
 import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, nominalSpanMm,
-  partWidthPx, railColorForSpanMm,
+  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, partWidthPx, postSegmentsMm,
 } from '../elevationPartStyle';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
@@ -23,7 +23,9 @@ const northCol: FaceSpanColumn = {
   rails: [1800, 1800, 1800], handrailIds: ['a', 'b', 'c'],
 };
 const fe = buildFaceElevation([northCol], [bld('B')], { defaultHeightMm: 6500 });
-const prims = partsToPrimitives(faceElevationToParts(fe));
+const bundle = faceElevationToParts(fe);
+const prims = partsToPrimitives(bundle);
+const sg = bundle.geom.scaffolds[0];
 const byKind = (kind: string) => prims.filter((p) => p.meta?.kind === kind);
 /** 平面と同じ見え方になる基準倍率（1 グリッド = 3px = 平面の zoom 1）。 */
 const PLAN_PX_PER_GRID = 3;
@@ -70,7 +72,7 @@ describe('部材の太さ（平面と同一の実寸比）', () => {
     expect(railLines.every((p) => p.kind === 'line'
       && p.width === ELEV_PART_STYLE.railWidthMinPx
       && p.widthGrid === ELEV_PART_STYLE.railWidthGrid)).toBe(true);
-    // 支柱本体（コマの印は別色なので stroke で分ける）
+    // 支柱本体（コマ・継ぎ目の印は別色なので stroke で分ける）
     const postLines = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post);
     expect(postLines.length).toBeGreaterThan(0);
     expect(postLines.every((p) => p.kind === 'line'
@@ -88,13 +90,11 @@ describe('モジュール感（支柱位置の切れ目）', () => {
   });
 
   it('手摺は支柱位置に届かない＝隣のスパンとつながらない', () => {
-    const sg = faceElevationToParts(fe).geom.scaffolds[0];
-    const postLocals = sg.postXs.map((px) => px - faceElevationToParts(fe).geom.minXg);
+    const postLocals = sg.postXs.map((px) => px - bundle.geom.minXg);
     const railLines = byKind('rail').filter((p) => p.kind === 'line');
     for (const p of railLines) {
       if (p.kind !== 'line') continue;
       for (const px of postLocals) {
-        // 端点が支柱の真上に乗っていない（= 切れ目がある）
         expect(Math.abs(p.x1 - px)).toBeGreaterThan(1);
         expect(Math.abs(p.x2 - px)).toBeGreaterThan(1);
       }
@@ -103,8 +103,7 @@ describe('モジュール感（支柱位置の切れ目）', () => {
 
   it('踏板も 1 枚ずつ切れて見える（端を内側に寄せる）', () => {
     expect(ELEV_PART_STYLE.boardInsetGrid).toBeGreaterThan(0);
-    const boardLines = byKind('board').filter((p) => p.kind === 'line');
-    expect(boardLines.length).toBeGreaterThan(0);
+    expect(byKind('board').filter((p) => p.kind === 'line').length).toBeGreaterThan(0);
   });
 });
 
@@ -127,81 +126,54 @@ describe('丸ハンドル（平面と同じ「両端の●」）', () => {
     expect(d0.fill).toBe(line.stroke);
     expect(d0.rGrid).toBe(ELEV_PART_STYLE.railHandleGrid);
   });
-
-  it('支柱は上下端にキャップを持つ（1 本につき 2 つ・輪郭あり）', () => {
-    const posts = byKind('post');
-    const postIds = new Set(posts.map((p) => p.meta!.id));
-    expect(postIds.size).toBeGreaterThan(0);
-    for (const id of Array.from(postIds)) {
-      const caps = posts.filter((p) => p.meta!.id === id && p.kind === 'circle');
-      expect(caps).toHaveLength(2);
-      expect(caps.every((c) => c.kind === 'circle' && c.stroke === ELEV_PART_COLORS.postEdge)).toBe(true);
-    }
-  });
 });
 
-describe('色は平面の定数を参照する（二重管理しない）', () => {
-  it('手摺はスパンの呼び寸ごとに平面と同じ色', () => {
-    expect(railColorForSpanMm(1800)).toBe(HANDRAIL_COLORS[1800]);
-    expect(railColorForSpanMm(1200)).toBe(HANDRAIL_COLORS[1200]);
-    expect(railColorForSpanMm(600)).toBe(HANDRAIL_COLORS[600]);
-  });
-
-  it('規格外の長さは 1800 と同じ青にフォールバックする（暗背景で沈む色を出さない）', () => {
-    expect(railColorForSpanMm(1234)).toBe(ELEV_PART_COLORS.rail);
+// ============================================================
+// E-8-v2j: 手摺は全面統一色。
+// 4 面配置で「左 2 面が青・右 2 面が赤」になっていたのは、平面の長さ別カラーを
+// そのまま持ち込んでいたため（田の字は左列=南北・右列=東西なので、面ごとに
+// 手摺サイズが揃っていると面全体の色が変わる）。立面では情報にならないので統一する。
+// ============================================================
+describe('手摺の色は全面統一', () => {
+  it('平面の標準手摺(1800)と同じ青系', () => {
     expect(ELEV_PART_COLORS.rail).toBe(HANDRAIL_COLORS[1800]);
   });
 
-  it('この面の手摺は 1800 スパンなので平面の 1800 手摺と同色', () => {
-    const railLine = byKind('rail').find((p) => p.kind === 'line')!;
-    expect(railLine.kind === 'line' && railLine.stroke).toBe(HANDRAIL_COLORS[1800]);
-  });
-});
-
-describe('nominalSpanMm: 入隅切断でも部材の呼び寸で色を決める', () => {
-  const postXs = [0, 180, 330]; // 1800 スパンと 1500 スパン
-  it('x0 を含むスパンの支柱間隔(mm)を返す', () => {
-    expect(nominalSpanMm(postXs, 0)).toBe(1800);
-    expect(nominalSpanMm(postXs, 90)).toBe(1800);   // 切断されて途中から始まっても呼び寸
-    expect(nominalSpanMm(postXs, 180)).toBe(1500);
-  });
-  it('範囲外は最後のスパンにフォールバック', () => {
-    expect(nominalSpanMm(postXs, 999)).toBe(1500);
-    expect(nominalSpanMm([], 0)).toBe(1800);
+  it('スパン長が違っても同じ色で出る', () => {
+    const mixed: FaceSpanColumn = {
+      face: 'south', floor: 1, depthCoord: 540, xStart: 0, xEnd: 330,
+      rails: [1800, 1500], handrailIds: ['a', 'b'],
+    };
+    const feMixed = buildFaceElevation([mixed], [bld('M')], { defaultHeightMm: 6500 });
+    const strokes = new Set(
+      partsToPrimitives(faceElevationToParts(feMixed))
+        .filter((p) => p.meta?.kind === 'rail' && p.kind === 'line')
+        .map((p) => (p.kind === 'line' ? p.stroke : '')),
+    );
+    expect(strokes).toEqual(new Set([ELEV_PART_COLORS.rail]));
   });
 });
 
 // ============================================================
 // E-8-v2g/v2h: コマ（450 刻みの受け金具）。
-// 実物の支柱には 450 刻みでコマが付いていて、職人はそれを目印に手摺を掛ける。
-// 立面で見えないと手摺位置が読めない（鮎澤氏指摘）。明黄では支柱色に溶けるので濃色にする。
 // ============================================================
-describe('コマの列（皿+250 起点・450 刻み・上端まで）', () => {
-  // 詳細な仕様は komaGrid.test.ts。ここでは描画が同じ列を使っていることだけ見る。
-  it('エンジンが持つコマ格子と同じ定義', () => {
-    const sg = faceElevationToParts(fe).geom.scaffolds[0];
-    expect(sg.komaGridMm).toEqual(komaLevelsFromJackMm(sg.jackTopMm, sg.topRailMm));
-  });
-
-  it('作業床はコマ列に乗っている（スタート基準の 450 刻み）', () => {
-    const sg = faceElevationToParts(fe).geom.scaffolds[0];
-    for (const lv of sg.levelsMm) expect(sg.komaGridMm).toContain(lv);
-  });
-});
-
 describe('コマの描画', () => {
   const komaMarks = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.koma);
-  const sg = faceElevationToParts(fe).geom.scaffolds[0];
 
-  it('支柱 1 本ごとにコマ列ぶんの印が出る', () => {
+  it('コマ列は皿+250 起点（エンジンと同じ定義）で、作業床もその列に乗る', () => {
+    expect(sg.komaGridMm).toEqual(komaLevelsFromJackMm(sg.jackTopMm, sg.topRailMm));
+    for (const lv of sg.levelsMm) expect(sg.komaGridMm).toContain(lv);
+  });
+
+  it('支柱 1 本ごとにコマ列ぶんの印が出る（分割しても重複・欠落なし）', () => {
     expect(komaMarks).toHaveLength(sg.postXs.length * sg.komaGridMm.length);
   });
 
   it('コマは水平の短い印で、支柱の中心に左右対称', () => {
     const m = komaMarks[0];
     if (m.kind !== 'line') throw new Error('line が出ていない');
-    expect(m.y1).toBe(m.y2);                                     // 水平
-    expect(m.x2 - m.x1).toBe(ELEV_PART_STYLE.komaHalfGrid * 2);   // 支柱をまたぐ幅
+    expect(m.y1).toBe(m.y2);
+    expect(m.x2 - m.x1).toBe(ELEV_PART_STYLE.komaHalfGrid * 2);
   });
 
   it('コマの高さはコマ列そのもの（ローカル y = -mm/10）', () => {
@@ -211,18 +183,46 @@ describe('コマの描画', () => {
 
   it('支柱色に溶けない濃色で、不透明のまま乗る', () => {
     expect(ELEV_PART_COLORS.koma).not.toBe(ELEV_PART_COLORS.post);
-    // 濃色（各チャンネルが暗い）＝金色の支柱の上でコントラストが出る
     const rgb = ELEV_PART_COLORS.koma.slice(1).match(/../g)!.map((h) => parseInt(h, 16));
     expect(Math.max(...rgb)).toBeLessThan(0x80);
-    const m = komaMarks[0];
-    expect(m.kind === 'line' && m.opacity).toBe(1);
+    expect(komaMarks[0].kind === 'line' && komaMarks[0].opacity).toBe(1);
+  });
+});
+
+// ============================================================
+// E-8-v2j: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ね。
+// ============================================================
+describe('支柱の部材分割と継ぎ目', () => {
+  const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+  const jointMarks = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.joint);
+  const postBars = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post);
+
+  it('H=6500（14 コマ）は下から [6, 8]', () => {
+    expect(sg.komaGridMm).toHaveLength(14);
+    expect(segs.map((s) => s.komaCount)).toEqual([6, 8]);
   });
 
-  it('支柱より張り出し、太さは px 固定（密なので実寸比にしない）', () => {
-    expect(ELEV_PART_STYLE.komaHalfGrid * 2).toBeGreaterThan(ELEV_PART_STYLE.postWidthGrid);
-    expect(ELEV_PART_STYLE.komaWidthPx).toBeGreaterThanOrEqual(2.5);
-    const m = komaMarks[0];
-    expect(m.kind === 'line' && m.widthGrid).toBeUndefined();
+  it('部材ごとに 1 本の棒が出る', () => {
+    expect(postBars).toHaveLength(sg.postXs.length * segs.length);
+  });
+
+  it('継ぎ目の印は部材の境目にだけ出る（最上段には出ない）', () => {
+    expect(jointMarks).toHaveLength(sg.postXs.length * (segs.length - 1));
+    const ys = new Set(jointMarks.map((p) => (p.kind === 'line' ? p.y1 : NaN)));
+    expect(ys).toEqual(new Set([-segs[0].topMm / 10]));
+    // 継ぎ目はコマより広く出す
+    expect(ELEV_PART_STYLE.jointHalfGrid).toBeGreaterThan(ELEV_PART_STYLE.komaHalfGrid);
+  });
+
+  it('端キャップは支柱の一番下と一番上だけ（継ぎ目では出さない）', () => {
+    const caps = byKind('post').filter((p) => p.kind === 'circle');
+    expect(caps).toHaveLength(sg.postXs.length * 2);
+  });
+
+  it('部材は隙間なく積まれ、最上段は天端でクリップされる', () => {
+    expect(segs[0].bottomMm).toBe(sg.jackTopMm);
+    for (let i = 1; i < segs.length; i++) expect(segs[i].bottomMm).toBe(segs[i - 1].topMm);
+    expect(segs[segs.length - 1].topMm).toBe(sg.topRailMm);
   });
 });
 
@@ -233,7 +233,6 @@ describe('ジャッキはベース記号になる', () => {
     expect(poly && poly.kind === 'polygon' && poly.stroke).toBe(ELEV_PART_COLORS.postEdge);
     const base = jacks.find((p) => p.kind === 'line');
     expect(base && base.kind === 'line' && base.widthGrid).toBe(ELEV_PART_STYLE.jackBaseWidthGrid);
-    // 底辺は GL(=0) 上の水平線
     expect(base && base.kind === 'line' && [base.y1, base.y2]).toEqual([0, 0]);
   });
 });

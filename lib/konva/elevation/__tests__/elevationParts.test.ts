@@ -66,8 +66,10 @@ describe('部材の意味データ', () => {
   const bundle = faceElevationToParts(fe);
 
   it('支柱は支柱番号、踏板・手摺はスパン番号と高さを持つ', () => {
+    // E-8-v2j: 支柱は規格部材の積み重ね（H=6500 は 14 コマ → 下から [6,8] の 2 部材）。
     const posts = bundle.parts.filter((p) => p.kind === 'post');
-    expect(posts.map((p) => p.postIndex)).toEqual([0, 1, 2, 3]);
+    expect(posts.map((p) => p.postIndex)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
+    expect(posts.map((p) => p.segmentIndex)).toEqual([0, 1, 0, 1, 0, 1, 0, 1]);
     const boards = bundle.parts.filter((p) => p.kind === 'board');
     expect(boards.map((p) => p.levelMm)).toEqual([1100, 2900, 4700]);
     expect(boards.every((p) => typeof p.spanIndex === 'number')).toBe(true);
