@@ -243,11 +243,45 @@ describe('支柱の部材分割と継ぎ目', () => {
   });
 
   it('継ぎ目の印は部材の境目にだけ出る（最上段には出ない）', () => {
+    // E-8-v2o: 継ぎ目は「縁取り＋本体」の短い縦帯。本体（joint 色）が 1 継ぎ目に 1 本。
     expect(jointMarks).toHaveLength(sg.postXs.length * (segs.length - 1));
-    const ys = new Set(jointMarks.map((p) => (p.kind === 'line' ? p.y1 : NaN)));
-    expect(ys).toEqual(new Set([-segs[0].topMm / 10]));
-    // 継ぎ目はコマより広く出す
-    expect(ELEV_PART_STYLE.jointHalfGrid).toBeGreaterThan(ELEV_PART_STYLE.komaHalfGrid);
+    const jointY = -segs[0].topMm / 10;
+    for (const p of jointMarks) {
+      if (p.kind !== 'line') throw new Error('形が違う');
+      expect(p.x1).toBe(p.x2);                       // 縦帯
+      expect((p.y1 + p.y2) / 2).toBeCloseTo(jointY);  // 継ぎ目の高さが中心
+    }
+  });
+
+  it('継ぎ目はホゾの膨らみ＝支柱より太い縦帯で、縁取りが付く', () => {
+    const S = ELEV_PART_STYLE;
+    expect(S.jointSleeveGrid).toBeGreaterThan(S.postWidthGrid);   // 支柱より太い＝膨らみ
+    expect(S.jointEdgeGrid).toBeGreaterThan(S.jointSleeveGrid);   // 縁取りが一回り外
+    expect(S.jointEdgeMinPx).toBeGreaterThan(S.jointSleeveMinPx); // 縮小時も縁が残る
+    // 縁取りの縦帯が本体と同じ位置に、本体より先に出る（下に敷く）
+    const edges = byKind('post').filter((p) => p.kind === 'line'
+      && p.stroke === ELEV_PART_COLORS.jointEdge && p.x1 === p.x2);
+    expect(edges).toHaveLength(jointMarks.length);
+  });
+
+  it('継ぎ目の境目の線はコマより主張が強く、形も違う（縦帯 vs 細い横棒）', () => {
+    const S = ELEV_PART_STYLE;
+    expect(S.jointHalfGrid).toBeGreaterThan(S.komaHalfGrid);   // 左右へ広く出る
+    expect(S.jointWidthPx).toBeGreaterThan(S.komaWidthPx);     // 太い
+    // 境目の線は継ぎ目の高さちょうどに、スリーブより左右へはみ出して出る
+    const seams = byKind('post').filter((p) => p.kind === 'line'
+      && p.stroke === ELEV_PART_COLORS.jointEdge && p.y1 === p.y2);
+    expect(seams).toHaveLength(jointMarks.length);
+    for (const p of seams) {
+      if (p.kind !== 'line') throw new Error('形が違う');
+      expect(p.y1).toBeCloseTo(-segs[0].topMm / 10);
+      expect(Math.abs(p.x2 - p.x1)).toBeCloseTo(S.jointHalfGrid * 2);
+      expect(Math.abs(p.x2 - p.x1)).toBeGreaterThan(S.jointSleeveGrid);  // スリーブからはみ出す
+    }
+    // コマは細い横棒のまま（色も形も別物）
+    const komas = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.koma);
+    expect(komas.length).toBeGreaterThan(0);
+    expect(komas.every((p) => p.kind === 'line' && p.y1 === p.y2)).toBe(true);
   });
 
   it('端キャップは支柱の一番下と一番上だけ（継ぎ目では出さない）', () => {

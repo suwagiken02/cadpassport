@@ -61,6 +61,8 @@ export const ELEV_PART_COLORS = {
   koma: '#3B2A00',
   /** 支柱の継ぎ目（規格部材のジョイント）。コマより明るく太くして区別する。 */
   joint: '#C86A00',
+  /** 継ぎ目スリーブの縁取り・境目の線 (= E-8-v2o)。輪郭を出して膨らみとして読ませる。 */
+  jointEdge: '#4A2000',
 } as const;
 
 /**
@@ -115,9 +117,21 @@ export const ELEV_PART_STYLE = {
   /** コマの片側の張り出し（グリッド）。支柱(6)より広くして「乗っている」ように見せる。 */
   komaHalfGrid: 4.5,
 
-  // 継ぎ目 (= E-8-v2j): コマより広く・太く出して規格部材の境目と分かるように。
-  jointWidthPx: 3.5,
-  jointHalfGrid: 6.5,
+  // 継ぎ目 (= E-8-v2o): 実物のジョイントはホゾ差しで少し膨らむ。記号も「支柱より太い
+  //   短いスリーブ（濃い縁取り付き）＋境目の線」にする。コマ（濃茶の細い横棒）とは
+  //   形そのものが違うので、縮小しても取り違えない（v2j の細い横線 1 本は見落とされた）。
+  /** スリーブの縦の長さの半分（1 = 10mm）。継ぎ目の上下へこのぶん伸びる。 */
+  jointHalfLenGrid: 7,
+  /** スリーブ本体の太さ。支柱(6)より太く＝膨らみに見える。 */
+  jointSleeveGrid: 10,
+  jointSleeveMinPx: 5.5,
+  /** スリーブの縁取り（本体より一回り太い濃色。背景から浮かせる）。 */
+  jointEdgeGrid: 13.5,
+  jointEdgeMinPx: 7.5,
+  /** 境目の線の張り出し（片側）。スリーブからはみ出し、コマ(4.5)より広い。 */
+  jointHalfGrid: 8,
+  /** 境目の線の太さ(px 固定)。コマ(2.5)より太い。 */
+  jointWidthPx: 3,
 } as const;
 
 /**
@@ -217,9 +231,15 @@ export function pushPost(
   for (const ky of opts?.komaYs ?? []) {
     line(out, x - S.komaHalfGrid, ky, x + S.komaHalfGrid, ky, C.koma, S.komaWidthPx, undefined, 1, meta);
   }
+  // 継ぎ目 (= E-8-v2o): 縁取り → 本体 の順に重ねた短い縦帯（＝ホゾの膨らみ）＋境目の線。
+  //   コマは「細い横棒」、継ぎ目は「太い縦の膨らみ」なので、形で見分けられる。
   if (opts?.jointY != null) {
-    line(out, x - S.jointHalfGrid, opts.jointY, x + S.jointHalfGrid, opts.jointY,
-      C.joint, S.jointWidthPx, undefined, 1, meta);
+    const jy = opts.jointY, h = S.jointHalfLenGrid;
+    line(out, x, jy - h, x, jy + h, C.jointEdge, S.jointEdgeMinPx, S.jointEdgeGrid, 1, meta);
+    line(out, x, jy - h, x, jy + h, C.joint, S.jointSleeveMinPx, S.jointSleeveGrid, 1, meta);
+    // 部材が切り替わる高さそのものを線で示す（スリーブより左右へはみ出させる）
+    line(out, x - S.jointHalfGrid, jy, x + S.jointHalfGrid, jy,
+      C.jointEdge, S.jointWidthPx, undefined, 1, meta);
   }
   // 端キャップ（棒の端であることを明示。輪郭を付けて背景から浮かせる）
   const caps: number[] = [];
