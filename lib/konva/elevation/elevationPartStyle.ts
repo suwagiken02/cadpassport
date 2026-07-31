@@ -32,6 +32,7 @@
 // 座標はグループローカル（横=面軸グリッド、縦=-(mm/10)、GL=0・上が負）。
 // ============================================================
 import { HANDRAIL_COLORS } from '@/lib/konva/handrailColors';
+import { KOMA_PITCH_MM } from './komaGrid';
 import type { ElevationPrimitive, ElevationPrimitiveMeta } from '@/types';
 
 // コマ格子・支柱の規格分割は komaGrid.ts。描画側からも引けるよう再 export する。
@@ -142,6 +143,38 @@ export const ELEV_PART_STYLE = {
 export function partWidthPx(minPx: number, gridValue: number | undefined, pxPerGrid: number): number {
   if (gridValue == null || !(pxPerGrid > 0)) return minPx;
   return Math.max(minPx, gridValue * pxPerGrid);
+}
+
+/**
+ * 部材を掴める幅(px) (= E-8-v2p)。指の基準で、見た目より広い透明ヒットを持たせる。
+ *
+ * 実機: 「支柱を掴む判定が難しすぎる。細い縦線を正確に踏まないと選択・ドラッグできない」。
+ * 支柱は細い縦線で、しかも長さ方向にしか逃げ場が無いので最優先で広げる。
+ * 手摺・踏板は 450mm 刻みで上下に並ぶため、広げすぎると隣の段と食い合って
+ * 狙った段を選べなくなる。そこで「コマ間隔の 80%」で頭打ちにする
+ * （ズームを引くほど自動的に細くなり、隣と取り合わない）。
+ * 見た目より細くはしない（太い部材はその太さぶん掴める）。
+ */
+export const ELEV_HIT_PX = {
+  /** 支柱・ジャッキ（細い縦線）。左右合計。 */
+  post: 22,
+  /** 手摺・踏板・嵩上げ（横線）。上下合計。 */
+  rail: 18,
+  /** 背景要素（寸法線・文字など）。 */
+  other: 14,
+} as const;
+
+export function partHitPx(
+  kind: ElevationPrimitiveMeta['kind'] | undefined, visualPx: number, pxPerGrid: number,
+): number {
+  const isPost = kind === 'post' || kind === 'jack';
+  const isSpanPart = kind === 'rail' || kind === 'board' || kind === 'raise';
+  const target = isPost ? ELEV_HIT_PX.post : isSpanPart ? ELEV_HIT_PX.rail : ELEV_HIT_PX.other;
+  // 上下に並ぶ部材だけ、隣の段と食い合わないところで止める（支柱の左右は隣の支柱まで遠い）。
+  const cap = isSpanPart && pxPerGrid > 0
+    ? (KOMA_PITCH_MM / 10) * pxPerGrid * 0.8
+    : Infinity;
+  return Math.max(visualPx, Math.min(target, cap));
 }
 
 /**

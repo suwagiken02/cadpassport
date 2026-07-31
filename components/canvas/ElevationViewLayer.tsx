@@ -29,7 +29,9 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
 import { nextAddId, overriddenTextIds, withAdd, withHide } from '@/lib/konva/elevation/elevationEdits';
 import { composeViewPrimitives } from '@/lib/konva/elevation/elevationViewCompose';
-import { ELEV_PART_STYLE, ELEV_SELECT_COLOR, partWidthPx } from '@/lib/konva/elevation/elevationPartStyle';
+import {
+  ELEV_PART_STYLE, ELEV_SELECT_COLOR, partHitPx, partWidthPx,
+} from '@/lib/konva/elevation/elevationPartStyle';
 import {
   buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
@@ -40,8 +42,6 @@ type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 
 /** ズーム停止後に再cache / 再生成するまでの待ち時間（ms）。 */
 const RECACHE_DEBOUNCE_MS = 200;
-/** 部材を掴める幅(px)。 */
-const EDIT_HIT_PX = 14;
 /** ドラッグと判定するまでの移動量(px)。指のタップのぶれ（数 px）より大きくする。 */
 const EDIT_DRAG_PX = 10;
 /** 吸着プレビューの帯の太さ(px)。部材より太く、下に敷く。 */
@@ -103,13 +103,13 @@ function renderPrimLocal(
   opts: { selected: boolean; overridden: boolean; interactive: boolean },
 ) {
   const selStroke = ELEV_SELECT_COLOR;
+  // E-8-v2l/v2p: strokeScaleEnabled=false の shape では、Konva は hitStrokeWidth を
+  //   「画面 px」として解釈する（HitContext._stroke が pixelRatio 変換で線を引く）。
+  //   幅は partHitPx が部材の種類ごとに決める（支柱は細い縦線なので最優先で広げ、
+  //   上下に並ぶ手摺・踏板は隣の段と食い合わない範囲で広げる）。
+  const hitPx = (visualPx: number) => partHitPx(p.meta?.kind, visualPx, s);
   if (p.kind === 'line') {
     const w = partWidthPx(p.width, p.widthGrid, s);
-    // E-8-v2l: strokeScaleEnabled=false の shape では、Konva は hitStrokeWidth を
-    //   「画面 px」として解釈する（HitContext._stroke が pixelRatio 変換で線を引く）。
-    //   従来は EDIT_HIT_PX / s を渡していたため、拡大するほど掴める幅が痩せ、
-    //   見た目 38px の手摺の当たり判定が 3px しかない ＝「部材に触れない」状態だった。
-    //   px 直値で渡し、見た目より細くならないよう太さ自体も下限に入れる。
     return (
       <Line
         key={key} points={[p.x1, p.y1, p.x2, p.y2]}
@@ -117,7 +117,7 @@ function renderPrimLocal(
         strokeWidth={opts.selected ? w + 2 : w}
         dash={p.dash} opacity={p.opacity ?? 1} lineCap="round"
         strokeScaleEnabled={false}
-        hitStrokeWidth={opts.interactive ? Math.max(EDIT_HIT_PX, w) : 0}
+        hitStrokeWidth={opts.interactive ? hitPx(w) : 0}
         listening={opts.interactive}
       />
     );
@@ -140,7 +140,10 @@ function renderPrimLocal(
         fill={withAlpha(p.fill, p.fillOpacity)}
         stroke={opts.selected ? selStroke : p.stroke}
         strokeWidth={(p.width ?? 0) + (opts.selected ? 2 : 0)}
-        strokeScaleEnabled={false} listening={opts.interactive}
+        strokeScaleEnabled={false}
+        // ジャッキのベース記号など、小さい塗り面は輪郭のぶんだけ掴みしろを足す。
+        hitStrokeWidth={opts.interactive ? hitPx(p.width ?? 0) : 0}
+        listening={opts.interactive}
       />
     );
   }
@@ -152,8 +155,8 @@ function renderPrimLocal(
         fill={opts.selected ? selStroke : p.fill}
         stroke={p.stroke} strokeWidth={p.strokeWidth ?? 0} strokeScaleEnabled={false}
         opacity={p.opacity ?? 1}
-        // 小さい丸（支柱の端キャップ等）でも指で掴めるよう、当たり判定だけ最低 EDIT_HIT_PX に広げる。
-        hitStrokeWidth={opts.interactive ? Math.max(0, EDIT_HIT_PX - r * 2) : 0}
+        // 小さい丸（支柱の端キャップ等）は、直径が掴みしろに届かないぶんを輪で足す。
+        hitStrokeWidth={opts.interactive ? Math.max(0, hitPx(r * 2) - r * 2) : 0}
         listening={opts.interactive}
       />
     );

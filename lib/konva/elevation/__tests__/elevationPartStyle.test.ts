@@ -13,8 +13,10 @@ import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToParts, partsToPrimitives } from '../elevationParts';
 import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, partWidthPx, postSegmentsMm,
+  ELEV_HIT_PX, ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm,
+  partHitPx, partWidthPx, postSegmentsMm,
 } from '../elevationPartStyle';
+import { KOMA_PITCH_MM } from '../komaGrid';
 
 const RECT: Point[] = [{ x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 540 }, { x: 0, y: 540 }];
 const bld = (id: string): BuildingShape => ({ id, type: 'polygon', points: RECT, fill: '#3d3d3a', floor: 1 });
@@ -41,6 +43,58 @@ describe('partWidthPx: 実寸比で太らせ、縮小時は下限で潰さない
   });
   it('実寸指定が無ければ下限 px のまま（背景要素は従来どおり）', () => {
     expect(partWidthPx(1.5, undefined, 3)).toBe(1.5);
+  });
+});
+
+// ============================================================
+// E-8-v2p: 掴める幅（指の基準）。
+// 実機「支柱を掴む判定が難しすぎる。細い縦線を正確に踏まないと選択・ドラッグできない」。
+// ============================================================
+describe('partHitPx: 見た目より広い掴みしろ', () => {
+  /** コマ間隔（グリッド）。手摺・踏板はこの間隔で上下に並ぶ。 */
+  const KOMA_GRID = KOMA_PITCH_MM / 10;
+
+  it('支柱・ジャッキは指の基準まで広げる（細い縦線・逃げ場が無いので最優先）', () => {
+    expect(partHitPx('post', 4.2, 1.2)).toBe(ELEV_HIT_PX.post);
+    expect(partHitPx('jack', 5, 1.2)).toBe(ELEV_HIT_PX.post);
+    expect(ELEV_HIT_PX.post).toBeGreaterThanOrEqual(20);   // 実機要件（左右合計 20px 以上）
+    expect(ELEV_HIT_PX.post).toBeGreaterThan(ELEV_HIT_PX.rail);
+  });
+
+  it('見た目より細くはしない（太い部材はその太さぶん掴める）', () => {
+    expect(partHitPx('post', 40, 5)).toBe(40);
+    expect(partHitPx('rail', 40, 5)).toBe(40);
+  });
+
+  it('手摺・踏板も指の基準まで広げる', () => {
+    expect(partHitPx('rail', 3.2, 1.2)).toBe(ELEV_HIT_PX.rail);
+    expect(partHitPx('board', 6, 1.2)).toBe(ELEV_HIT_PX.rail);
+    expect(partHitPx('raise', 6, 1.2)).toBe(ELEV_HIT_PX.rail);
+  });
+
+  it('引いたズームでは隣の段と食い合わないところで頭打ちにする', () => {
+    // pxPerGrid=0.3 → コマ間隔は 45×0.3=13.5px しかない。18px も広げると隣段と取り合う。
+    expect(partHitPx('rail', 1, 0.3)).toBeCloseTo(KOMA_GRID * 0.3 * 0.8);   // 10.8px
+    // どの倍率でも「掴みしろ < コマ間隔」＝隣の段の中心には届かない
+    for (const s of [0.1, 0.3, 0.5, 1.2, 3, 8]) {
+      expect(partHitPx('rail', ELEV_PART_STYLE.railWidthGrid * s, s))
+        .toBeLessThan(KOMA_GRID * s);
+    }
+  });
+
+  it('支柱は間隔の頭打ちを受けない（左右は隣の支柱まで遠い）', () => {
+    expect(partHitPx('post', 1, 0.3)).toBe(ELEV_HIT_PX.post);
+    expect(partHitPx('post', 1, 0.05)).toBe(ELEV_HIT_PX.post);
+  });
+
+  it('背景要素（寸法線・文字）は従来どおりの幅', () => {
+    expect(partHitPx('dim', 0.8, 1.2)).toBe(ELEV_HIT_PX.other);
+    expect(partHitPx(undefined, 0.8, 1.2)).toBe(ELEV_HIT_PX.other);
+  });
+
+  it('pxPerGrid が 0 でも壊れない', () => {
+    expect(partHitPx('rail', 3.2, 0)).toBe(ELEV_HIT_PX.rail);
+    expect(partHitPx('post', 4.2, 0)).toBe(ELEV_HIT_PX.post);
   });
 });
 
