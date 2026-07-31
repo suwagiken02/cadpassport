@@ -452,18 +452,25 @@ describe('buildFaceElevation: 矩形2階 × H=6500', () => {
     expect(sc.postXs).toEqual([-450, -270, -90, 90]);
   });
 
-  it('踏板帯=段数・手摺=現場ルールのコマだけ', () => {
+  it('踏板・手摺は「段(コマ) × スパン」で 1 本ずつ出る', () => {
     const sc = fe.scaffolds[0];
-    expect(sc.boards.length).toBe(sc.levels.floors); // 3
-    expect(sc.boards.map(b => b.levelMm)).toEqual([1100, 2900, 4700]);
+    const spans = sc.postXs.length - 1;
+    expect(spans).toBe(3);
+    // E-8-v2l: 1 スパン 1 部材。列の全幅 1 本で出していたため、実機で手摺を掴むと
+    //   10800mm(6スパン)が 1 本のモジュールとして動いていた（鮎澤氏）。
+    expect(sc.boards.length).toBe(sc.levels.floors * spans);  // 3 段 × 3 スパン
+    expect(Array.from(new Set(sc.boards.map(b => b.levelMm)))).toEqual([1100, 2900, 4700]);
     // E-8-v2j: 全コマではなく「下端コマ・上端コマ・各作業床の +450/+900」だけ。
-    expect(sc.rails.map(r => r.heightMm))
-      .toEqual(railKomaLevelsMm(sc.levels.komaGridMm, sc.levels.levels));
-    expect(sc.rails.map(r => r.heightMm))
-      .toEqual([650, 1550, 2000, 3350, 3800, 5150, 5600, 6500]);
-    // E-5-fix: 北立面は左右反転。踏板 x[-90,450]→[-450,90]。
-    expect(sc.boards[0].x0).toBe(-450);
-    expect(sc.boards[0].x1).toBe(90);
+    const railLevels = railKomaLevelsMm(sc.levels.komaGridMm, sc.levels.levels);
+    expect(Array.from(new Set(sc.rails.map(r => r.heightMm)))).toEqual(railLevels);
+    expect(railLevels).toEqual([650, 1550, 2000, 3350, 3800, 5150, 5600, 6500]);
+    expect(sc.rails.length).toBe(railLevels.length * spans);
+    // 1 本ぶんの幅は必ずスパン幅（1800mm = 180 グリッド）
+    for (const b of sc.boards) expect(Math.round(Math.abs(b.x1 - b.x0))).toBe(180);
+    for (const r of sc.rails) expect(Math.round(Math.abs(r.x1 - r.x0))).toBe(180);
+    // E-5-fix: 北立面は左右反転。列全体としては x[-90,450]→[-450,90] を覆う。
+    expect(Math.min(...sc.boards.map(b => Math.min(b.x0, b.x1)))).toBe(-450);
+    expect(Math.max(...sc.boards.map(b => Math.max(b.x0, b.x1)))).toBe(90);
   });
 
   it('建物輪郭が北面に出る（高さ6500）', () => {

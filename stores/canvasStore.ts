@@ -37,6 +37,7 @@ import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
 import { rematchElevationParts } from '@/lib/konva/elevation/elevationPartsRematch';
 import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
+import { hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -1512,7 +1513,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   ensureElevationParts: (viewId) => {
     const { canvasData } = get();
     const view = (canvasData.elevationViews ?? []).find((v) => v.id === viewId);
-    if (!view || (view.parts && view.geom)) return;
+    if (!view) return;
+    // E-8-v2l: 「parts が無い(旧 primitives のみ)」に加えて、「列全幅 1 本の旧世代 parts」も
+    //   作り直しの対象にする（配置済みの立面が古い姿のまま残っていたため）。
+    //   手で足した/動かした部材や編集差分があるビューは対象外＝作り直して失わない。
+    //   作り直すとスパン幅ぴったりになるので判定は false に落ちる＝再入しない。
+    const legacy = hasLegacyFullWidthParts(view.parts, view.geom, (view.edits?.length ?? 0) > 0);
+    if (view.parts && view.geom && !legacy) return;
     // 現在の平面から同じ面の立面を作り直し、その部材を採用する（絵は保存済みのものを背景に使う）。
     const bundle = facePartsForCanvas(canvasData, view.face);
     if (bundle.parts.length === 0) return;

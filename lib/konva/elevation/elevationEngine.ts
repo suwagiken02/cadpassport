@@ -962,17 +962,24 @@ export function buildFaceElevation(
 
   // 足場（列ごとに別 scaffold）
   const scaffolds: ElevationScaffold[] = faceColumns.map(column => {
-    const { postXs } = buildElevationColumns(column);
+    const { postXs, spans } = buildElevationColumns(column);
     const heightMm = sampleColumnBaseHeightMm(column, buildings, opts);
     const levels = buildElevationLevels(heightMm ?? 0, opts);
 
-    const x0 = column.xStart;
-    const x1 = column.xEnd;
-    const boards: ElevationBoard[] = levels.levels.map(levelMm => ({ levelMm, x0, x1 }));
+    // E-8-v2l: 踏板・手摺は「1 スパン 1 部材」で出す。
+    //   実物は 1800 等の規格部材で、列の全幅 1 本ではない。ここを列全幅で作っていたため、
+    //   立面で手摺を掴むと 6 スパンぶん(10800mm)が 1 本のモジュールとして動き、
+    //   端の丸（→v2l で下向きフック）も列の左右端にしか出なかった（鮎澤氏・実機）。
+    //   入隅の切断は後段の applyOcclusionCut が区間を引くので、切断スパンは切断後区間になる。
+    const spanRanges = spans.length > 0
+      ? spans.map(sp => ({ x0: sp.x0, x1: sp.x1 }))
+      : [{ x0: column.xStart, x1: column.xEnd }];   // 部材長が無い列（退化）は従来どおり全幅 1 本
+    const boards: ElevationBoard[] = levels.levels.flatMap(
+      levelMm => spanRanges.map(sp => ({ levelMm, x0: sp.x0, x1: sp.x1 })));
     // E-8-v2j: 手摺が付くコマは決まっている（下端コマ・上端コマ・各作業床の +450/+900）。
     //   従来の「全コマに手摺」は誤り（鮎澤氏）。
     const rails: ElevationRail[] = railKomaLevelsMm(levels.komaGridMm, levels.levels, opts?.komaMm)
-      .map(heightMmK => ({ heightMm: heightMmK, x0, x1 }));
+      .flatMap(heightMmK => spanRanges.map(sp => ({ heightMm: heightMmK, x0: sp.x0, x1: sp.x1 })));
 
     // 妻面のコマ嵩上げ: 各スパンで壁最高点まで届かない分だけ 450 コマを追加（基準=壁の形）。
     const spanRaises = computeSpanRaises(column, postXs, levels, buildingOutlines, opts);

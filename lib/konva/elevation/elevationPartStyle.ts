@@ -69,13 +69,20 @@ export const ELEV_PART_COLORS = {
  *   ○MinPx = 縮小時の下限（screen px）。これ以下には細くならない。
  */
 export const ELEV_PART_STYLE = {
-  // 手摺: 平面と完全に同じ（太さ 8 グリッド・ハンドル半径 8 グリッド）
+  // 手摺: 平面と同じ太さ（8 グリッド ＝ 80mm）
   railWidthGrid: 8,
   railWidthMinPx: 3.2,
-  railHandleGrid: 8,
-  railHandleMinPx: 3,
-  /** 手摺をスパン端から内側に寄せる量（ハンドル半径 8 ＋ 隙間 1）。支柱位置に切れ目を作る。 */
+  /** 手摺をスパン端から内側に寄せる量。支柱位置に切れ目を作る。 */
   railInsetGrid: 9,
+  /**
+   * 手摺端の下向きフック (= E-8-v2l)。実物のクサビ式手摺は両端に下向きのフック金具が付き、
+   * 支柱のポケットに掛かる。立面＝横から見た形なので「端から下へ短い鉤」で描く。
+   * 丸ハンドル（平面の表現）は実物と違ううえ、踏板(アンチ)と見分けが付きにくかった（鮎澤氏）。
+   */
+  railHookDropGrid: 12,   // 下向きの落ち 120mm
+  railHookToeGrid: 5,     // 爪 50mm（支柱側＝外向き）
+  railHookWidthGrid: 6,
+  railHookWidthMinPx: 2.8,
 
   // 踏板: 1 枚のパネル（濃い縁 + 本体）
   boardWidthGrid: 7,
@@ -151,8 +158,9 @@ const dot = (
 ) => out.push({ kind: 'circle', x, y, r: minPx, rGrid, fill, opacity, meta });
 
 /**
- * 手摺（コマ横線）: 太線＋両端の大きな丸ハンドル（平面と同じ表現・全面統一色）。
+ * 手摺（コマ横線）: 太線＋両端の下向きフック金具 (= E-8-v2l・全面統一色)。
  * スパン端から内側に寄せて描くので、隣のスパンの手摺とつながって見えない。
+ * フックは「縦に落ちて、支柱側へ爪が出る」鉤形。1 スパン 1 本の部材として読める。
  */
 export function pushRail(
   out: Out, x0: number, x1: number, y: number, meta: ElevationPrimitiveMeta,
@@ -161,8 +169,14 @@ export function pushRail(
   const S = ELEV_PART_STYLE;
   const { a, b } = insetRange(x0, x1, S.railInsetGrid);
   line(out, a, y, b, y, c, S.railWidthMinPx, S.railWidthGrid, 1, meta);
-  dot(out, a, y, S.railHandleMinPx, S.railHandleGrid, c, 1, meta);
-  dot(out, b, y, S.railHandleMinPx, S.railHandleGrid, c, 1, meta);
+  // 両端のフック（縦の落ち＋外向きの爪）。爪は支柱側へ向ける＝掛かっているように見せる。
+  const drop = y + S.railHookDropGrid;
+  const hookLine = (x: number, toeX: number) => {
+    line(out, x, y, x, drop, c, S.railHookWidthMinPx, S.railHookWidthGrid, 1, meta);
+    line(out, x, drop, toeX, drop, c, S.railHookWidthMinPx, S.railHookWidthGrid, 1, meta);
+  };
+  hookLine(a, a - S.railHookToeGrid);
+  hookLine(b, b + S.railHookToeGrid);
 }
 
 /**

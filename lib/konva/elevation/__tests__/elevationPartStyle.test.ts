@@ -45,13 +45,13 @@ describe('partWidthPx: 実寸比で太らせ、縮小時は下限で潰さない
 });
 
 describe('部材の太さ（平面と同一の実寸比）', () => {
-  it('手摺は平面と完全に同じ太さ・ハンドル径（実寸 8 グリッド = 80mm）', () => {
+  it('手摺は平面と完全に同じ太さ（実寸 8 グリッド = 80mm）', () => {
     const S = ELEV_PART_STYLE;
-    // 平面: strokeWidth 24*zoom px / gridPx 3*zoom px → 8 グリッド。ハンドル r も同じ。
+    // 平面: strokeWidth 24*zoom px / gridPx 3*zoom px → 8 グリッド。
     expect(S.railWidthGrid).toBe(8);
-    expect(S.railHandleGrid).toBe(8);
     expect(partWidthPx(S.railWidthMinPx, S.railWidthGrid, PLAN_PX_PER_GRID)).toBe(24);
-    expect(partWidthPx(S.railHandleMinPx, S.railHandleGrid, PLAN_PX_PER_GRID)).toBe(24);
+    // フックは本体より細い爪（実物のフック金具。丸ハンドルは E-8-v2l で廃止）
+    expect(S.railHookWidthGrid).toBeLessThan(S.railWidthGrid);
   });
 
   it('踏板は縁の方が太い＝パネルの輪郭が見える', () => {
@@ -69,9 +69,12 @@ describe('部材の太さ（平面と同一の実寸比）', () => {
   it('実際に出力される線が実寸比の情報を持っている', () => {
     const railLines = byKind('rail').filter((p) => p.kind === 'line');
     expect(railLines.length).toBeGreaterThan(0);
-    expect(railLines.every((p) => p.kind === 'line'
-      && p.width === ELEV_PART_STYLE.railWidthMinPx
-      && p.widthGrid === ELEV_PART_STYLE.railWidthGrid)).toBe(true);
+    // 本体は実寸 8 グリッド、両端のフックは細い爪。どちらも実寸比の情報を持つ。
+    expect(railLines.every((p) => p.kind === 'line' && (
+      (p.width === ELEV_PART_STYLE.railWidthMinPx && p.widthGrid === ELEV_PART_STYLE.railWidthGrid)
+      || (p.width === ELEV_PART_STYLE.railHookWidthMinPx
+        && p.widthGrid === ELEV_PART_STYLE.railHookWidthGrid)
+    ))).toBe(true);
     // 支柱本体（コマ・継ぎ目の印は別色なので stroke で分ける）
     const postLines = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.post);
     expect(postLines.length).toBeGreaterThan(0);
@@ -107,24 +110,57 @@ describe('モジュール感（支柱位置の切れ目）', () => {
   });
 });
 
-describe('丸ハンドル（平面と同じ「両端の●」）', () => {
-  it('手摺は 1 本につき線 1 + 丸 2 で出る', () => {
-    const rails = byKind('rail');
-    const lines = rails.filter((p) => p.kind === 'line').length;
-    const dots = rails.filter((p) => p.kind === 'circle').length;
-    expect(lines).toBeGreaterThan(0);
-    expect(dots).toBe(lines * 2);
+// ============================================================
+// E-8-v2l: 手摺端は「下向きのフック金具」。実物のクサビ式手摺は両端に下向きフックが付き、
+// 支柱のポケットへ掛かる。丸ハンドル（平面の表現）は実物と違ううえ、踏板(アンチ)と
+// 見分けが付きにくかった（鮎澤氏・実物写真確認済み）。
+// ============================================================
+describe('手摺端の下向きフック', () => {
+  it('手摺に丸は出ない（丸ハンドルは廃止）', () => {
+    expect(byKind('rail').filter((p) => p.kind === 'circle')).toEqual([]);
   });
 
-  it('丸ハンドルは線の両端に置かれ、線と同じ色・平面と同じ半径', () => {
-    const rails = byKind('rail');
-    const i = rails.findIndex((p) => p.kind === 'line');
-    const line = rails[i], d0 = rails[i + 1], d1 = rails[i + 2];
-    if (line.kind !== 'line' || d0.kind !== 'circle' || d1.kind !== 'circle') throw new Error('形が違う');
-    expect([d0.x, d0.y]).toEqual([line.x1, line.y1]);
-    expect([d1.x, d1.y]).toEqual([line.x2, line.y2]);
-    expect(d0.fill).toBe(line.stroke);
-    expect(d0.rGrid).toBe(ELEV_PART_STYLE.railHandleGrid);
+  it('手摺 1 本 = 本体 1 + フック 4 本（縦＋爪 × 両端）の線で出る', () => {
+    const railParts = bundle.parts.filter((p) => p.kind === 'rail');
+    const railLines = byKind('rail').filter((p) => p.kind === 'line');
+    expect(railParts.length).toBeGreaterThan(0);
+    expect(railLines.length).toBe(railParts.length * 5);
+  });
+
+  it('フックは両端で下へ落ち、爪は支柱側（外向き）へ出る', () => {
+    const L = byKind('rail').filter((p) => p.kind === 'line').slice(0, 5);
+    const [body, aDrop, aToe, bDrop, bToe] = L;
+    if (body.kind !== 'line' || aDrop.kind !== 'line' || aToe.kind !== 'line'
+      || bDrop.kind !== 'line' || bToe.kind !== 'line') throw new Error('形が違う');
+    const S = ELEV_PART_STYLE;
+    // 本体は水平
+    expect(body.y1).toBe(body.y2);
+    // 左端: 本体端から真下へ（ローカル座標は +y が下）
+    expect(aDrop.x1).toBe(body.x1);
+    expect(aDrop.x2).toBe(body.x1);
+    expect(aDrop.y1).toBe(body.y1);
+    expect(aDrop.y2).toBe(body.y1 + S.railHookDropGrid);
+    // 左端の爪は外向き（左）へ水平に出る
+    expect(aToe.y1).toBe(aDrop.y2);
+    expect(aToe.y2).toBe(aDrop.y2);
+    expect(aToe.x2).toBe(body.x1 - S.railHookToeGrid);
+    // 右端: 真下へ落ちて、爪は外向き（右）へ
+    expect(bDrop.x1).toBe(body.x2);
+    expect(bDrop.y2).toBe(body.y1 + S.railHookDropGrid);
+    expect(bToe.x2).toBe(body.x2 + S.railHookToeGrid);
+    // 色は本体と同じ（1 本のモノに見せる）
+    expect([aDrop.stroke, aToe.stroke, bDrop.stroke, bToe.stroke])
+      .toEqual([body.stroke, body.stroke, body.stroke, body.stroke]);
+  });
+
+  it('フックは支柱を越えて隣スパンへはみ出さない', () => {
+    const postLocals = sg.postXs.map((px) => px - bundle.geom.minXg);
+    const xs = byKind('rail').filter((p) => p.kind === 'line')
+      .flatMap((p) => (p.kind === 'line' ? [p.x1, p.x2] : []));
+    for (const x of xs) {
+      // 爪(5) < インセット(9) なので、支柱位置には触れない＝切れ目が残る
+      for (const px of postLocals) expect(Math.abs(x - px)).toBeGreaterThan(1);
+    }
   });
 });
 

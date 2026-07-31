@@ -293,6 +293,40 @@ export function withPartDeleted(parts: ElevationPart[], id: string): ElevationPa
     : parts.map((p) => (p.id === id ? { ...p, origin: 'manual' as const, removed: true } : p));
 }
 
+/**
+ * 旧世代（列全幅）の自動部材を持つビューか (= E-8-v2l)。
+ *
+ * v2l より前は、踏板・手摺を「列の全幅 1 本」で作っていた（実機で手摺を掴むと
+ * 10800mm が 1 本として動いた）。すでに配置済みのビューは parts を保存しているので、
+ * 生成側を直しても作り直さない限り古い姿のまま残る。それを検出して作り直すための判定。
+ *
+ * 安全側に倒す:
+ *   ・手で足した/動かした部材（origin='manual'）や編集差分がある場合は「触らない」
+ *     （作り直しはその場の平面から再生成するので、手の入った内容を失うため）
+ *   ・作り直した後はスパン幅ぴったりになるので、この判定は false に落ちる＝再入しない
+ */
+export function hasLegacyFullWidthParts(
+  parts: ElevationPart[] | undefined,
+  geom: ElevationPartGeometry | undefined,
+  hasManualEdits = false,
+): boolean {
+  if (!parts || !geom || parts.length === 0) return false;
+  if (hasManualEdits) return false;
+  if (parts.some((p) => p.origin === 'manual' || p.removed)) return false;
+  return parts.some((p) => {
+    if (p.kind !== 'rail' && p.kind !== 'board') return false;
+    if (p.x0 == null || p.x1 == null) return false;
+    const sg = geom.scaffolds[p.scaffoldIndex];
+    if (!sg || sg.postXs.length < 2) return false;
+    let maxSpan = 0;
+    for (let i = 0; i < sg.postXs.length - 1; i++) {
+      maxSpan = Math.max(maxSpan, Math.abs(sg.postXs[i + 1] - sg.postXs[i]));
+    }
+    // どのスパンよりも広い部材 = 複数スパンにまたがる旧世代の 1 本
+    return Math.abs(p.x1 - p.x0) > maxSpan + 1e-6;
+  });
+}
+
 /** 部材レイヤのプリミティブか（背景と部材の切り分け・E-8a のタグを使う）。 */
 export function isPartPrimitive(p: ElevationPrimitive): boolean {
   const k = p.meta?.kind;

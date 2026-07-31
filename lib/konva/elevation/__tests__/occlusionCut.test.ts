@@ -165,7 +165,8 @@ describe('E-5-fix4 end-to-end: L字南面の奥列が実機形式でも切断＋
     expect(back.rails.every((r) => Math.min(r.x0, r.x1) === 278)).toBe(true);
     expect(back.boards.every((b) => Math.min(b.x0, b.x1) === 278)).toBe(true);
     // 手前列は元の 270 端のまま。奥列開始 278 との間に 270..278(=80mm) の見える切れ目。
-    expect(front.rails.every((r) => Math.max(r.x0, r.x1) === 270)).toBe(true);
+    // E-8-v2l: 手摺は 1 スパン 1 本になったので、列の右端を持つのは最終スパンだけ。
+    expect(Math.max(...front.rails.map((r) => Math.max(r.x0, r.x1)))).toBe(270);
     const gap = Math.min(...back.rails.map((r) => Math.min(r.x0, r.x1))) - Math.max(...front.rails.map((r) => Math.max(r.x0, r.x1)));
     expect(gap).toBe(8); // グリッド=80mm、固定 50mm より広く描画スケールでも視認できる
   });

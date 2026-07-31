@@ -70,9 +70,14 @@ describe('部材の意味データ', () => {
     const posts = bundle.parts.filter((p) => p.kind === 'post');
     expect(posts.map((p) => p.postIndex)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
     expect(posts.map((p) => p.segmentIndex)).toEqual([0, 1, 0, 1, 0, 1, 0, 1]);
+    // E-8-v2l: 踏板・手摺は「1 スパン 1 部材」。3 段 × 3 スパン = 9 枚。
     const boards = bundle.parts.filter((p) => p.kind === 'board');
-    expect(boards.map((p) => p.levelMm)).toEqual([1100, 2900, 4700]);
-    expect(boards.every((p) => typeof p.spanIndex === 'number')).toBe(true);
+    expect(boards.length).toBe(9);
+    expect(Array.from(new Set(boards.map((p) => p.levelMm)))).toEqual([1100, 2900, 4700]);
+    for (const lv of [1100, 2900, 4700]) {
+      expect(boards.filter((p) => p.levelMm === lv).map((p) => p.spanIndex).sort())
+        .toEqual([0, 1, 2]);   // 各段にスパン 0..2 が 1 枚ずつ
+    }
   });
 
   it('自動生成分は origin=auto', () => {

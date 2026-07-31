@@ -90,8 +90,10 @@ describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)'
     // E-8-v2h: 支柱位置に切れ目を作るため両端を railInsetGrid ずつ内側に寄せて描く。
     const inset = ELEV_PART_STYLE.railInsetGrid * 2;
     const widths = new Set(rails.map((p) => (p.kind === 'line' ? Math.round(Math.abs(p.x2 - p.x1)) : 0)));
-    expect(widths.has(360 - inset)).toBe(true); // 手前列 [-90,270] 幅360
+    // E-8-v2l: 手摺は 1 スパン 1 本なので、無傷のスパンは必ず 1800mm(=180 グリッド)。
+    expect(widths.has(180 - inset)).toBe(true); // 手前列の無傷スパン
     // E-5-fix4: 既定ギャップ=round(全幅540×0.015)=8。奥列は 270+8=278 から → [278,450] 幅172。
-    expect(widths.has(172 - inset)).toBe(true); // 奥列(切断+ギャップ後) 幅172
+    expect(widths.has(172 - inset)).toBe(true); // 奥列(切断+ギャップ後)のスパン
+    expect(widths.has(360 - inset)).toBe(false); // 列全幅 1 本は出ない（v2l 以前の姿）
   });
 });

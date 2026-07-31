@@ -16,10 +16,13 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstruction';
 import { buildFaceElevation, type FaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import ElevationPlaceDialog from './ElevationPlaceDialog';
-import {
-  ELEV_PART_COLORS, ELEV_PART_STYLE, insetRange, komaLevelsFromJackMm, partWidthPx, postSegmentsMm,
-} from '@/lib/konva/elevation/elevationPartStyle';
+import { partWidthPx } from '@/lib/konva/elevation/elevationPartStyle';
+// E-8-v2l: 部材の絵は「部材ブロック → プリミティブ」= キャンバス配置版と同じ 1 本の経路で描く。
+//   ここに独自の SVG 描画（railLine / postLine 等）を置いていたため、部材の見た目が
+//   二重実装になり、プレビューと配置後で食い違う余地が残っていた。
+import { faceElevationToParts, partsToPrimitives } from '@/lib/konva/elevation/elevationParts';
 import type { PillarType } from '@/lib/konva/calculator';
+import type { ElevationPrimitive } from '@/types';
 
 const FACES: { id: Face; label: string }[] = [
   { id: 'north', label: '北面' },
@@ -228,69 +231,50 @@ function ElevationSVG({
   // E-8-v2f/v2h: 部材の見た目（色・寸法）は elevationPartStyle を参照してキャンバス配置版と揃える。
   //   平面と同じ実寸比（○Grid）で太らせ、縮小時は下限 px（○MinPx）で潰さない。
   //   この SVG は 1 グリッド = 10mm × scale px なので pxPerGrid = scale * 10。
-  const PS = ELEV_PART_STYLE, PC = ELEV_PART_COLORS;
   const pxPerGrid = scale * 10;
   const wpx = (minPx: number, grid?: number) => partWidthPx(minPx, grid, pxPerGrid);
 
-  /** 手摺: 太線＋両端の丸ハンドル（平面と同じ表現・全面統一色）。端は内側に寄せて切れ目を作る。 */
-  const railLine = (key: string, x0: number, x1: number, mm: number) => {
-    const c = PC.rail;
-    const r = insetRange(x0, x1, PS.railInsetGrid);
-    const a = sxg(r.a), b = sxg(r.b), y = sy(mm);
-    const hr = wpx(PS.railHandleMinPx, PS.railHandleGrid);
-    return (
-      <g key={key}>
-        <line x1={a} y1={y} x2={b} y2={y} stroke={c} strokeWidth={wpx(PS.railWidthMinPx, PS.railWidthGrid)} strokeLinecap="round" />
-        <circle cx={a} cy={y} r={hr} fill={c} />
-        <circle cx={b} cy={y} r={hr} fill={c} />
-      </g>
-    );
+  // ---- 部材（踏板・手摺・支柱・ジャッキ・嵩上げ）----
+  // E-8-v2l: キャンバス配置版と同一経路。faceElevationToParts → partsToPrimitives が
+  //   唯一の部材描画で、ここは座標をこの SVG に写すだけ（見た目の定義は持たない）。
+  const partBundle = faceElevationToParts(faceElevation);
+  const partPrimitives = partsToPrimitives(partBundle);
+  const partMinXg = partBundle.geom.minXg;
+  /** 部材プリミティブのローカル座標（横=グリッド−minXg、縦=−mm/10）→ SVG 座標。 */
+  const lpx = (lx: number) => sxg(lx + partMinXg);
+  const lpy = (ly: number) => sy(-ly * 10);
+  const partToSvg = (p: ElevationPrimitive, key: string) => {
+    if (p.kind === 'line') {
+      return (
+        <line
+          key={key} x1={lpx(p.x1)} y1={lpy(p.y1)} x2={lpx(p.x2)} y2={lpy(p.y2)}
+          stroke={p.stroke} strokeWidth={wpx(p.width ?? 1, p.widthGrid)}
+          strokeLinecap="round" opacity={p.opacity ?? 1}
+        />
+      );
+    }
+    if (p.kind === 'circle') {
+      return (
+        <circle
+          key={key} cx={lpx(p.x)} cy={lpy(p.y)} r={wpx(p.r, p.rGrid)}
+          fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth ?? 0} opacity={p.opacity ?? 1}
+        />
+      );
+    }
+    if (p.kind === 'polygon') {
+      const pts: string[] = [];
+      for (let k = 0; k < p.points.length; k += 2) {
+        pts.push(`${lpx(p.points[k]).toFixed(1)},${lpy(p.points[k + 1]).toFixed(1)}`);
+      }
+      return (
+        <polygon
+          key={key} points={pts.join(' ')} fill={p.fill} fillOpacity={p.fillOpacity ?? 1}
+          stroke={p.stroke} strokeWidth={p.width ?? 0}
+        />
+      );
+    }
+    return null;   // 部材に rect / text は出ない
   };
-
-  /** 踏板: 濃い縁の上に本体色を重ねた 1 枚のパネル。 */
-  const boardLine = (key: string, x0: number, x1: number, mm: number) => {
-    const r = insetRange(x0, x1, PS.boardInsetGrid);
-    const a = sxg(r.a), b = sxg(r.b), y = sy(mm);
-    return (
-      <g key={key}>
-        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.boardEdge} strokeWidth={wpx(PS.boardEdgeMinPx, PS.boardEdgeGrid)} strokeLinecap="round" />
-        <line x1={a} y1={y} x2={b} y2={y} stroke={PC.board} strokeWidth={wpx(PS.boardWidthMinPx, PS.boardWidthGrid)} strokeLinecap="round" />
-      </g>
-    );
-  };
-
-  /** 支柱: 規格部材 1 本ぶんの棒（縦線＋端キャップ）＋コマの印＋継ぎ目の印。 */
-  const postLine = (
-    key: string, px: number, bottomMm: number, topMm: number, komaMm: number[] = [],
-    opt?: { capBottom?: boolean; capTop?: boolean; joint?: boolean },
-  ) => {
-    const x = sxg(px), y0 = sy(bottomMm), y1 = sy(topMm);
-    const cr = wpx(PS.postCapMinPx, PS.postCapGrid);
-    const kh = PS.komaHalfGrid * pxPerGrid;
-    const jh = PS.jointHalfGrid * pxPerGrid;
-    return (
-      <g key={key}>
-        <line x1={x} y1={y0} x2={x} y2={y1} stroke={PC.post} strokeWidth={wpx(PS.postWidthMinPx, PS.postWidthGrid)} strokeLinecap="round" />
-        {komaMm.map((mm, i) => (
-          <line key={`k-${i}`} x1={x - kh} y1={sy(mm)} x2={x + kh} y2={sy(mm)} stroke={PC.koma} strokeWidth={PS.komaWidthPx} strokeLinecap="round" />
-        ))}
-        {opt?.joint && (
-          <line x1={x - jh} y1={y1} x2={x + jh} y2={y1} stroke={PC.joint} strokeWidth={PS.jointWidthPx} strokeLinecap="round" />
-        )}
-        {opt?.capBottom !== false && <circle cx={x} cy={y0} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />}
-        {opt?.capTop !== false && <circle cx={x} cy={y1} r={cr} fill={PC.post} stroke={PC.postEdge} strokeWidth={1} />}
-      </g>
-    );
-  };
-
-  // 段違い作業床 1 セット（床帯＋手摺 +450/+900）を描く helper。
-  const floorGroup = (key: string, floorMm: number, x0: number, x1: number) => (
-    <g key={key}>
-      {boardLine(`${key}-bd`, x0, x1, floorMm)}
-      {railLine(`${key}-r450`, x0, x1, floorMm + 450)}
-      {railLine(`${key}-r900`, x0, x1, floorMm + 900)}
-    </g>
-  );
 
   // 奥→手前で重ね描き（depthCoord 昇順のまま。E-5 で前後判定・切断）。
   return (
@@ -360,71 +344,12 @@ function ElevationSVG({
         );
       })}
 
-      {/* 足場（列ごと） */}
-      {scaffolds.map((sc, si) => {
-        const jackTop = sc.levels.jackTopMm;
-        const topRail = sc.levels.topRailMm;
-        // 妻嵩上げ: 各支柱の延長上端(mm)＝隣接スパンの要求の高い方(raisedFloor+900)。
-        const postExtendTop = new Map<number, number>();
-        for (const r of sc.spanRaises) {
-          const top = r.raisedFloorMm + 900;
-          for (const px of [r.x0, r.x1]) {
-            postExtendTop.set(px, Math.max(postExtendTop.get(px) ?? topRail, top));
-          }
-        }
-        return (
-          <g key={`sc-${si}`} opacity={0.95}>
-            {/* 踏板（輪郭付きの帯） */}
-            {sc.boards.map((b, i) => boardLine(`bd-${i}`, b.x0, b.x1, b.levelMm))}
-            {/* 手摺（下端コマ・上端コマ・各作業床 +450/+900） */}
-            {sc.rails.map((r, i) => railLine(`rl-${i}`, r.x0, r.x1, r.heightMm))}
-            {/* 支柱（規格部材の積み重ね: 段ごとの棒＋コマの印＋継ぎ目） */}
-            {sc.postXs.map((px, i) => {
-              const segs = postSegmentsMm(jackTop, sc.levels.komaGridMm.length, topRail);
-              if (segs.length === 0) return postLine(`ps-${i}`, px, jackTop, topRail, sc.levels.komaGridMm);
-              return (
-                <g key={`ps-${i}`}>
-                  {segs.map((seg, gi) => postLine(
-                    `ps-${i}-${gi}`, px, seg.bottomMm, seg.topMm,
-                    sc.levels.komaGridMm.filter((h) => h >= seg.bottomMm && h <= seg.topMm),
-                    { capBottom: gi === 0, capTop: gi === segs.length - 1, joint: gi < segs.length - 1 },
-                  ))}
-                </g>
-              );
-            })}
-            {/* ジャッキ（ベース記号: 下広がりの台形＋底辺の太線） */}
-            {sc.postXs.map((px, i) => {
-              const cx = sxg(px);
-              const yTop = sy(jackTop);
-              const yGL = glY;
-              // ベースの幅は SVG px 固定（縮尺が小さくても記号として読めるように）。
-              const h = PS.jackBaseHalfGrid * 3;
-              return (
-                <g key={`jk-${i}`}>
-                  <polygon
-                    points={`${cx - h / 3},${yTop} ${cx + h / 3},${yTop} ${cx + h},${yGL} ${cx - h},${yGL}`}
-                    fill={PC.post}
-                    fillOpacity={0.9}
-                  />
-                  <line x1={cx - h} y1={yGL} x2={cx + h} y2={yGL} stroke={PC.post} strokeWidth={wpx(PS.jackBaseMinPx, PS.jackBaseWidthGrid)} strokeLinecap="round" />
-                </g>
-              );
-            })}
-            {/* 妻嵩上げ: 4+1 分解の中間フル段＋最終床（各段に床帯＋手摺 +450/+900） */}
-            {sc.spanRaises.map((r, i) => (
-              <g key={`sr-${i}`}>
-                {r.intermediateFloorsMm.map((fmm, j) => floorGroup(`im-${i}-${j}`, fmm, r.x0, r.x1))}
-                {floorGroup(`rf-${i}`, r.raisedFloorMm, r.x0, r.x1)}
-              </g>
-            ))}
-            {/* 妻嵩上げの支柱延長（天端→要求上端） */}
-            {Array.from(postExtendTop.entries()).map(([px, top], i) => (
-              postLine(`pe-${i}`, px, topRail, top,
-                komaLevelsFromJackMm(jackTop, top).filter((h) => h > topRail + 1e-6))
-            ))}
-          </g>
-        );
-      })}
+      {/* 足場（部材）: 踏板・手摺・支柱・ジャッキ・嵩上げ・支柱延長まで、
+          キャンバス配置版とまったく同じ partsToPrimitives の出力を描く (= E-8-v2l)。
+          ここに独自の描画を足すと二重実装に戻るので足さないこと。 */}
+      <g opacity={0.95}>
+        {partPrimitives.map((p, i) => partToSvg(p, `pp-${i}`))}
+      </g>
 
       {/* GL 線 */}
       <line x1={PAD * 0.5} y1={glY} x2={VBW - PAD * 0.5} y2={glY} stroke="#6b6b67" strokeWidth={1} strokeDasharray="4 3" />

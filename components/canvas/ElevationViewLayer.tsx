@@ -21,7 +21,7 @@
 //    x/y/scale が画面へ写す。線幅・文字サイズだけ px 固定に戻す（scale で割る）。
 //  ・スロットは面軸の生グリッド、描画はローカル（minXg を引いた値）。境界で必ず変換する。
 // ============================================================
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Layer, Group, Circle, Line, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -42,6 +42,8 @@ type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 const RECACHE_DEBOUNCE_MS = 200;
 /** 部材を掴める幅(px)。 */
 const EDIT_HIT_PX = 14;
+/** ドラッグと判定するまでの移動量(px)。指のタップのぶれ（数 px）より大きくする。 */
+const EDIT_DRAG_PX = 10;
 /** 吸着プレビューの帯の太さ(px)。部材より太く、下に敷く。 */
 const SNAP_BAND_PX = 12;
 /** 埋まっている位置のプレビュー色（そこには置けない）。 */
@@ -100,10 +102,14 @@ function renderPrimLocal(
   p: ElevationPrimitive, key: string | number, s: number,
   opts: { selected: boolean; overridden: boolean; interactive: boolean },
 ) {
-  const hit = EDIT_HIT_PX / s;
   const selStroke = ELEV_SELECT_COLOR;
   if (p.kind === 'line') {
     const w = partWidthPx(p.width, p.widthGrid, s);
+    // E-8-v2l: strokeScaleEnabled=false の shape では、Konva は hitStrokeWidth を
+    //   「画面 px」として解釈する（HitContext._stroke が pixelRatio 変換で線を引く）。
+    //   従来は EDIT_HIT_PX / s を渡していたため、拡大するほど掴める幅が痩せ、
+    //   見た目 38px の手摺の当たり判定が 3px しかない ＝「部材に触れない」状態だった。
+    //   px 直値で渡し、見た目より細くならないよう太さ自体も下限に入れる。
     return (
       <Line
         key={key} points={[p.x1, p.y1, p.x2, p.y2]}
@@ -111,7 +117,7 @@ function renderPrimLocal(
         strokeWidth={opts.selected ? w + 2 : w}
         dash={p.dash} opacity={p.opacity ?? 1} lineCap="round"
         strokeScaleEnabled={false}
-        hitStrokeWidth={opts.interactive ? hit : 0}
+        hitStrokeWidth={opts.interactive ? Math.max(EDIT_HIT_PX, w) : 0}
         listening={opts.interactive}
       />
     );
@@ -146,6 +152,8 @@ function renderPrimLocal(
         fill={opts.selected ? selStroke : p.fill}
         stroke={p.stroke} strokeWidth={p.strokeWidth ?? 0} strokeScaleEnabled={false}
         opacity={p.opacity ?? 1}
+        // 小さい丸（支柱の端キャップ等）でも指で掴めるよう、当たり判定だけ最低 EDIT_HIT_PX に広げる。
+        hitStrokeWidth={opts.interactive ? Math.max(0, EDIT_HIT_PX - r * 2) : 0}
         listening={opts.interactive}
       />
     );
@@ -445,7 +453,13 @@ function ElevationInteractiveGroup({
             <Group
               key={`g-${from}`}
               draggable={!!part && mode === 'select'}
-              dragDistance={4}
+              // E-8-v2l: 指のタップは必ず数 px ぶれる。dragDistance が小さいと Konva が
+              //   ドラッグ扱いにして click/tap を発火しなくなり（DD._endDragBefore が
+              //   _touchListenClick=false にする）、しかも同じスロットへ吸着し直すので
+              //   「タップしても選べない・動かしても戻る」に見えていた。
+              //   指向けの距離まで上げ、掴んだ時点で選択しておく（＝ぶれたタップ＝選択）。
+              dragDistance={EDIT_DRAG_PX}
+              onDragStart={() => { if (part && mode === 'select') onPrimitiveTap(id); }}
               onDragMove={() => { if (part) onPartDragMove(part); }}
               onDragEnd={(e) => {
                 e.target.position({ x: 0, y: 0 });
@@ -510,8 +524,16 @@ function ElevationViewGroup({ view, gridPx, panX, panY, mode, selected, setSelec
   }, [lb, cachedGridPx]);
 
   // Group をビットマップ化。view / cachedGridPx / mode の変化時だけ再cache（ズーム中は走らない）。
+  //
+  // E-8-v2l: useEffect（ペイント後）ではなく useLayoutEffect（ペイント前）で焼く。
+  //   cachedGridPx が G_old → G_new に確定するコミットでは、子の座標と followScale は
+  //   その場で新しくなるのに、キャッシュ画像だけ G_old のままになる。するとその 1 フレームは
+  //     screen_bad − pan = (screen_good − pan) × (G_old / G_new)
+  //   ＝ pan 原点を中心にズーム比の逆数倍された位置に描かれる。立面は原点より右下に置くので、
+  //   拡大＝左上へ、縮小＝右下へ一瞬ワープして戻る（実機の症状と向きが一致）。
+  //   ペイント前に焼き直せば、ずれたフレーム自体が発生しない。
   const groupRef = useRef<Konva.Group>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const g = groupRef.current;
     if (!g) return;
     const box = g.getClientRect({ skipTransform: true });

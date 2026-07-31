@@ -70,9 +70,11 @@ describe('E-8a: 安定 id と再マッチ用ヒント', () => {
 
   it('踏板・手摺は高さ(mm)を持ち、id にも高さが入る', () => {
     const boardIds = partIdsOf('board');
-    expect(boardIds.map((id) => prims.find((p) => p.meta?.id === id)!.meta!.heightMm))
+    expect(Array.from(new Set(boardIds.map((id) => prims.find((p) => p.meta?.id === id)!.meta!.heightMm))))
       .toEqual([1100, 2900, 4700]);
-    expect(boardIds[0]).toBe('board:0:1100:0');
+    // E-8-v2l: 1 スパン 1 部材なので、段ごとにスパン左端(ローカル x)違いの id が並ぶ。
+    expect(boardIds.filter((id) => id.startsWith('board:0:1100:')).sort())
+      .toEqual(['board:0:1100:0', 'board:0:1100:180', 'board:0:1100:360']);
     const rails = prims.filter((p) => p.meta?.kind === 'rail');
     expect(rails.every((p) => typeof p.meta!.heightMm === 'number')).toBe(true);
     expect(partIdsOf('rail')[0].startsWith('rail:0:')).toBe(true);
