@@ -11,21 +11,32 @@
 //   筋交          → スパン × 作業床の高さ（その床から下 1 段の対角）
 // 幅はスパン幅から自動で決まる（部材側で長さを指定しない）。
 // ============================================================
-import type { ElevationPart, ElevationPartGeometry, ElevationPartKind } from './elevationParts';
+import { postXAt, type ElevationPart, type ElevationPartGeometry, type ElevationPartKind } from './elevationParts';
+import { KOMA_PITCH_MM } from './komaGrid';
+
+/**
+ * 仮想グリッドの広がり (= E-8-v2n)。既存の足場の外側へ、足場の文法（スパンピッチ・
+ * コマ 450 刻み）をこのぶんだけ延長して「置ける場所」にする。
+ * 無限に出すとゴーストだらけで狙えなくなるので、実用範囲で止める。
+ */
+export const GRID_EXT_SPANS = 3;
+export const GRID_EXT_KOMA = 3;
 
 /** 部材を置ける 1 箇所。座標はビューローカル（横=グリッド、縦=mm）。 */
 export type ElevationSlot = {
   kind: ElevationPartKind;
   scaffoldIndex: number;
-  /** 支柱系。 */
+  /** 支柱系。既存範囲の外は負値 / 支柱本数以上になる (= E-8-v2n)。 */
   postIndex?: number;
-  /** スパン系（左の支柱番号）。 */
+  /** スパン系（左の支柱番号）。同上。 */
   spanIndex?: number;
   /** 縦位置(mm, GL 基準)。支柱・ジャッキは undefined（足元〜天端の全長）。 */
   levelMm?: number;
   /** 面軸のレンジ（グリッド・生座標）。支柱系は x0===x1。 */
   x0: number;
   x1: number;
+  /** 既存の足場の外側（仮想の支柱位置・コマ）か (= E-8-v2n)。置けるが、ゴーストは薄く出す。 */
+  virtual?: boolean;
 };
 
 /** パレットに出す部材（自動生成されない筋交も含む）。 */
@@ -56,24 +67,72 @@ function levelsFor(
   }
 }
 
-/** 指定部材の有効スロットを列挙する。 */
+/**
+ * 縦位置の延長 (= E-8-v2n)。既存のコマ列の上下へ 450 刻みで伸ばす。
+ * 下方向は GL より下に行かないところで止める（皿より下は部材が掛からない）。
+ */
+function extendedLevels(
+  kind: ElevationPartKind, sg: ElevationPartGeometry['scaffolds'][number], extKoma: number,
+): (number | undefined)[] {
+  const base = levelsFor(kind, sg);
+  const nums = base.filter((v): v is number => v != null);
+  if (nums.length === 0 || extKoma <= 0) return base;  // 支柱・ジャッキ（高さを持たない）/ 延長なし
+  const out = new Set(nums);
+  const top = Math.max(...nums), bottom = Math.min(...nums);
+  for (let i = 1; i <= extKoma; i++) {
+    out.add(top + KOMA_PITCH_MM * i);
+    const down = bottom - KOMA_PITCH_MM * i;
+    if (down > 0) out.add(down);                       // 皿より下・GL 下には出さない
+  }
+  return Array.from(out).sort((a, b) => a - b);
+}
+
+/** スロット列挙のオプション (= E-8-v2n)。 */
+export type SlotGridOptions = {
+  /**
+   * 既存足場の外側（仮想の支柱位置・コマ）も「置ける場所」に含めるか。既定 false。
+   * true にするのは編集の吸着・パレット表示だけ。再マッチ（置き場所が残っているかの判定）は
+   * 実在のスロットで見る＝足場が縮んだ手動部材は従来どおり孤立として提示する。
+   */
+  extend?: boolean;
+};
+
+/**
+ * 指定部材の有効スロットを列挙する。
+ * E-8-v2n: extend=true では、既存の支柱列・コマ列の「外側」も足場の文法どおりに延長する
+ *   （既存足場の右外のスパンへ手摺を持って行っても吸着せず置けなかった＝平面のような
+ *   自由さが無い、という実機指摘）。仮想位置は virtual:true が付く。
+ */
 export function buildElevationSlots(
-  geom: ElevationPartGeometry, kind: ElevationPartKind,
+  geom: ElevationPartGeometry, kind: ElevationPartKind, opts?: SlotGridOptions,
 ): ElevationSlot[] {
+  const extSpans = opts?.extend ? GRID_EXT_SPANS : 0;
+  const extKoma = opts?.extend ? GRID_EXT_KOMA : 0;
   const out: ElevationSlot[] = [];
   geom.scaffolds.forEach((sg, si) => {
+    if (sg.postXs.length === 0) return;
+    const last = sg.postXs.length - 1;
     const isPostKind = kind === 'post' || kind === 'jack';
     if (isPostKind) {
-      sg.postXs.forEach((px, pi) => {
-        out.push({ kind, scaffoldIndex: si, postIndex: pi, x0: px, x1: px });
-      });
+      for (let i = 0 - extSpans; i <= last + extSpans; i++) {
+        const px = postXAt(sg, i);
+        if (px == null) continue;
+        out.push({ kind, scaffoldIndex: si, postIndex: i, x0: px, x1: px, virtual: i < 0 || i > last });
+      }
       return;
     }
-    for (let i = 0; i < sg.postXs.length - 1; i++) {
-      const a = sg.postXs[i], b = sg.postXs[i + 1];
-      if (b - a <= 1e-6) continue;
-      for (const lv of levelsFor(kind, sg)) {
-        out.push({ kind, scaffoldIndex: si, spanIndex: i, levelMm: lv, x0: a, x1: b });
+    const levels = extendedLevels(kind, sg, extKoma);
+    const realLevels = new Set(levelsFor(kind, sg).filter((v): v is number => v != null));
+    // 0 - extSpans（-0 を作らない: postIndex/spanIndex は同値比較に使う）
+    for (let i = 0 - extSpans; i <= last - 1 + extSpans; i++) {
+      const a = postXAt(sg, i), b = postXAt(sg, i + 1);
+      if (a == null || b == null || b - a <= 1e-6) continue;
+      const virtualSpan = i < 0 || i + 1 > last;
+      for (const lv of levels) {
+        out.push({
+          kind, scaffoldIndex: si, spanIndex: i, levelMm: lv, x0: a, x1: b,
+          virtual: virtualSpan || (lv != null && !realLevels.has(lv)),
+        });
       }
     }
   });
@@ -100,8 +159,9 @@ export function slotAnchor(slot: ElevationSlot, geom: ElevationPartGeometry): { 
  */
 export function snapToSlot(
   point: { x: number; yMm: number }, geom: ElevationPartGeometry, kind: ElevationPartKind,
+  opts?: SlotGridOptions,
 ): ElevationSlot | null {
-  const slots = buildElevationSlots(geom, kind);
+  const slots = buildElevationSlots(geom, kind, opts);
   let best: { slot: ElevationSlot; d: number } | null = null;
   for (const s of slots) {
     const a = slotAnchor(s, geom);

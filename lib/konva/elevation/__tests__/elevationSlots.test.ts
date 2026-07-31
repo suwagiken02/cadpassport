@@ -59,6 +59,81 @@ describe('buildElevationSlots', () => {
     expect(PALETTE_KINDS).toEqual(['post', 'rail', 'board', 'jack', 'brace']);
   });
 
+  // ============================================================
+  // E-8-v2n: 既存足場の外側へ、足場の文法（スパン 1800 ピッチ・コマ 450 刻み）を延長する。
+  // 実機: 既存足場の右外へ手摺を持って行っても吸着せず置けなかった＝平面のような自由さが無い。
+  // ============================================================
+  describe('extend: 既存足場の外側へ延長した仮想グリッド', () => {
+    const sg = geom.scaffolds[0];
+    const lastPost = sg.postXs.length - 1;              // 3（x=540）
+    const ext = { extend: true } as const;
+
+    it('右外 1 スパン目は端の支柱から標準スパン 1800mm(=180グリッド) 先', () => {
+      const rails = buildElevationSlots(geom, 'rail', ext);
+      const outer = rails.find((s) => s.spanIndex === lastPost);   // 支柱3→仮想支柱4
+      expect(outer).toBeDefined();
+      expect([outer!.x0, outer!.x1]).toEqual([540, 720]);
+      expect(outer!.virtual).toBe(true);
+    });
+
+    it('左外 1 スパン目は端の支柱から 180 手前', () => {
+      const outer = buildElevationSlots(geom, 'rail', ext).find((s) => s.spanIndex === -1);
+      expect([outer!.x0, outer!.x1]).toEqual([-180, 0]);
+      expect(outer!.virtual).toBe(true);
+    });
+
+    it('支柱・ジャッキも仮想位置に置ける（両外側へ 3 本ずつ）', () => {
+      const posts = buildElevationSlots(geom, 'post', ext);
+      expect(posts.map((s) => s.postIndex)).toEqual([-3, -2, -1, 0, 1, 2, 3, 4, 5, 6]);
+      expect(posts.find((s) => s.postIndex === 6)!.x0).toBe(540 + 180 * 3);
+      expect(posts.find((s) => s.postIndex === -3)!.x0).toBe(0 - 180 * 3);
+      // 実在の支柱は仮想ではない
+      expect(posts.filter((s) => !s.virtual).map((s) => s.postIndex)).toEqual([0, 1, 2, 3]);
+    });
+
+    it('上方向はコマ列を 450 刻みで延長する（天端の上にも掛けられる）', () => {
+      const levels = Array.from(new Set(
+        buildElevationSlots(geom, 'rail', ext).map((s) => s.levelMm))).sort((a, b) => a! - b!);
+      const topKoma = Math.max(...sg.komaGridMm);        // 2850
+      expect(levels).toContain(topKoma + 450);
+      expect(levels).toContain(topKoma + 450 * 3);
+      expect(levels).not.toContain(topKoma + 450 * 4);   // 実用範囲で止める
+    });
+
+    it('下方向は GL より下へは出さない', () => {
+      const levels = buildElevationSlots(geom, 'rail', ext).map((s) => s.levelMm!);
+      expect(Math.min(...levels)).toBeGreaterThan(0);
+    });
+
+    it('既定（extend なし）は実在のスロットだけ＝再マッチの孤立判定は変わらない', () => {
+      expect(buildElevationSlots(geom, 'rail')).toHaveLength(3 * 7);
+      expect(buildElevationSlots(geom, 'rail').every((s) => !s.virtual)).toBe(true);
+    });
+
+    it('外側へドラッグすると仮想スパンへ吸着する', () => {
+      // 右端(540)の外 700 付近・コマ 1500 のあたりへ落とす
+      const snapped = snapToSlot({ x: 700, yMm: 1500 }, geom, 'rail', ext)!;
+      expect(snapped.spanIndex).toBe(lastPost);
+      expect(snapped.levelMm).toBe(1500);
+      expect(snapped.virtual).toBe(true);
+      // 拡張しなければ既存の端スパンに留まる（従来の挙動）
+      expect(snapToSlot({ x: 700, yMm: 1500 }, geom, 'rail')!.spanIndex).toBe(2);
+    });
+
+    it('仮想位置へ置いた部材は通常の ElevationPart として保存できる', () => {
+      const slot = buildElevationSlots(geom, 'rail', ext)
+        .find((s) => s.spanIndex === lastPost && s.levelMm === 1500)!;
+      const part = slotToPart(slot, 'manual:rail:1');
+      expect(part).toMatchObject({
+        id: 'manual:rail:1', kind: 'rail', scaffoldIndex: 0, origin: 'manual',
+        spanIndex: lastPost, levelMm: 1500, x0: 540, x1: 720,
+      });
+      // 二重置きの判定も仮想位置で効く
+      expect(slotOccupied([part], slot)).toBe(true);
+      expect(slotOccupied([part], { ...slot, spanIndex: lastPost + 1 })).toBe(false);
+    });
+  });
+
   it('幅はスパン幅から自動（部材側で長さを指定しない）', () => {
     const boards = buildElevationSlots(geom, 'board');
     for (const s of boards) expect(s.x1 - s.x0).toBe(180);

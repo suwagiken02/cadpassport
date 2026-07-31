@@ -250,7 +250,8 @@ function ElevationInteractiveGroup({
     const geom = view.geom;
     const local = pointerLocal();
     if (!geom || !local) return null;
-    return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind);
+    // E-8-v2n: 既存足場の外側（仮想の支柱位置・コマ）へも吸着させる。
+    return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind, { extend: true });
   };
 
   /** ドラッグ中: 最寄りコマを一時ハイライト（置けるかどうかも色で見せる）。 */
@@ -333,7 +334,7 @@ function ElevationInteractiveGroup({
   const palette = (() => {
     if (!selected || !addTool || !view.geom || addTool === 'text') return null;
     const geom = view.geom;
-    const slots = buildElevationSlots(geom, addTool);
+    const slots = buildElevationSlots(geom, addTool, { extend: true });
     if (slots.length === 0) return null;
     const place = (slot: ElevationSlot) => {
       if (slotOccupied(parts, slot)) return;
@@ -353,7 +354,9 @@ function ElevationInteractiveGroup({
               key={`slot-${i}`}
               x={toLocalX(slot.x0) - padX} y={-topMm / 10}
               width={(slot.x1 - slot.x0) + padX * 2} height={(topMm - botMm) / 10}
-              fill={taken ? '#888888' : ELEV_SELECT_COLOR} opacity={taken ? 0.06 : 0.14}
+              // E-8-v2n: 既存足場の外側（仮想の支柱位置・コマ）は薄く。置けることは同じ。
+              fill={taken ? '#888888' : ELEV_SELECT_COLOR}
+              opacity={taken ? 0.06 : (slot.virtual ? 0.07 : 0.14)}
               stroke={taken ? undefined : ELEV_SELECT_COLOR} strokeWidth={taken ? 0 : 1}
               strokeScaleEnabled={false} dash={[3, 3]}
               onClick={() => place(slot)} onTap={() => place(slot)}

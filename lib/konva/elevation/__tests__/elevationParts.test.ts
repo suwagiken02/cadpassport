@@ -3,7 +3,7 @@ import type { BuildingShape, HeightMarker, Point } from '@/types';
 import type { FaceSpanColumn } from '../faceReconstruction';
 import { buildFaceElevation } from '../elevationEngine';
 import { faceElevationToPrimitives } from '../elevationToObjects';
-import { faceElevationToParts, isPartPrimitive, partsToPrimitives } from '../elevationParts';
+import { faceElevationToParts, isPartPrimitive, partsToPrimitives, postXAt } from '../elevationParts';
 
 // ============================================================
 // E-8-v2a: 部材ブロック（意味データ）一次化。
@@ -102,6 +102,48 @@ describe('部材の意味データ', () => {
     const b = faceElevationToParts(empty);
     expect(b.parts).toEqual([]);
     expect(partsToPrimitives(b)).toEqual([]);
+  });
+});
+
+// ============================================================
+// E-8-v2n: 既存足場の外側（仮想の支柱位置）に置いた部材も、通常の ElevationPart として
+// 保存・描画できること。座標は spanIndex/postIndex が範囲外（負値・本数以上）で表現される。
+// ============================================================
+describe('仮想位置の部材（足場の外へ延長したグリッド）', () => {
+  const bundle = faceElevationToParts(fe);
+  const sg = bundle.geom.scaffolds[0];   // postXs [-450,-270,-90,90]、minXg -450
+
+  it('postXAt は既存範囲の外を標準スパン 1800mm(=180グリッド) ピッチで引く', () => {
+    expect(postXAt(sg, 0)).toBe(-450);
+    expect(postXAt(sg, 3)).toBe(90);       // 実在の右端
+    expect(postXAt(sg, 4)).toBe(270);      // 右外 1 本目
+    expect(postXAt(sg, 6)).toBe(630);
+    expect(postXAt(sg, -1)).toBe(-630);    // 左外 1 本目
+    expect(postXAt(undefined, 0)).toBeNull();
+    expect(postXAt({ ...sg, postXs: [] }, 0)).toBeNull();
+  });
+
+  it('仮想支柱位置の支柱が描ける（postIndex が本数以上でも座標が引ける）', () => {
+    const post = {
+      id: 'manual:post:1', kind: 'post' as const, scaffoldIndex: 0,
+      origin: 'manual' as const, postIndex: 4,
+    };
+    const prims = partsToPrimitives({ geom: bundle.geom, parts: [post] });
+    expect(prims.length).toBeGreaterThan(0);
+    // ローカル x = 270 − minXg(−450) = 720 の縦線
+    const body = prims.find((p) => p.kind === 'line' && p.x1 === p.x2);
+    expect(body && body.kind === 'line' && body.x1).toBe(720);
+  });
+
+  it('仮想スパンの手摺はレンジ未指定でもスパン幅で描ける', () => {
+    const rail = {
+      id: 'manual:rail:1', kind: 'rail' as const, scaffoldIndex: 0,
+      origin: 'manual' as const, spanIndex: 4, levelMm: 1500,
+    };
+    const prims = partsToPrimitives({ geom: bundle.geom, parts: [rail] });
+    // 仮想スパン 4 = [270,450] → ローカル [720,900]。両端は railInsetGrid(9) だけ内側。
+    const body = prims.find((p) => p.kind === 'line' && p.widthGrid === 8);
+    expect(body && body.kind === 'line' && [body.x1, body.x2]).toEqual([729, 891]);
   });
 });
 

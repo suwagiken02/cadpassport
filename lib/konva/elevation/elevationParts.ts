@@ -184,19 +184,43 @@ export function faceElevationToParts(fe: FaceElevation): ElevationPartsBundle {
   return { parts, geom };
 }
 
-/** 部材の実座標（面軸グリッド）。post/jack は postXs から、その他は x0/x1 から。 */
+/** 仮想支柱の間隔(mm)。既存の支柱列を外へ延ばすときの標準スパン (= E-8-v2n)。 */
+export const VIRTUAL_SPAN_MM = 1800;
+
+/**
+ * 支柱番号 → 面軸グリッドの x (= E-8-v2n)。
+ *
+ * 既存の支柱列(postXs)の範囲外も、標準スパン 1800 ピッチで「仮想の支柱位置」として
+ * 引けるようにする。実物の足場は既存の足場の外へも同じ文法で伸ばせるので、
+ * 立面でも支柱の無いスパンへ部材を置けないと平面のような自由さが出ない（鮎澤氏）。
+ *   index < 0            → 左端から外側へ 1800 ピッチ
+ *   0..postXs.length-1   → 実在の支柱（不等間隔もそのまま）
+ *   postXs.length 以上   → 右端から外側へ 1800 ピッチ
+ */
+export function postXAt(
+  sg: ElevationPartGeometry['scaffolds'][number] | undefined, index: number,
+): number | null {
+  if (!sg || sg.postXs.length === 0 || !Number.isFinite(index)) return null;
+  const xs = sg.postXs;
+  const i = Math.round(index);
+  if (i >= 0 && i < xs.length) return xs[i];
+  const pitch = VIRTUAL_SPAN_MM / 10;   // 1 グリッド = 10mm
+  return i < 0 ? xs[0] + i * pitch : xs[xs.length - 1] + (i - (xs.length - 1)) * pitch;
+}
+
+/** 部材の実座標（面軸グリッド）。post/jack は支柱位置から、その他は x0/x1 から。 */
 function partSpanX(
   part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
 ): { x0: number; x1: number } | null {
   if (!sg) return null;
   if (part.kind === 'post' || part.kind === 'jack') {
-    const px = part.postIndex != null ? sg.postXs[part.postIndex] : undefined;
+    const px = part.postIndex != null ? postXAt(sg, part.postIndex) : null;
     return px == null ? null : { x0: px, x1: px };
   }
   if (part.x0 != null && part.x1 != null) return { x0: part.x0, x1: part.x1 };
   // 手動追加でレンジ未指定ならスパン幅を使う（はまる場所にしかはまらない）。
   const i = part.spanIndex ?? 0;
-  const a = sg.postXs[i], b = sg.postXs[i + 1];
+  const a = postXAt(sg, i), b = postXAt(sg, i + 1);
   return a == null || b == null ? null : { x0: a, x1: b };
 }
 
