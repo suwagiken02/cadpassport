@@ -575,22 +575,31 @@ export default function ElevationViewLayer() {
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds);
   const moveElevationView = useCanvasStore((s) => s.moveElevationView);
   const selectActive = useCanvasStore((s) => s.selectActive);
-  const toolFlags = useCanvasStore((s) => ({
-    mode: s.mode,
-    isHeightMarkerMode: s.isHeightMarkerMode,
-    isRidgeLineMode: s.isRidgeLineMode,
-    isMeasuring: s.isMeasuring,
-    isMagnetPinMode: s.isMagnetPinMode,
-    isAreaDesignationMode: s.isAreaDesignationMode,
-    isReorderMode: s.isReorderMode,
-    moveSelectActive: s.mode === 'move-select',
-    pendingTargetType: s.pendingTargetType,
-  }));
+  // E-8-v2l-hotfix3: ツールフラグは「1 つずつ」購読する。
+  //   zustand v5 の useStore は selector の結果をメモ化しないので、オブジェクトを組み立てて
+  //   返す selector は useSyncExternalStore から見て毎回別値になる。React はこれを
+  //   「ストアが変わり続けている」と解釈して forceStoreRerender(SyncLane) を打ち続け、
+  //   このレイヤーだけが上限なしで再レンダリングし続ける（＝主スレッドを食い潰す）。
+  //   参照: react-dom updateStoreInstance → checkIfSnapshotChanged → forceStoreRerender。
+  //   プリミティブで購読すればスナップショットが安定し、ループは起きない。
+  const isHeightMarkerMode = useCanvasStore((s) => s.isHeightMarkerMode);
+  const isRidgeLineMode = useCanvasStore((s) => s.isRidgeLineMode);
+  const isMeasuring = useCanvasStore((s) => s.isMeasuring);
+  const isMagnetPinMode = useCanvasStore((s) => s.isMagnetPinMode);
+  const isAreaDesignationMode = useCanvasStore((s) => s.isAreaDesignationMode);
+  const isReorderMode = useCanvasStore((s) => s.isReorderMode);
+  const pendingTargetType = useCanvasStore((s) => s.pendingTargetType);
 
   const gridPx = INITIAL_GRID_PX * zoom;
   const arr = views ?? [];
   // E-8-v2j: 素の select（選択ON）と消去モードでは部材を直接触れる対話版で描く。
   //   それ以外（閲覧・他ツール中）はキャッシュ版のままにして軽さを保つ。
+  const toolFlags = {
+    mode, isHeightMarkerMode, isRidgeLineMode, isMeasuring, isMagnetPinMode,
+    isAreaDesignationMode, isReorderMode,
+    moveSelectActive: mode === 'move-select',
+    pendingTargetType,
+  };
   const interactive = (isPlainSelectMode(toolFlags) && selectActive) || mode === 'erase';
   if (arr.length === 0) return null;
 
