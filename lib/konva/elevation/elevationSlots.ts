@@ -117,7 +117,21 @@ export function buildElevationSlots(
       for (let i = 0 - extSpans; i <= last + extSpans; i++) {
         const px = postXAt(sg, i);
         if (px == null) continue;
-        out.push({ kind, scaffoldIndex: si, postIndex: i, x0: px, x1: px, virtual: i < 0 || i > last });
+        const virtual = i < 0 || i > last;
+        // 足元〜天端の 1 本ぶん（levelMm なし＝既存の支柱そのもの）
+        out.push({ kind, scaffoldIndex: si, postIndex: i, x0: px, x1: px, virtual });
+        // E-8-v2r: 既存支柱の天端に継ぎ足す位置（ジョイント継ぎ）。levelMm は部材の下端。
+        //   支柱は縦位置を持たない設計だったため、上へ積む先が候補に入っていなかった
+        //   （手摺は v2n でコマ列が上へ延びたのに、支柱だけ延びなかった差分）。
+        //   ジャッキは足元の部材なので継ぎ足さない。
+        if (kind === 'post' && extKoma > 0) {
+          for (let k = 0; k <= extKoma; k++) {
+            out.push({
+              kind, scaffoldIndex: si, postIndex: i, levelMm: sg.topRailMm + KOMA_PITCH_MM * k,
+              x0: px, x1: px, virtual: true,
+            });
+          }
+        }
       }
       return;
     }

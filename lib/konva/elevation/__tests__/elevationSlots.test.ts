@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
 import { partsToPrimitives } from '../elevationParts';
+import { ELEV_PART_COLORS } from '../elevationPartStyle';
 import {
   PALETTE_KINDS, buildElevationSlots, neighborSlot, nextPartId, slotAnchor, slotKey,
   slotOccupied, slotToPart, snapToSlot,
@@ -84,7 +85,8 @@ describe('buildElevationSlots', () => {
     });
 
     it('支柱・ジャッキも仮想位置に置ける（両外側へ 3 本ずつ）', () => {
-      const posts = buildElevationSlots(geom, 'post', ext);
+      // E-8-v2r: 支柱には継ぎ足し先（levelMm つき）も出るので、足元〜天端の 1 本ぶんで見る
+      const posts = buildElevationSlots(geom, 'post', ext).filter((s) => s.levelMm == null);
       expect(posts.map((s) => s.postIndex)).toEqual([-3, -2, -1, 0, 1, 2, 3, 4, 5, 6]);
       expect(posts.find((s) => s.postIndex === 6)!.x0).toBe(540 + 180 * 3);
       expect(posts.find((s) => s.postIndex === -3)!.x0).toBe(0 - 180 * 3);
@@ -262,6 +264,83 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       expect([after.y0, after.y1]).toEqual([before.y0, before.y1]);
       expect(after.x).toBe(720);
       expect(before.x).toBe(360);
+    });
+  });
+
+  // ============================================================
+  // E-8-v2r: 支柱を既存支柱の天端に継ぎ足す（ジョイント継ぎ）。
+  // 支柱は縦位置を持たない設計だったため、上へ積む先が吸着候補に無かった。
+  // ============================================================
+  describe('支柱の継ぎ足し（天端の上へ積む）', () => {
+    const ext = { extend: true } as const;
+    const sg = geom.scaffolds[0];
+    const stackSlots = buildElevationSlots(geom, 'post', ext)
+      .filter((s) => s.postIndex === 1 && s.levelMm != null);
+
+    it('天端とその上のコマが候補になる（levelMm ＝ 部材の下端）', () => {
+      expect(stackSlots.map((s) => s.levelMm)).toEqual([
+        sg.topRailMm, sg.topRailMm + 450, sg.topRailMm + 900, sg.topRailMm + 1350,
+      ]);
+      expect(stackSlots.every((s) => s.virtual)).toBe(true);
+      expect(stackSlots.every((s) => s.x0 === s.x1 && s.x0 === sg.postXs[1])).toBe(true);
+    });
+
+    it('ジャッキは足元の部材なので継ぎ足し先を持たない', () => {
+      expect(buildElevationSlots(geom, 'jack', ext).every((s) => s.levelMm == null)).toBe(true);
+    });
+
+    it('拡張なしでは従来どおり候補に出ない（再マッチの判定は変えない）', () => {
+      expect(buildElevationSlots(geom, 'post').every((s) => s.levelMm == null)).toBe(true);
+    });
+
+    it('天端より上へドラッグすると継ぎ足し先へ吸着する', () => {
+      const px = sg.postXs[1];
+      // 天端(6500)のすぐ上あたりを指す → 天端に底を合わせる位置
+      const s0 = snapToSlot({ x: px, yMm: sg.topRailMm + 100 }, geom, 'post', ext)!;
+      expect(s0.postIndex).toBe(1);
+      expect(s0.levelMm).toBe(sg.topRailMm);
+      // さらに 1 コマ上 → 1 つ上の継ぎ足し先
+      const s1 = snapToSlot({ x: px, yMm: sg.topRailMm + 500 }, geom, 'post', ext)!;
+      expect(s1.levelMm).toBe(sg.topRailMm + 450);
+      // 足場の中ほどを指せば従来どおり「足元〜天端の 1 本」
+      const mid = snapToSlot({ x: px, yMm: 2000 }, geom, 'post', ext)!;
+      expect(mid.levelMm).toBeUndefined();
+    });
+
+    it('置いた部材は「下端＋規格長」で描かれ、下端に継ぎ目が出る', () => {
+      const slot = stackSlots[0];                       // 天端に載せる
+      const moved: ElevationPart = {
+        ...slotToPart(slot, 'post:0:1:1'),
+        komaCount: 6,                                   // 掴んだ部材（6 コマ品）の長さを引き継ぐ
+        origin: 'manual',
+      };
+      expect(moved).toMatchObject({ kind: 'post', postIndex: 1, levelMm: sg.topRailMm, komaCount: 6 });
+
+      const prims = partsToPrimitives({ geom, parts: [moved] });
+      const bar = prims.find((p) => p.kind === 'line' && p.x1 === p.x2 && p.stroke === ELEV_PART_COLORS.post);
+      if (!bar || bar.kind !== 'line') throw new Error('支柱の棒が無い');
+      // 下端＝天端、上端＝下端＋450×6（ローカル y は -mm/10）
+      expect(bar.y1).toBeCloseTo(-sg.topRailMm / 10);
+      expect(bar.y2).toBeCloseTo(-(sg.topRailMm + 450 * 6) / 10);
+      // 下端には端キャップではなく継ぎ目のスリーブが出る
+      const sleeves = prims.filter((p) => p.kind === 'line' && p.x1 === p.x2
+        && p.stroke === ELEV_PART_COLORS.joint);
+      expect(sleeves).toHaveLength(1);
+      const caps = prims.filter((p) => p.kind === 'circle');
+      expect(caps).toHaveLength(1);                     // 上端だけ
+      expect(caps[0].kind === 'circle' && caps[0].y).toBeCloseTo(-(sg.topRailMm + 450 * 6) / 10);
+    });
+
+    it('同じ高さに既に継ぎ足していれば埋まり', () => {
+      const slot = stackSlots[0];
+      const placed: ElevationPart = { ...slotToPart(slot, 'x'), komaCount: 4 };
+      expect(slotOccupied([placed], slot)).toBe(true);
+      expect(slotOccupied([placed], stackSlots[1])).toBe(false);
+      // 足元〜天端の支柱があっても、その上は空いている
+      const column: ElevationPart = {
+        id: 'post:0:1:0', kind: 'post', scaffoldIndex: 0, origin: 'auto', postIndex: 1, segmentIndex: 0,
+      };
+      expect(slotOccupied([column], slot)).toBe(false);
     });
   });
 

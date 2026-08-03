@@ -18,6 +18,7 @@ import { faceElevationExtent, q } from './elevationToObjects';
 import {
   komaLevelsFromJackMm, postSegmentsMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
+import { KOMA_PITCH_MM } from './komaGrid';
 
 /** 部材の種類。palette に出すのは post/rail/board/jack/brace。 */
 export type ElevationPartKind =
@@ -41,8 +42,17 @@ export type ElevationPart = {
   postIndex?: number;
   /** 踏板・手摺・筋交: スパン番号（左側の支柱番号）。 */
   spanIndex?: number;
-  /** 縦位置(mm, GL 基準)。 */
+  /**
+   * 縦位置(mm, GL 基準)。
+   * 支柱では「その部材の下端の高さ」を意味する (= E-8-v2r)。既存支柱の天端に継ぎ足した
+   * 部材はこれを持つ（自動生成の積み重ねは segmentIndex 側で表す）。
+   */
   levelMm?: number;
+  /**
+   * 支柱の規格部材の長さ（コマ数・1/2/4/6/8）(= E-8-v2r)。
+   * levelMm を持つ支柱＝継ぎ足した部材の長さ。未指定は既定長（POST_MEMBER_DEFAULT_KOMA）。
+   */
+  komaCount?: number;
   /** 描画レンジ（面軸グリッド）。自動分は生成時の実測（入隅切断を含む）、手動分はスパン幅。 */
   x0?: number;
   x1?: number;
@@ -188,6 +198,29 @@ export function faceElevationToParts(fe: FaceElevation): ElevationPartsBundle {
 export const VIRTUAL_SPAN_MM = 1800;
 
 /**
+ * 継ぎ足した支柱の既定の長さ（コマ数）(= E-8-v2r)。
+ * 規格は 8/6/4/2/1 コマ品。ドラッグで動かした部材は元の長さを引き継ぐので、
+ * これが効くのはパレットから継ぎ足し位置へ直接置いたとき。1800mm＝4 コマを既定にする。
+ */
+export const POST_MEMBER_DEFAULT_KOMA = 4;
+
+/**
+ * その支柱部材の長さ（コマ数）(= E-8-v2r)。
+ * 明示的な komaCount →（自動生成なら）segmentIndex の規格 → 既定 の順で決まる。
+ */
+export function postMemberKomaCount(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+): number {
+  if (part.komaCount != null) return part.komaCount;
+  if (sg && part.segmentIndex != null) {
+    const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+    const seg = segs[part.segmentIndex];
+    if (seg) return seg.komaCount;
+  }
+  return POST_MEMBER_DEFAULT_KOMA;
+}
+
+/**
  * 支柱番号 → 面軸グリッドの x (= E-8-v2n)。
  *
  * 既存の支柱列(postXs)の範囲外も、標準スパン 1800 ピッチで「仮想の支柱位置」として
@@ -253,18 +286,26 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
       case 'post': {
         // E-8-v2g: コマ(450 刻みの受け金具)を支柱上に描く。列は geom が持つコマ格子。
         // E-8-v2j: segmentIndex があれば規格部材 1 本ぶんだけを描き、継ぎ目に印を出す。
+        // E-8-v2r: levelMm があれば「その高さを下端にした規格部材 1 本」＝継ぎ足した支柱。
+        //   下端は既存支柱の頭に載るので端キャップではなく継ぎ目のスリーブを出す。
         const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
         const seg = p.segmentIndex != null ? segs[p.segmentIndex] : undefined;
-        const bottomMm = seg ? seg.bottomMm : sg.jackTopMm;
-        const topMm = seg ? seg.topMm : sg.topRailMm;
+        const stacked = p.levelMm != null;
+        const koma = p.komaCount ?? seg?.komaCount ?? POST_MEMBER_DEFAULT_KOMA;
+        const bottomMm = stacked ? p.levelMm! : (seg ? seg.bottomMm : sg.jackTopMm);
+        const topMm = stacked ? bottomMm + KOMA_PITCH_MM * koma : (seg ? seg.topMm : sg.topRailMm);
         const isLast = !seg || p.segmentIndex === segs.length - 1;
         pushPost(out, lx(span.x0), ly(bottomMm), ly(topMm),
           { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm },
           {
-            komaYs: sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6).map(ly),
-            capBottom: !seg || p.segmentIndex === 0,
-            capTop: isLast,
-            jointY: isLast ? undefined : ly(topMm),
+            // 継ぎ足した部材のコマは自分の下端基準（下端から 250、以降 450 刻み＝格子は連続）
+            komaYs: (stacked
+              ? komaLevelsFromJackMm(bottomMm, topMm)
+              : sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6)).map(ly),
+            capBottom: stacked ? false : (!seg || p.segmentIndex === 0),
+            capTop: stacked ? true : isLast,
+            jointY: !stacked && !isLast ? ly(topMm) : undefined,
+            jointBottomY: stacked ? ly(bottomMm) : undefined,
           });
         break;
       }

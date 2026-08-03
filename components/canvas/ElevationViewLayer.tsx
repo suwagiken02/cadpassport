@@ -35,7 +35,10 @@ import {
 import {
   buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
-import { withPartDeleted, type ElevationPart } from '@/lib/konva/elevation/elevationParts';
+import {
+  POST_MEMBER_DEFAULT_KOMA, postMemberKomaCount, withPartDeleted, type ElevationPart,
+} from '@/lib/konva/elevation/elevationParts';
+import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -284,12 +287,20 @@ function ElevationInteractiveGroup({
     if (same) return;
     // 埋まっている位置へは移さない（支柱は同じ段が埋まっているときだけ）
     if (slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part))) return;
-    const moved: ElevationPart = {
-      ...slotToPart(slot, part.id),
-      // 規格部材の段は動かしても変わらない（落とすと全高 1 本の支柱に化ける）
-      ...(part.segmentIndex != null ? { segmentIndex: part.segmentIndex } : {}),
-      origin: 'manual',
-    };
+    const moved: ElevationPart = { ...slotToPart(slot, part.id), origin: 'manual' };
+    if (part.kind === 'post') {
+      if (slot.levelMm != null) {
+        // E-8-v2r: 継ぎ足し先へ。下端は slot の levelMm、長さは掴んだ部材のまま。
+        moved.komaCount = postMemberKomaCount(part, view.geom?.scaffolds[part.scaffoldIndex]);
+        moved.segmentIndex = undefined;
+      } else {
+        // 横移動だけ。縦の記述子（規格部材の段 / 継ぎ足しの下端と長さ）はそのまま保つ。
+        // 落とすと全高 1 本の支柱に化ける (= E-8-v2q)。
+        moved.segmentIndex = part.segmentIndex;
+        moved.levelMm = part.levelMm;
+        moved.komaCount = part.komaCount;
+      }
+    }
     useCanvasStore.getState().setElevationParts(
       view.id, parts.map((p) => (p.id === part.id ? moved : p)),
     );
@@ -361,8 +372,12 @@ function ElevationInteractiveGroup({
         {slots.map((slot, i) => {
           const sg = geom.scaffolds[slot.scaffoldIndex];
           const isPostKind = slot.kind === 'post' || slot.kind === 'jack';
-          const topMm = isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 150;
-          const botMm = isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 150;
+          // E-8-v2r: 支柱の継ぎ足し先（levelMm=部材の下端）は、載る部材ぶんの高さで見せる。
+          const stackPost = slot.kind === 'post' && slot.levelMm != null;
+          const topMm = stackPost ? slot.levelMm! + KOMA_PITCH_MM * POST_MEMBER_DEFAULT_KOMA
+            : isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 150;
+          const botMm = stackPost ? slot.levelMm!
+            : isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 150;
           const padX = isPostKind ? 6 / s : 0;
           const taken = slotOccupied(parts, slot);
           return (

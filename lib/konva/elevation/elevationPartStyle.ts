@@ -247,6 +247,8 @@ export type PostDrawOpts = {
   capTop?: boolean;
   /** 継ぎ目の印を出す縦位置（ローカル y）。上に別部材が載るときだけ指定する。 */
   jointY?: number;
+  /** 下端側の継ぎ目 (= E-8-v2r)。既存支柱の頭に継ぎ足した部材で使う。 */
+  jointBottomY?: number;
 };
 
 /**
@@ -266,14 +268,17 @@ export function pushPost(
   }
   // 継ぎ目 (= E-8-v2o): 縁取り → 本体 の順に重ねた短い縦帯（＝ホゾの膨らみ）＋境目の線。
   //   コマは「細い横棒」、継ぎ目は「太い縦の膨らみ」なので、形で見分けられる。
-  if (opts?.jointY != null) {
-    const jy = opts.jointY, h = S.jointHalfLenGrid;
+  const pushJoint = (jy: number) => {
+    const h = S.jointHalfLenGrid;
     line(out, x, jy - h, x, jy + h, C.jointEdge, S.jointEdgeMinPx, S.jointEdgeGrid, 1, meta);
     line(out, x, jy - h, x, jy + h, C.joint, S.jointSleeveMinPx, S.jointSleeveGrid, 1, meta);
     // 部材が切り替わる高さそのものを線で示す（スリーブより左右へはみ出させる）
     line(out, x - S.jointHalfGrid, jy, x + S.jointHalfGrid, jy,
       C.jointEdge, S.jointWidthPx, undefined, 1, meta);
-  }
+  };
+  if (opts?.jointY != null) pushJoint(opts.jointY);
+  // E-8-v2r: 継ぎ足した部材は下端が既存支柱の頭に載る＝そこにも継ぎ目が出る。
+  if (opts?.jointBottomY != null) pushJoint(opts.jointBottomY);
   // 端キャップ（棒の端であることを明示。輪郭を付けて背景から浮かせる）
   const caps: number[] = [];
   if (opts?.capTop !== false) caps.push(yTop);
