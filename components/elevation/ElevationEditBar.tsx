@@ -11,7 +11,7 @@
 //   ・背景(寸法線・文字など) → ElevationView.edits に差分として積む（E-8b/c）
 // どちらも canvasData の履歴に乗るので undo/redo はそのまま効く。
 // ============================================================
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { hasEditFor, withHide, withoutEditsFor } from '@/lib/konva/elevation/elevationEdits';
 import { describeEdit } from '@/lib/konva/elevation/elevationRematch';
@@ -19,6 +19,9 @@ import { describePart } from '@/lib/konva/elevation/elevationPartsRematch';
 import { withPartDeleted } from '@/lib/konva/elevation/elevationParts';
 import { PALETTE_KINDS } from '@/lib/konva/elevation/elevationSlots';
 import { POST_KOMA_CHOICES, SPAN_LENGTH_CHOICES_MM } from '@/lib/konva/elevation/elevationParts';
+import {
+  defaultPlacementMode, placementModeForPointer, startPaletteDragOut, type PlacementMode,
+} from '@/lib/konva/placement/placementInput';
 import type { ElevationPartKind } from '@/lib/konva/elevation/elevationParts';
 import type { ElevationPrimitiveKind } from '@/types';
 
@@ -42,6 +45,9 @@ export default function ElevationEditBar() {
   const addFlip = useCanvasStore((s) => s.elevationAddFlip);
   const mode = useCanvasStore((s) => s.mode);
   const selectedIds = useCanvasStore((s) => s.selectedIds);
+  /** 入力方式 (= E-8-v3c-2)。マウス=シャドー追従+クリック / 指=パレットから引き出して離す。 */
+  const [inputMode, setInputMode] = useState<PlacementMode>('hover-click');
+  useEffect(() => { setInputMode(defaultPlacementMode()); }, []);
 
   // 立面図を 1 つ選んでいるときだけ出す（平面の部材操作と同じで、モードは持たない）。
   const view = (mode === 'select' && selectedIds.length === 1)
@@ -59,25 +65,15 @@ export default function ElevationEditBar() {
    * ボタンを押した指をそのままキャンバスへ引き出し、離した位置に置く。
    * 指が動かずボタン上で離した場合は onClick 側（選択だけ）に任せる。
    */
-  const startDragOut = (kind: ElevationPartKind) => {
-    const st = useCanvasStore.getState();
-    st.setElevationAddTool(kind);
-    let moved = false;
-    const onMove = () => { moved = true; };
-    const onUp = (e: PointerEvent) => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      if (!moved) return;                       // その場で離した＝ただの選択
-      const canvas = document.querySelector('.konvajs-content');
-      const r = canvas?.getBoundingClientRect();
-      if (!r) return;
-      const inside = e.clientX >= r.left && e.clientX <= r.right
-        && e.clientY >= r.top && e.clientY <= r.bottom;
-      // キャンバスの外（パレットへ戻す等）で離したらキャンセル＝置かない
-      if (inside) useCanvasStore.getState().setElevationDropAt({ clientX: e.clientX, clientY: e.clientY });
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+  const startDragOut = (kind: ElevationPartKind, e: React.PointerEvent) => {
+    useCanvasStore.getState().setElevationAddTool(kind);
+    setInputMode(placementModeForPointer(e.pointerType));
+    startPaletteDragOut({
+      from: { clientX: e.clientX, clientY: e.clientY },
+      onDrop: (p) => useCanvasStore.getState().setElevationDropAt(p),
+      // キャンバス外（パレットへ戻す等）で離したら置かない＝取り消し
+      onCancel: () => {},
+    });
   };
 
   // Esc: パレットを閉じる → 部材の選択を外す。
@@ -136,7 +132,7 @@ export default function ElevationEditBar() {
         {PALETTE_KINDS.map((k) => (
           <button key={k} type="button"
             onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === k ? null : k)}
-            onPointerDown={() => startDragOut(k)}
+            onPointerDown={(e) => startDragOut(k, e)}
             className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
               addTool === k ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
             }`}>
@@ -151,7 +147,7 @@ export default function ElevationEditBar() {
           文字
         </button>
         {addTool && addTool !== 'text' && (
-          <span className="text-[10px] text-accent ml-1 whitespace-nowrap">置きたい位置をタップ</span>
+          <span className="text-[10px] text-accent ml-1 whitespace-nowrap">{inputMode === 'drag-drop' ? 'パレットから引き出して離す' : '置きたい位置をクリック'}</span>
         )}
         {addTool === 'text' && (
           <span className="text-[10px] text-accent ml-1 whitespace-nowrap">位置をタップ</span>
@@ -170,7 +166,7 @@ export default function ElevationEditBar() {
           ).map(({ value, label }) => (
             <button key={value} type="button"
               onClick={() => useCanvasStore.getState().setElevationAddSize(value)}
-              onPointerDown={() => { useCanvasStore.getState().setElevationAddSize(value); startDragOut(addTool); }}
+              onPointerDown={(e) => { useCanvasStore.getState().setElevationAddSize(value); startDragOut(addTool, e); }}
               className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
                 addSize === value ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
               }`}>
