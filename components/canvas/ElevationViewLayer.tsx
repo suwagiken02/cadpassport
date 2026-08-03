@@ -33,26 +33,25 @@ import {
   ELEV_PART_STYLE, ELEV_SELECT_COLOR, partHitPx, partWidthPx,
 } from '@/lib/konva/elevation/elevationPartStyle';
 import {
-  buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapPostSlot, snapToSlot,
+  buildElevationSlots, nextPartId, slotOccupied, slotToPart, snapToSlot,
   type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
 import {
-  postMemberBottomMm, postMemberKomaCount, postSlotBandMm, postStackTopMm, postXAt, withPartDeleted,
+  GRID_MM, movePart, withPartDeleted,
   type ElevationPart,
 } from '@/lib/konva/elevation/elevationParts';
 import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
+import { snapJoint, type JointPoint } from '@/lib/konva/elevation/elevationJoints';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
 
 /** ズーム停止後に再cache / 再生成するまでの待ち時間（ms）。 */
 const RECACHE_DEBOUNCE_MS = 200;
+/** 接合点へ吸着する画面距離(px) (= E-8-v3b)。これを超えたら吸わずにその位置へ置く。 */
+const JOINT_SNAP_PX = 22;
 /** ドラッグと判定するまでの移動量(px)。指のタップのぶれ（数 px）より大きくする。 */
 const EDIT_DRAG_PX = 10;
-/** 吸着プレビューの帯の太さ(px)。部材より太く、下に敷く。 */
-const SNAP_BAND_PX = 12;
-/** 埋まっている位置のプレビュー色（そこには置けない）。 */
-const SNAP_TAKEN_COLOR = '#8a8a86';
 /** 当たり判定用に bbox を広げる余白（ローカル・グリッド）。 */
 const BG_PAD = 4;
 
@@ -233,8 +232,8 @@ function ElevationInteractiveGroup({
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const groupRef = useRef<Konva.Group>(null);
   /** ドラッグ中の吸着先（E-8-v2g のスナップフィードバック）。 */
-  const [preview, setPreview] = useState<
-    { slot: ElevationSlot; taken: boolean; komaCount?: number } | null>(null);
+  /** ドラッグ中に吸着している接合点 (= E-8-v3b)。吸っていなければ null。 */
+  const [preview, setPreview] = useState<{ to: JointPoint } | null>(null);
 
   // ローカル → 画面 の変換は Group に持たせる（子はローカル座標のまま置く）。
   const s = gridPx * view.scale;
@@ -260,109 +259,51 @@ function ElevationInteractiveGroup({
   /** スロットの生グリッド → 描画のローカル座標。 */
   const toLocalX = (rawX: number) => rawX - minXg;
 
-  /** ポインタ位置に最も近い有効スロット（生グリッドで比較する）。 */
+  /** ポインタ位置に最も近い有効スロット（生グリッドで比較する・パレット用）。 */
   const nearestSlot = (kind: ElevationPart['kind']): ElevationSlot | null => {
     const geom = view.geom;
     const local = pointerLocal();
     if (!geom || !local) return null;
-    // E-8-v2n: 既存足場の外側（仮想の支柱位置・コマ）へも吸着させる。
     return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind, gridOpts);
   };
 
   /**
-   * 支柱は規格部材の積み重ねで、掴んだのは「その段（segmentIndex）1 本」(= E-8-v2q)。
-   * 埋まり判定も移動先も段を保つ（同じ高さのまま横の支柱位置へ動く）。
-   * 段を持たない部材（手摺・踏板・手動追加の 1 本支柱）は undefined ＝従来どおり位置ごと。
+   * ドラッグ量（Group ローカル単位）→ 部材座標の移動量(mm) (= E-8-v3b)。
+   * 横はグリッド 1 = 10mm、縦はローカル y が下向き正で 1 = 10mm。
    */
-  const segmentOf = (part: ElevationPart) => part.segmentIndex;
+  const moveMmOf = (d: { x: number; y: number }) => ({ dxMm: d.x * GRID_MM, dyMm: -d.y * GRID_MM });
 
   /**
-   * ドラッグ中の部材の移動先スロット (= E-8-v2s)。
-   * 支柱は「掴んだ部材の下端」を寄せる（指の位置だと、部材が長いぶん上の候補に
-   * 吸着して既存支柱の頭から浮く）。d はドラッグ量（Group ローカル単位）。
+   * ドラッグ中の移動量と、接合吸着の補正 (= E-8-v3b)。
+   * 素直にポインタへ追従し、接合点（コマ・ジョイント）が吸着距離に入ったら吸う。
+   * 圏外なら補正 0 ＝ 置いた場所にそのまま置かれる（禁止しない）。
    */
-  const dragTargetSlot = (part: ElevationPart, d: { x: number; y: number }): ElevationSlot | null => {
-    const geom = view.geom;
-    if (!geom) return null;
-    if (part.kind === 'post' || part.kind === 'jack') {
-      const sg = geom.scaffolds[part.scaffoldIndex];
-      const x0 = postXAt(sg, part.postIndex ?? 0);
-      if (x0 == null) return null;
-      const bottomMm = postMemberBottomMm(part, sg);
-      // ローカル y は下向きが正・1 単位 = 10mm なので、上へ動かすと mm は増える。
-      // 置く高さは「離した部材の下端に最も近い継ぎ目」＝見た目どおり (= E-8-v2u-fix2)。
-      return snapPostSlot(
-        geom, part, { x: x0 + d.x, bottomMm: bottomMm - d.y * 10 }, bottomMm, gridOpts);
-    }
-    return nearestSlot(part.kind);
-  };
-
-  /** ドラッグ中: 最寄りコマを一時ハイライト（置けるかどうかも色で見せる）。 */
-  const onPartDragMove = (part: ElevationPart, d: { x: number; y: number }) => {
-    const slot = dragTargetSlot(part, d);
-    if (!slot) { if (preview) setPreview(null); return; }
-    const taken = slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part));
-    // 支柱は「置いたときに占める範囲」でゴーストを出す＝確定位置と必ず一致する。
-    const komaCount = part.kind === 'post'
-      ? postMemberKomaCount(part, view.geom?.scaffolds[part.scaffoldIndex]) : undefined;
-    if (!preview || slotKey(preview.slot) !== slotKey(slot) || preview.taken !== taken) {
-      setPreview({ slot, taken, komaCount });
-    }
-  };
-
-  /**
-   * ドラッグしたのに部材が動かなかったことを必ず知らせる (= E-8-v2u-fix5)。
-   *
-   * ここは「早期 return で無言のまま何も起きない」経路が 3 つあり、実機で
-   * 「掴めるのに置けない」が起きても画面にも Console にも痕跡が残らなかった。
-   * 原因の切り分けに何往復もかかったので、中止した理由と判断に使った数値を必ず出す。
-   * 正常に動いたときは何も出さない（通常操作でうるさくならない）。
-   */
-  const warnNoMove = (reason: string, part: ElevationPart, d: { x: number; y: number },
-    slot: ElevationSlot | null) => {
+  const dragResult = (part: ElevationPart, d: { x: number; y: number }) => {
     const sg = view.geom?.scaffolds[part.scaffoldIndex];
-    const isPost = part.kind === 'post' || part.kind === 'jack';
-    console.warn(`[elevation] 部材を動かせませんでした: ${reason}`, {
-      id: part.id, kind: part.kind,
-      ...(isPost && sg ? {
-        コマ数: postMemberKomaCount(part, sg),
-        現在の下端mm: Math.round(postMemberBottomMm(part, sg)),
-        離した下端mm: Math.round(postMemberBottomMm(part, sg) - d.y * 10),
-        支柱の頭mm: Math.round(postStackTopMm(sg)),
-      } : {}),
-      ドラッグ量: { dx: Number(d.x.toFixed(2)), dy: Number(d.y.toFixed(2)) },
-      吸着先: slot
-        ? { post: slot.postIndex, span: slot.spanIndex, level: slot.levelMm ?? '(高さ維持)' }
-        : null,
+    const move = moveMmOf(d);
+    const snap = snapJoint(part, parts, sg, move, {
+      pxPerMm: s / GRID_MM, tolPx: JOINT_SNAP_PX,
     });
+    return { move: { dxMm: move.dxMm + snap.dxMm, dyMm: move.dyMm + snap.dyMm }, snap };
   };
 
-  /** 部材を最寄りの有効スロットへ移す（同じスロットなら何もしない）。 */
-  const moveToNearestSlot = (part: ElevationPart, d: { x: number; y: number }) => {
+  /** ドラッグ中: 吸着先の接合点をハイライトする（吸わなければ何も出さない）。 */
+  const onPartDragMove = (part: ElevationPart, d: { x: number; y: number }) => {
+    const { snap } = dragResult(part, d);
+    const to = snap.to ?? null;
+    if ((preview?.to?.xMm !== to?.xMm) || (preview?.to?.yMm !== to?.yMm)
+      || (preview?.to?.kind !== to?.kind)) {
+      setPreview(to ? { to } : null);
+    }
+  };
+
+  /** ドラッグ確定: 自由座標を書き換えるだけ。置ける/置けないの判定はしない。 */
+  const dropPart = (part: ElevationPart, d: { x: number; y: number }) => {
     setPreview(null);
-    const slot = dragTargetSlot(part, d);
-    if (!slot) { warnNoMove('置き場所が見つからない', part, d, null); return; }
-    const same = slot.spanIndex === part.spanIndex && slot.postIndex === part.postIndex
-      && slot.levelMm === part.levelMm && slot.scaffoldIndex === part.scaffoldIndex;
-    if (same) { warnNoMove('元と同じ場所（動かしていない）', part, d, slot); return; }
-    // 埋まっている位置へは移さない（支柱は同じ段が埋まっているときだけ）
-    if (slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part))) {
-      warnNoMove('その場所には既に同じ部材がある', part, d, slot); return;
-    }
-    const moved: ElevationPart = { ...slotToPart(slot, part.id), origin: 'manual' };
-    if (part.kind === 'post') {
-      if (slot.levelMm != null) {
-        // E-8-v2r: 継ぎ足し先へ。下端は slot の levelMm、長さは掴んだ部材のまま。
-        moved.komaCount = postMemberKomaCount(part, view.geom?.scaffolds[part.scaffoldIndex]);
-        moved.segmentIndex = undefined;
-      } else {
-        // 横移動だけ。縦の記述子（規格部材の段 / 継ぎ足しの下端と長さ）はそのまま保つ。
-        // 落とすと全高 1 本の支柱に化ける (= E-8-v2q)。
-        moved.segmentIndex = part.segmentIndex;
-        moved.levelMm = part.levelMm;
-        moved.komaCount = part.komaCount;
-      }
-    }
+    const sg = view.geom?.scaffolds[part.scaffoldIndex];
+    const { move } = dragResult(part, d);
+    if (Math.abs(move.dxMm) < 1e-6 && Math.abs(move.dyMm) < 1e-6) return;  // 動いていない
+    const moved = movePart(part, sg, move);
     useCanvasStore.getState().setElevationParts(
       view.id, parts.map((p) => (p.id === part.id ? moved : p)),
     );
@@ -381,70 +322,38 @@ function ElevationInteractiveGroup({
     setSelectedPartId(id);
   };
 
-  /** 吸着先スロットのハイライト。部材と同じ場所に敷いて「ここにはまる」を見せる。 */
+  /**
+   * 吸着中のハイライト (= E-8-v3b)。吸い付いた「受け口」だけを強調する。
+   * 許可/不許可のゴーストは廃止したので、色は 1 種類（吸っている＝置ける）。
+   */
   const snapPreview = (() => {
-    if (!preview || !view.geom) return null;
-    const sg = view.geom.scaffolds[preview.slot.scaffoldIndex];
-    if (!sg) return null;
-    const c = preview.taken ? SNAP_TAKEN_COLOR : ELEV_SELECT_COLOR;
-    const x0 = toLocalX(preview.slot.x0), x1 = toLocalX(preview.slot.x1);
-    const isPostKind = preview.slot.kind === 'post' || preview.slot.kind === 'jack';
-    if (isPostKind) {
-      // E-8-v2u-fix2: 継ぎ足し先のゴーストは「置いたときに占める範囲」そのもの。
-      //   確定・描画と同じ postSlotBandMm を通すので、ゴーストと結果が食い違わない。
-      const band = preview.slot.levelMm != null
-        ? postSlotBandMm(preview.slot.levelMm, preview.komaCount ?? 1) : null;
-      const [pyBottom, pyTop] = band
-        ? [-band.bottomMm / 10, -band.topMm / 10]
-        : [-sg.jackTopMm / 10, -sg.topRailMm / 10];
-      const jh = ELEV_PART_STYLE.jointHalfGrid;
+    if (!preview) return null;
+    const c = ELEV_SELECT_COLOR;
+    const x = toLocalX(preview.to.xMm / GRID_MM);
+    const y = -preview.to.yMm / 10;
+    const kh = ELEV_PART_STYLE.komaHalfGrid * 1.4;
+    const jh = ELEV_PART_STYLE.jointHalfGrid * 1.4;
+    if (preview.to.kind === 'pocket') {
+      // コマ（受け皿）: 皿＋外端の唇を拡大して「ここに楔が落ちる」を見せる
       return (
         <>
-          <Line
-            points={[x0, pyBottom, x0, pyTop]}
-            stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
-            strokeScaleEnabled={false} listening={false}
-          />
-          {/* E-8-v2u: 受け口（メス）を強調する＝「ここに刺さる」 */}
-          {preview.slot.levelMm != null && (
-            <Line
-              points={[x0 - jh * 1.4, pyBottom, x0 + jh * 1.4, pyBottom]}
-              stroke={c} strokeWidth={ELEV_PART_STYLE.jointWidthPx + 3} opacity={0.95} lineCap="round"
-              strokeScaleEnabled={false} listening={false}
-            />
-          )}
+          <Line points={[x - kh, y, x + kh, y]} stroke={c}
+            strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95} lineCap="round"
+            strokeScaleEnabled={false} listening={false} />
+          {[-1, 1].map((dir) => (
+            <Line key={`lip-${dir}`}
+              points={[x + dir * kh, y, x + dir * kh, y - ELEV_PART_STYLE.komaLipGrid * 1.4]}
+              stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95}
+              strokeScaleEnabled={false} listening={false} />
+          ))}
         </>
       );
     }
-    const y = -(preview.slot.levelMm ?? 0) / 10;
-    const kh = ELEV_PART_STYLE.komaHalfGrid;
+    // 支柱の受け（カップ）／ジャッキの上端: 受け口の縁を強調
     return (
-      <>
-        <Line
-          points={[x0, y, x1, y]}
-          stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
-          strokeScaleEnabled={false} listening={false}
-        />
-        {/* E-8-v2u: 吸着先のポケット（両端の受け口）を拡大して強調する＝「ここに刺さる」。
-            皿＋外端の唇まで描くので、クサビが落ちる口がどこかまで見える。 */}
-        {[x0, x1].map((cx, i) => (
-          <React.Fragment key={`pocket-${i}`}>
-            <Line
-              points={[cx - kh * 1.4, y, cx + kh * 1.4, y]}
-              stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95}
-              strokeScaleEnabled={false} listening={false}
-            />
-            {[-1, 1].map((dir) => (
-              <Line
-                key={`lip-${dir}`}
-                points={[cx + dir * kh * 1.4, y, cx + dir * kh * 1.4, y - ELEV_PART_STYLE.komaLipGrid * 1.4]}
-                stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95}
-                strokeScaleEnabled={false} listening={false}
-              />
-            ))}
-          </React.Fragment>
-        ))}
-      </>
+      <Line points={[x - jh, y, x + jh, y]} stroke={c}
+        strokeWidth={ELEV_PART_STYLE.jointWidthPx + 3} opacity={0.95} lineCap="round"
+        strokeScaleEnabled={false} listening={false} />
     );
   })();
 
@@ -591,7 +500,7 @@ function ElevationInteractiveGroup({
                 // ドラッグ量は位置を戻す前に読む（吸着はこの量で決まる）
                 const d = e.target.position();
                 e.target.position({ x: 0, y: 0 });
-                if (part) moveToNearestSlot(part, d);
+                if (part) dropPart(part, d);
               }}
               onClick={() => onPrimitiveTap(id)}
               onTap={() => onPrimitiveTap(id)}

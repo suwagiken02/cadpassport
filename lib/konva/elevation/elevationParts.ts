@@ -281,6 +281,21 @@ export function postMemberTopMm(
 }
 
 /**
+ * その支柱部材が持つコマ（ポケット）の高さ列(mm) (= E-8-v3b)。
+ * 継ぎ足した部材は自分の下端基準（下端+250、以降 450）、自動生成の段は足場のコマ格子。
+ * 描画（partsToPrimitives）と吸着（elevationJoints）が同じ列を見るための唯一の定義。
+ */
+export function postKomaMm(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+): number[] {
+  if (!sg) return [];
+  const bottomMm = postMemberBottomMm(part, sg);
+  const topMm = postMemberTopMm(part, sg);
+  if (part.levelMm != null) return komaLevelsFromJackMm(bottomMm, topMm);
+  return sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6);
+}
+
+/**
  * その支柱部材の長さ（コマ数）(= E-8-v2r)。
  * 明示的な komaCount →（自動生成なら）segmentIndex の規格 → 既定 の順で決まる。
  */
@@ -415,10 +430,8 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         pushPost(out, lx(span.x0), ly(bottomMm), ly(topMm),
           { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm },
           {
-            // 継ぎ足した部材のコマは自分の下端基準（下端から 250、以降 450 刻み＝格子は連続）
-            komaYs: (stacked
-              ? komaLevelsFromJackMm(bottomMm, topMm)
-              : sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6)).map(ly),
+            // コマ（ポケット）の列は postKomaMm が唯一の定義（吸着側と必ず同じ）。
+            komaYs: postKomaMm(p, sg).map(ly),
             // E-8-v2u: 上端は常に受け（カップ）、下端は足元なら座・継いでいるならホゾ。
             capBottom: stacked ? false : (!seg || p.segmentIndex === 0),
           });
@@ -432,10 +445,13 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
           { komaYs: komaLevelsFromJackMm(sg.jackTopMm, top).filter((h) => h > sg.topRailMm + 1e-6).map(ly) });
         break;
       }
-      case 'jack':
-        pushJack(out, lx(span.x0), ly(sg.jackTopMm), 0,
-          { kind: 'jack', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: sg.jackTopMm });
+      case 'jack': {
+        // E-8-v3b: 動かしたジャッキは levelMm(上端) を持つ。既定は足場の皿高さ。
+        const topMm = p.levelMm ?? sg.jackTopMm;
+        pushJack(out, lx(span.x0), ly(topMm), 0,
+          { kind: 'jack', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm });
         break;
+      }
       case 'raiseBoard':
         pushBoard(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0),
           { kind: 'raise', id: p.id, heightMm: p.levelMm, index: p.spanIndex, x: q(lx(span.x0)) });
@@ -457,6 +473,38 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
     }
   }
   return out;
+}
+
+/**
+ * 部材を移動した結果を返す (= E-8-v3b)。自由座標を書き換えるだけで、
+ * スロット番号や「置ける場所」の判定は一切見ない（どこにでも置ける）。
+ *
+ * 縦の表し方は部材ごとに違うので、ここで 1 箇所に集約する:
+ *   ・支柱  … levelMm(下端) ＋ komaCount(長さ)。自動生成の段(segmentIndex)は
+ *             動かした時点で「自由な 1 本」に変わる（足場の再生成に追従しなくなる）
+ *   ・ジャッキ… levelMm(上端)
+ *   ・その他… levelMm（嵩上げ手摺のオフセットは維持）
+ */
+export function movePart(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+  move: { dxMm: number; dyMm: number },
+): ElevationPart {
+  const r = partRangeMm(part, sg);
+  const moved: ElevationPart = {
+    ...part,
+    origin: 'manual',
+    ...(r ? { x0Mm: r.x0Mm + move.dxMm, x1Mm: r.x1Mm + move.dxMm } : {}),
+  };
+  if (part.kind === 'post' || part.kind === 'postExt') {
+    moved.levelMm = postMemberBottomMm(part, sg) + move.dyMm;
+    moved.komaCount = postMemberKomaCount(part, sg);
+    moved.segmentIndex = undefined;
+  } else if (part.kind === 'jack') {
+    moved.levelMm = (part.levelMm ?? sg?.jackTopMm ?? 0) + move.dyMm;
+  } else {
+    moved.levelMm = (part.levelMm ?? 0) + move.dyMm;
+  }
+  return moved;
 }
 
 /**
