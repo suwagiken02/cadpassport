@@ -188,14 +188,25 @@ export function slotToPart(slot: ElevationSlot, id: string): ElevationPart {
   };
 }
 
-/** 同じ位置に同種の部材が既にあるか（二重置きの防止）。 */
-export function slotOccupied(parts: ElevationPart[], slot: ElevationSlot): boolean {
+/**
+ * 同じ位置に同種の部材が既にあるか（二重置きの防止）。
+ *
+ * E-8-v2q: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ねで、1 本の支柱位置に
+ * segmentIndex 違いの ElevationPart が複数ある。段を 1 つ掴んで隣の支柱位置へ動かすとき、
+ * 「その位置に支柱が 1 つでもあれば埋まり」と見ると実在の支柱位置へは絶対に動かせない
+ * （実機の「支柱がスナップせず置けない」の正体）。段を指定されたときは同じ段だけを見る。
+ * 段を指定しない（パレットから 1 本ぶん置く）ときは従来どおり位置ごとで見る。
+ */
+export function slotOccupied(
+  parts: ElevationPart[], slot: ElevationSlot, forSegmentIndex?: number,
+): boolean {
   return parts.some((p) =>
     p.kind === slot.kind
     && p.scaffoldIndex === slot.scaffoldIndex
     && (slot.postIndex == null || p.postIndex === slot.postIndex)
     && (slot.spanIndex == null || p.spanIndex === slot.spanIndex)
-    && (slot.levelMm == null || p.levelMm === slot.levelMm));
+    && (slot.levelMm == null || p.levelMm === slot.levelMm)
+    && (forSegmentIndex === undefined || p.segmentIndex === forSegmentIndex));
 }
 
 /** 手動追加部材の id を採番する（既存と衝突しない連番）。 */

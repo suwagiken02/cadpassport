@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
+import { partsToPrimitives } from '../elevationParts';
 import {
   PALETTE_KINDS, buildElevationSlots, neighborSlot, nextPartId, slotAnchor, slotKey,
   slotOccupied, slotToPart, snapToSlot,
@@ -201,6 +202,67 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
     expect(slotOccupied(parts, boardSlot(1, 1100))).toBe(false);
     // 種類が違えば別枠
     expect(slotOccupied(parts, buildElevationSlots(geom, 'rail')[0])).toBe(false);
+  });
+
+  // ============================================================
+  // E-8-v2q: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ねで、1 本の支柱位置に
+  // segmentIndex 違いの部材が複数ある。段を掴んで隣の支柱位置へ動かせること。
+  // ============================================================
+  describe('支柱の段（segmentIndex）を掴んだときの埋まり判定', () => {
+    /** 支柱位置 2 に 2 段（0,1）が積まれている状態。 */
+    const postAt = (postIndex: number, segmentIndex: number): ElevationPart => ({
+      id: `post:0:${postIndex}:${segmentIndex}`, kind: 'post', scaffoldIndex: 0,
+      origin: 'auto', postIndex, segmentIndex,
+    });
+    const stacked = [postAt(2, 0), postAt(2, 1)];
+    const slotAt = (postIndex: number) =>
+      buildElevationSlots(geom, 'post', { extend: true }).find((s) => s.postIndex === postIndex)!;
+
+    it('同じ段が埋まっていれば occupied', () => {
+      expect(slotOccupied(stacked, slotAt(2), 0)).toBe(true);
+      expect(slotOccupied(stacked, slotAt(2), 1)).toBe(true);
+    });
+
+    it('別の段しか無ければ置ける（＝実在の支柱位置へも動かせる）', () => {
+      expect(slotOccupied([postAt(2, 1)], slotAt(2), 0)).toBe(false);
+      expect(slotOccupied([postAt(2, 0)], slotAt(2), 1)).toBe(false);
+    });
+
+    it('仮想の支柱位置は空き', () => {
+      expect(slotOccupied(stacked, slotAt(4), 0)).toBe(false);
+      expect(slotOccupied(stacked, slotAt(-1), 0)).toBe(false);
+      expect(slotAt(4).x0).toBe(540 + 180);     // 右外 1 本目
+      expect(slotAt(4).virtual).toBe(true);
+    });
+
+    it('段を指定しなければ従来どおり位置ごと（パレットから 1 本置くとき）', () => {
+      expect(slotOccupied(stacked, slotAt(2))).toBe(true);
+      expect(slotOccupied(stacked, slotAt(3))).toBe(false);
+    });
+
+    it('段を保ったまま移動先の部材を作れる（全高 1 本に化けない）', () => {
+      const src = postAt(2, 1);
+      const moved: ElevationPart = {
+        ...slotToPart(slotAt(4), src.id),
+        ...(src.segmentIndex != null ? { segmentIndex: src.segmentIndex } : {}),
+        origin: 'manual',
+      };
+      expect(moved).toMatchObject({
+        id: 'post:0:2:1', kind: 'post', origin: 'manual', postIndex: 4, segmentIndex: 1,
+      });
+      expect(moved.x0).toBeUndefined();   // 支柱は postXAt から座標を引く
+
+      // 描画は「高さはそのまま・x だけ移動」。段を落とすと全高 1 本に化けていた。
+      const bar = (p: ElevationPart) => {
+        const line = partsToPrimitives({ geom, parts: [p] }).find((q) => q.kind === 'line' && q.x1 === q.x2);
+        if (!line || line.kind !== 'line') throw new Error('支柱の棒が無い');
+        return { x: line.x1, y0: line.y1, y1: line.y2 };
+      };
+      const before = bar(src), after = bar(moved);
+      expect([after.y0, after.y1]).toEqual([before.y0, before.y1]);
+      expect(after.x).toBe(720);
+      expect(before.x).toBe(360);
+    });
   });
 
   it('id は種類ごとの連番で衝突しない', () => {

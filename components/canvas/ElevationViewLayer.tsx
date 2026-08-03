@@ -257,11 +257,18 @@ function ElevationInteractiveGroup({
     return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind, { extend: true });
   };
 
+  /**
+   * 支柱は規格部材の積み重ねで、掴んだのは「その段（segmentIndex）1 本」(= E-8-v2q)。
+   * 埋まり判定も移動先も段を保つ（同じ高さのまま横の支柱位置へ動く）。
+   * 段を持たない部材（手摺・踏板・手動追加の 1 本支柱）は undefined ＝従来どおり位置ごと。
+   */
+  const segmentOf = (part: ElevationPart) => part.segmentIndex;
+
   /** ドラッグ中: 最寄りコマを一時ハイライト（置けるかどうかも色で見せる）。 */
   const onPartDragMove = (part: ElevationPart) => {
     const slot = nearestSlot(part.kind);
     if (!slot) { if (preview) setPreview(null); return; }
-    const taken = slotOccupied(parts.filter((p) => p.id !== part.id), slot);
+    const taken = slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part));
     if (!preview || slotKey(preview.slot) !== slotKey(slot) || preview.taken !== taken) {
       setPreview({ slot, taken });
     }
@@ -275,8 +282,14 @@ function ElevationInteractiveGroup({
     const same = slot.spanIndex === part.spanIndex && slot.postIndex === part.postIndex
       && slot.levelMm === part.levelMm && slot.scaffoldIndex === part.scaffoldIndex;
     if (same) return;
-    if (slotOccupied(parts.filter((p) => p.id !== part.id), slot)) return; // 埋まっている位置へは移さない
-    const moved: ElevationPart = { ...slotToPart(slot, part.id), origin: 'manual' };
+    // 埋まっている位置へは移さない（支柱は同じ段が埋まっているときだけ）
+    if (slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part))) return;
+    const moved: ElevationPart = {
+      ...slotToPart(slot, part.id),
+      // 規格部材の段は動かしても変わらない（落とすと全高 1 本の支柱に化ける）
+      ...(part.segmentIndex != null ? { segmentIndex: part.segmentIndex } : {}),
+      origin: 'manual',
+    };
     useCanvasStore.getState().setElevationParts(
       view.id, parts.map((p) => (p.id === part.id ? moved : p)),
     );
