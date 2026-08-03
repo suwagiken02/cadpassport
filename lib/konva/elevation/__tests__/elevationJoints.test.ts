@@ -10,7 +10,10 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
-import { GRID_MM, movePart, partRangeMm, postMemberBottomMm } from '../elevationParts';
+import {
+  GRID_MM, POST_KOMA_CHOICES, SPAN_LENGTH_CHOICES_MM, defaultPartSize, movePart,
+  newElevationPart, partRangeMm, partsToPrimitives, postMemberBottomMm,
+} from '../elevationParts';
 import { partJoints, snapJoint } from '../elevationJoints';
 
 const geom: ElevationPartGeometry = {
@@ -206,5 +209,63 @@ describe('movePart: 自由座標を書き換えるだけ', () => {
     expect(moved.levelMm).toBe(1639);
     // 面軸 mm はグリッドの 10 倍という関係だけは保つ
     expect(moved.x0Mm! / GRID_MM).toBeCloseTo(13.7);
+  });
+});
+
+// ============================================================
+// E-8-v3c: パレットから出す部材。長さを選べて、指した位置にそのまま出る。
+// ============================================================
+describe('パレットの部材生成（v3c）', () => {
+  it('支柱はコマ数で長さが決まり、指した位置が下端になる', () => {
+    const p = newElevationPart('post', 'manual:post:1', 0, { xMm: 1234, yMm: 2000 }, { komaCount: 8 });
+    expect(p).toMatchObject({ kind: 'post', x0Mm: 1234, x1Mm: 1234, levelMm: 2000, komaCount: 8 });
+    expect(postMemberBottomMm(p, sg)).toBe(2000);
+  });
+
+  it('手摺・踏板は選んだ長さで、指した位置が中心になる', () => {
+    for (const len of SPAN_LENGTH_CHOICES_MM) {
+      const p = newElevationPart('rail', 'r', 0, { xMm: 5000, yMm: 1550 }, { sizeMm: len });
+      expect(p.x1Mm! - p.x0Mm!).toBe(len);
+      expect((p.x0Mm! + p.x1Mm!) / 2).toBe(5000);
+      expect(p.levelMm).toBe(1550);
+    }
+  });
+
+  it('スロット番号を持たない＝どこにでも置ける', () => {
+    const p = newElevationPart('rail', 'r', 0, { xMm: 137, yMm: 89 }, { sizeMm: 1800 });
+    expect(p.spanIndex).toBeUndefined();
+    expect(p.postIndex).toBeUndefined();
+    expect(p.segmentIndex).toBeUndefined();
+    expect(p.origin).toBe('manual');
+  });
+
+  it('筋交は向きを反転できる', () => {
+    const at = { xMm: 900, yMm: 3000 };
+    const right = newElevationPart('brace', 'b1', 0, at, { sizeMm: 1800, flip: false });
+    const left = newElevationPart('brace', 'b2', 0, at, { sizeMm: 1800, flip: true });
+    expect(right.flip).toBe(false);
+    expect(left.flip).toBe(true);
+    // 描かれる斜線の向きが逆になる（両端の高さが入れ替わる）
+    const line = (p: ElevationPart) => {
+      const l = partsToPrimitives({ geom, parts: [p] }).find((q) => q.kind === 'line');
+      if (!l || l.kind !== 'line') throw new Error('線が無い');
+      return l.y1 - l.y2;
+    };
+    expect(Math.sign(line(right))).toBe(-Math.sign(line(left)));
+  });
+
+  it('出した部材は自動生成分と同じ扱いになる（原則4）', () => {
+    // 指した位置が中心になるので、スパンの真ん中(900mm)を指すと右端が支柱1(1800mm)に来る
+    const fresh = newElevationPart('rail', 'new', 0, { xMm: 900, yMm: 1600 }, { sizeMm: 1800 });
+    // 接合点も吸着も、自動生成の手摺とまったく同じ形で得られる
+    expect(partJoints(fresh, sg).map((j) => j.kind)).toEqual(['wedge', 'wedge']);
+    const snap = snapJoint(fresh, [post1], sg, { dxMm: 0, dyMm: 0 }, opts);
+    expect(snap.to?.kind).toBe('pocket');
+  });
+
+  it('既定の寸法は種類ごとに決まる', () => {
+    expect(defaultPartSize('post')).toBe(4);            // 4 コマ = 1800mm
+    expect(defaultPartSize('rail')).toBe(1800);
+    expect(POST_KOMA_CHOICES).toEqual([8, 6, 4, 2, 1]);
   });
 });

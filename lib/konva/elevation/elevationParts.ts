@@ -80,6 +80,8 @@ export type ElevationPart = {
   slot?: string;
   /** 嵩上げ手摺のオフセット(mm)。 */
   railOffsetMm?: number;
+  /** 筋交の向き反転 (= E-8-v3c)。false=右上がり / true=左上がり。 */
+  flip?: boolean;
   /**
    * 削除マーク (= E-8-v2e)。ユーザーが自動生成部材を消したことを意味データとして残す墓標。
    * 描画されず、再生成時は「同じスロットに生えてくる自動部材」を抑止する。
@@ -463,16 +465,59 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         break;
       }
       case 'brace': {
-        // 筋交は手動追加専用。スパンの対角に1本。
+        // 筋交は手動追加専用。スパンの対角に1本。flip で向きを反転できる (= E-8-v3c)。
         const top = (p.levelMm ?? sg.topRailMm);
         const bottom = top - 1800;
-        pushBrace(out, lx(span.x0), ly(bottom), lx(span.x1), ly(top),
+        const [yA, yB] = p.flip ? [ly(top), ly(bottom)] : [ly(bottom), ly(top)];
+        pushBrace(out, lx(span.x0), yA, lx(span.x1), yB,
           { kind: 'rail', id: p.id, heightMm: top, index: p.spanIndex, x: q(lx(span.x0)) });
         break;
       }
     }
   }
   return out;
+}
+
+/** パレットで選べる寸法 (= E-8-v3c)。 */
+export const POST_KOMA_CHOICES = [8, 6, 4, 2, 1] as const;
+export const SPAN_LENGTH_CHOICES_MM = [1800, 1500, 1200, 900, 600] as const;
+
+/** その部材種で選ぶ寸法の既定値（コマ数 or 長さ mm）。 */
+export function defaultPartSize(kind: ElevationPartKind): number {
+  if (kind === 'post' || kind === 'postExt') return POST_MEMBER_DEFAULT_KOMA;
+  if (kind === 'jack') return 0;
+  return SPAN_LENGTH_CHOICES_MM[0];
+}
+
+/**
+ * パレットから出す部材を作る (= E-8-v3c)。
+ *
+ * 置きたい位置(mm)を中心（支柱・ジャッキは基準点）にして、自由座標だけを持つ部材にする。
+ * スロット番号は付けない＝どこにでも置ける。接合へは吸着(v3b)で寄せる。
+ * 自動生成の部材と同じ形なので、置いたあとの扱いは完全に同一（原則4）。
+ */
+export function newElevationPart(
+  kind: ElevationPartKind, id: string, scaffoldIndex: number,
+  at: { xMm: number; yMm: number },
+  opts?: { sizeMm?: number; komaCount?: number; flip?: boolean },
+): ElevationPart {
+  const base = { id, kind, scaffoldIndex, origin: 'manual' as const };
+  if (kind === 'post' || kind === 'postExt') {
+    return {
+      ...base, x0Mm: at.xMm, x1Mm: at.xMm, levelMm: at.yMm,
+      komaCount: opts?.komaCount ?? POST_MEMBER_DEFAULT_KOMA,
+    };
+  }
+  if (kind === 'jack') {
+    return { ...base, x0Mm: at.xMm, x1Mm: at.xMm, levelMm: at.yMm };
+  }
+  // 手摺・踏板・筋交・嵩上げ: 指した位置を中心に、選んだ長さで置く
+  const len = opts?.sizeMm ?? SPAN_LENGTH_CHOICES_MM[0];
+  return {
+    ...base,
+    x0Mm: at.xMm - len / 2, x1Mm: at.xMm + len / 2, levelMm: at.yMm,
+    ...(kind === 'brace' ? { flip: !!opts?.flip } : {}),
+  };
 }
 
 /**

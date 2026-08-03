@@ -37,7 +37,7 @@ import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
 import { rematchElevationParts } from '@/lib/konva/elevation/elevationPartsRematch';
 import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
-import { hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
+import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -478,6 +478,19 @@ type CanvasStore = {
    *  E-8-v2e: 自由線ツールは撤去（部材はパレット、文字は上書き/追加のみ）。 */
   elevationAddTool: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'text' | null;
   setElevationAddTool: (t: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'text' | null) => void;
+  /** 立面パレットで選んでいる寸法 (= E-8-v3c)。支柱はコマ数、手摺・踏板・筋交は長さ(mm)。 */
+  elevationAddSize: number;
+  setElevationAddSize: (v: number) => void;
+  /** 筋交など向きのある部材の反転 (= E-8-v3c)。配置前に切り替えられる。 */
+  elevationAddFlip: boolean;
+  toggleElevationAddFlip: () => void;
+  /**
+   * パレットからキャンバスへドロップした位置（クライアント座標）(= E-8-v3c)。
+   * 平面の部材配置と同じ流儀で、パレットのボタンを掴んだままキャンバスで離すと置ける。
+   * 立面レイヤーが拾って自分のローカル座標へ直し、置いたら null に戻す。
+   */
+  elevationDropAt: { clientX: number; clientY: number } | null;
+  setElevationDropAt: (p: { clientX: number; clientY: number } | null) => void;
   /** 孤立部材の一覧を差し替える (= E-8-v2e、 ユーザーが削除するとき)。 */
   setElevationOrphanParts: (viewId: string, orphans: import('@/lib/konva/elevation/elevationParts').ElevationPart[]) => void;
   /** 部材ブロックを追加する (= E-8-v2c、 履歴に積む)。 */
@@ -1549,7 +1562,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   elevationAddTool: null,
-  setElevationAddTool: (t) => set({ elevationAddTool: t, elevationEditSelectedId: null }),
+  setElevationAddTool: (t) => set({
+    elevationAddTool: t,
+    elevationEditSelectedId: null,
+    // 種類を変えたら寸法も既定へ戻す（支柱=コマ数 / 手摺・踏板=長さ mm）
+    elevationAddSize: t && t !== 'text'
+      ? defaultPartSize(t) : get().elevationAddSize,
+  }),
+  elevationAddSize: 1800,
+  setElevationAddSize: (v) => set({ elevationAddSize: v }),
+  elevationAddFlip: false,
+  toggleElevationAddFlip: () => set({ elevationAddFlip: !get().elevationAddFlip }),
+  elevationDropAt: null,
+  setElevationDropAt: (p) => set({ elevationDropAt: p }),
   setElevationOrphanParts: (viewId, orphans) => {
     const { canvasData, pushHistory } = get();
     pushHistory();
