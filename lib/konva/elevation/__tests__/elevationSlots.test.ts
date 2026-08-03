@@ -100,8 +100,10 @@ describe('buildElevationSlots', () => {
         buildElevationSlots(geom, 'rail', ext).map((s) => s.levelMm))).sort((a, b) => a! - b!);
       const topKoma = Math.max(...sg.komaGridMm);        // 2850
       expect(levels).toContain(topKoma + 450);
-      expect(levels).toContain(topKoma + 450 * 3);
-      expect(levels).not.toContain(topKoma + 450 * 4);   // 実用範囲で止める
+      // E-8-v2t: まず支柱の実際の頭まで伸び、そこから仮想延長 3 コマ
+      const ceiling = postStackTopMm(sg);
+      expect(levels).toContain(ceiling + 450 * 3);
+      expect(levels).not.toContain(ceiling + 450 * 4); // 実用範囲で止める
     });
 
     it('下方向は GL より下へは出さない', () => {
@@ -376,6 +378,64 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
         id: 'post:0:1:0', kind: 'post', scaffoldIndex: 0, origin: 'auto', postIndex: 1, segmentIndex: 0,
       };
       expect(slotOccupied([column], slot)).toBe(false);
+    });
+  });
+
+  // ============================================================
+  // E-8-v2t: 手摺・踏板のコマ候補は「そのスパンの支柱が実際どこまで伸びているか」に追従する。
+  // 支柱を継ぎ足したのに手摺が元の天端+3 コマで頭打ちだった（鮎澤氏）。
+  // ============================================================
+  describe('手摺のコマ候補が継ぎ足した支柱に追従する', () => {
+    const ext = { extend: true } as const;
+    const sg = geom.scaffolds[0];
+    const head = postStackTopMm(sg);
+    /** 支柱位置 1 に 6 コマ品(2700mm)を継ぎ足した状態。 */
+    const stacked: ElevationPart = {
+      id: 'manual:post:1', kind: 'post', scaffoldIndex: 0, origin: 'manual',
+      postIndex: 1, levelMm: head, komaCount: 6,
+    };
+    const railTop = (parts?: ElevationPart[], spanIndex = 0) => Math.max(
+      ...buildElevationSlots(geom, 'rail', { ...ext, parts })
+        .filter((s) => s.spanIndex === spanIndex)
+        .map((s) => s.levelMm!));
+
+    it('継ぎ足す前は「支柱の頭＋仮想 3 コマ」で頭打ち', () => {
+      expect(railTop()).toBe(head + 450 * 3);
+    });
+
+    it('継ぎ足すと、その部材の天まで候補が伸びる（＋仮想 3 コマ）', () => {
+      const top = railTop([stacked]);
+      expect(top).toBe(head + 450 * 6 + 450 * 3);
+      // 継ぎ足した部材のコマ（下端から 250/450 刻み）と同じ 450 格子に乗る
+      const levels = buildElevationSlots(geom, 'rail', { ...ext, parts: [stacked] })
+        .filter((s) => s.spanIndex === 0).map((s) => s.levelMm!);
+      expect(levels).toContain(head + 450);
+      expect(levels).toContain(head + 450 * 6);
+    });
+
+    it('隣のスパンにも効く（支柱 1 は spanIndex 0 と 1 の共有支柱）', () => {
+      expect(railTop([stacked], 1)).toBe(head + 450 * 6 + 450 * 3);
+      // 支柱 1 に接していないスパンは伸びない
+      expect(railTop([stacked], 2)).toBe(head + 450 * 3);
+    });
+
+    it('支柱を削除したら候補も縮む', () => {
+      // 墓標（removed）は立っていない扱い
+      expect(railTop([{ ...stacked, removed: true }])).toBe(head + 450 * 3);
+      // 部材ごと取り除いても同じ
+      expect(railTop([])).toBe(head + 450 * 3);
+    });
+
+    it('parts を渡さない経路（再マッチ等）は従来どおり', () => {
+      expect(buildElevationSlots(geom, 'rail').every((s) => s.levelMm! <= head)).toBe(true);
+    });
+
+    it('踏板も同じ上限に追従する', () => {
+      const boardTop = (parts?: ElevationPart[]) => Math.max(
+        ...buildElevationSlots(geom, 'board', { ...ext, parts })
+          .filter((s) => s.spanIndex === 0).map((s) => s.levelMm!));
+      expect(boardTop([stacked])).toBe(head + 450 * 6 + 450 * 3);
+      expect(boardTop([stacked])).toBeGreaterThan(boardTop());
     });
   });
 

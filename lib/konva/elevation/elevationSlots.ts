@@ -12,7 +12,7 @@
 // 幅はスパン幅から自動で決まる（部材側で長さを指定しない）。
 // ============================================================
 import {
-  postStackTopMm, postXAt,
+  postMemberTopMm, postStackTopMm, postXAt,
   type ElevationPart, type ElevationPartGeometry, type ElevationPartKind,
 } from './elevationParts';
 import { KOMA_PITCH_MM } from './komaGrid';
@@ -76,24 +76,65 @@ function levelsFor(
   }
 }
 
+/** コマ列を伸ばす上限の安全弁（暴走防止・450mm × 400 = 180m）。 */
+const MAX_KOMA_STEPS = 400;
+
 /**
- * 縦位置の延長 (= E-8-v2n)。既存のコマ列の上下へ 450 刻みで伸ばす。
+ * 縦位置の延長 (= E-8-v2n / E-8-v2t)。既存のコマ列の上下へ 450 刻みで伸ばす。
  * 下方向は GL より下に行かないところで止める（皿より下は部材が掛からない）。
+ *
+ * E-8-v2t: 上方向は「そのスパンの支柱が実際どこまで伸びているか(ceilingMm)」まで
+ * コマ列を継ぎ、そこからさらに仮想延長ぶんを足す。支柱を継ぎ足せば手摺の候補も
+ * 一緒に上がる（継ぎ足した支柱にもコマがあるのだから掛けられるべき・鮎澤氏）。
+ * コマ格子は継ぎ目をまたいでも連続する（部材の下端から 250、以降 450）ので、
+ * 既存の列を 450 刻みで伸ばすだけで継ぎ足し部材のコマと一致する。
  */
 function extendedLevels(
   kind: ElevationPartKind, sg: ElevationPartGeometry['scaffolds'][number], extKoma: number,
+  ceilingMm?: number,
 ): (number | undefined)[] {
   const base = levelsFor(kind, sg);
   const nums = base.filter((v): v is number => v != null);
   if (nums.length === 0 || extKoma <= 0) return base;  // 支柱・ジャッキ（高さを持たない）/ 延長なし
   const out = new Set(nums);
-  const top = Math.max(...nums), bottom = Math.min(...nums);
+  const bottom = Math.min(...nums);
+  // 継ぎ足しぶんは「コマ格子の続き」として伸ばす（作業床の高さは 1800 ピッチで
+  // 格子の途中に来ないので、そこからではなくコマ列から刻む）。
+  const komaTop = sg.komaGridMm.length > 0 ? Math.max(...sg.komaGridMm) : Math.max(...nums);
+  if (ceilingMm != null) {
+    for (let n = 1; n <= MAX_KOMA_STEPS; n++) {
+      const h = komaTop + KOMA_PITCH_MM * n;
+      if (h > ceilingMm + 1e-6) break;
+      out.add(h);
+    }
+  }
+  const top = Math.max(...Array.from(out));
   for (let i = 1; i <= extKoma; i++) {
     out.add(top + KOMA_PITCH_MM * i);
     const down = bottom - KOMA_PITCH_MM * i;
     if (down > 0) out.add(down);                       // 皿より下・GL 下には出さない
   }
   return Array.from(out).sort((a, b) => a - b);
+}
+
+/**
+ * その支柱位置に実際に立っている支柱の最上端(mm) (= E-8-v2t)。
+ * parts を渡さない／その位置に支柱が 1 本も無い場合は、自動生成の頭を既定にする
+ * （仮想の支柱位置でも従来どおりのコマ候補が出るように。v2n を壊さない）。
+ */
+function postTopAt(
+  sg: ElevationPartGeometry['scaffolds'][number], scaffoldIndex: number, postIndex: number,
+  parts?: ElevationPart[],
+): number {
+  const base = postStackTopMm(sg);
+  if (!parts || parts.length === 0) return base;
+  let top = -Infinity;
+  for (const p of parts) {
+    if (p.kind !== 'post' || p.removed) continue;
+    if (p.scaffoldIndex !== scaffoldIndex || p.postIndex !== postIndex) continue;
+    top = Math.max(top, postMemberTopMm(p, sg));
+  }
+  return Number.isFinite(top) ? top : base;
 }
 
 /** スロット列挙のオプション (= E-8-v2n)。 */
@@ -104,6 +145,12 @@ export type SlotGridOptions = {
    * 実在のスロットで見る＝足場が縮んだ手動部材は従来どおり孤立として提示する。
    */
   extend?: boolean;
+  /**
+   * いま置かれている部材 (= E-8-v2t)。手摺・踏板のコマ候補を「そのスパンの支柱が
+   * 実際どこまで伸びているか」に追従させるために使う（継ぎ足した支柱の高さを反映）。
+   * 渡さなければ自動生成の頭を基準にした従来どおりの候補になる。
+   */
+  parts?: ElevationPart[];
 };
 
 /**
@@ -148,13 +195,19 @@ export function buildElevationSlots(
       }
       return;
     }
-    const levels = extendedLevels(kind, sg, extKoma);
     const realLevels = new Set(levelsFor(kind, sg).filter((v): v is number => v != null));
     // 0 - extSpans（-0 を作らない: postIndex/spanIndex は同値比較に使う）
     for (let i = 0 - extSpans; i <= last - 1 + extSpans; i++) {
       const a = postXAt(sg, i), b = postXAt(sg, i + 1);
       if (a == null || b == null || b - a <= 1e-6) continue;
       const virtualSpan = i < 0 || i + 1 > last;
+      // E-8-v2t: そのスパンの支柱の実高さまでコマ候補を伸ばす。
+      //   両側で高さが違うときは「高い方」を採る（片側だけ継ぎ足した直後でも掛けられる。
+      //   現物どおりの「両側にコマがある高さだけ」にするならここを Math.min にする）。
+      const ceiling = extKoma > 0
+        ? Math.max(postTopAt(sg, si, i, opts?.parts), postTopAt(sg, si, i + 1, opts?.parts))
+        : undefined;
+      const levels = extendedLevels(kind, sg, extKoma, ceiling);
       for (const lv of levels) {
         out.push({
           kind, scaffoldIndex: si, spanIndex: i, levelMm: lv, x0: a, x1: b,

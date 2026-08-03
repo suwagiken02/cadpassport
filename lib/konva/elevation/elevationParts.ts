@@ -235,6 +235,25 @@ export function postMemberBottomMm(
 }
 
 /**
+ * その支柱部材の「上端」の高さ(mm) (= E-8-v2t)。
+ * 継ぎ足した部材は 下端＋450×コマ数、自動生成の段は segmentIndex の上端、
+ * どちらも無ければ（手動で置いた 1 本ものは）足元〜天端なので天端。
+ * 手摺のコマ候補をどこまで伸ばすかの基準に使う。
+ */
+export function postMemberTopMm(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+): number {
+  if (part.levelMm != null) return part.levelMm + KOMA_PITCH_MM * postMemberKomaCount(part, sg);
+  if (!sg) return 0;
+  if (part.segmentIndex != null) {
+    const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+    const seg = segs[part.segmentIndex];
+    if (seg) return seg.topMm;
+  }
+  return sg.topRailMm;
+}
+
+/**
  * その支柱部材の長さ（コマ数）(= E-8-v2r)。
  * 明示的な komaCount →（自動生成なら）segmentIndex の規格 → 既定 の順で決まる。
  */

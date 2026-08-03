@@ -248,6 +248,12 @@ function ElevationInteractiveGroup({
 
   const parts = view.parts ?? [];
   const partById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
+  /**
+   * スロット列挙の共通オプション。
+   *   extend: 既存足場の外側へも置ける (= E-8-v2n)
+   *   parts : 手摺・踏板のコマ候補を、いま立っている支柱の実高さに追従させる (= E-8-v2t)
+   */
+  const gridOpts = useMemo(() => ({ extend: true, parts }), [parts]);
   const minXg = view.geom?.minXg ?? 0;
   /** スロットの生グリッド → 描画のローカル座標。 */
   const toLocalX = (rawX: number) => rawX - minXg;
@@ -258,7 +264,7 @@ function ElevationInteractiveGroup({
     const local = pointerLocal();
     if (!geom || !local) return null;
     // E-8-v2n: 既存足場の外側（仮想の支柱位置・コマ）へも吸着させる。
-    return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind, { extend: true });
+    return snapToSlot({ x: local.x + geom.minXg, yMm: -local.y * 10 }, geom, kind, gridOpts);
   };
 
   /**
@@ -283,7 +289,7 @@ function ElevationInteractiveGroup({
       const bottomMm = postMemberBottomMm(part, sg);
       // ローカル y は下向きが正・1 単位 = 10mm なので、上へ動かすと mm は増える。
       return snapPostSlot(
-        geom, part, { x: x0 + d.x, bottomMm: bottomMm - d.y * 10 }, bottomMm, { extend: true });
+        geom, part, { x: x0 + d.x, bottomMm: bottomMm - d.y * 10 }, bottomMm, gridOpts);
     }
     return nearestSlot(part.kind);
   };
@@ -386,7 +392,7 @@ function ElevationInteractiveGroup({
   const palette = (() => {
     if (!selected || !addTool || !view.geom || addTool === 'text') return null;
     const geom = view.geom;
-    const slots = buildElevationSlots(geom, addTool, { extend: true });
+    const slots = buildElevationSlots(geom, addTool, gridOpts);
     if (slots.length === 0) return null;
     const place = (slot: ElevationSlot) => {
       if (slotOccupied(parts, slot)) return;
