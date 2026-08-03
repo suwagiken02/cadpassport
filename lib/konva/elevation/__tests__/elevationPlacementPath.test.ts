@@ -80,9 +80,13 @@ describe('配置フローが作る部材: レベル × スパンで 1 本ずつ'
 
   it('1 本だけ動かせる: 1 部材を動かしても他の部材の絵は変わらない', () => {
     const target = bundle.parts.find((p) => p.kind === 'rail')!;
+    // E-8-v3a: 位置の一次データは x0Mm/x1Mm（面軸 mm）。
     const moved = bundle.parts.map((p) => (
       p.id === target.id
-        ? { ...p, origin: 'manual' as const, x0: (p.x0 ?? 0) + SPAN_GRID, x1: (p.x1 ?? 0) + SPAN_GRID }
+        ? {
+          ...p, origin: 'manual' as const,
+          x0Mm: (p.x0Mm ?? 0) + SPAN_GRID * 10, x1Mm: (p.x1Mm ?? 0) + SPAN_GRID * 10,
+        }
         : p));
     const before = partsToPrimitives(bundle);
     const after = partsToPrimitives({ parts: moved, geom: bundle.geom });

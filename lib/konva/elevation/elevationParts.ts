@@ -53,7 +53,20 @@ export type ElevationPart = {
    * levelMm を持つ支柱＝継ぎ足した部材の長さ。未指定は既定長（POST_MEMBER_DEFAULT_KOMA）。
    */
   komaCount?: number;
-  /** 描画レンジ（面軸グリッド）。自動分は生成時の実測（入隅切断を含む）、手動分はスパン幅。 */
+  /**
+   * 面軸の自由座標(mm) (= E-8-v3a)。**位置の一次データはこれ**。
+   * 支柱・ジャッキは x0Mm===x1Mm（1 点）。手摺・踏板・筋交は部材の両端。
+   *
+   * v2 までは「スロット番号（postIndex / spanIndex）から座標を引く」方式で、
+   * 決められた場所にしか置けなかった。v3 では座標そのものを持ち、どこにでも置ける。
+   * 接合（コマ・ジョイント）へは吸着で寄せる＝結果的にコマ位置の座標になるだけ。
+   */
+  x0Mm?: number;
+  x1Mm?: number;
+  /**
+   * 旧: 描画レンジ（面軸グリッド・1=10mm）。v3a 以降は x0Mm/x1Mm が無いときだけ読む。
+   * 保存済みデータをそのまま描けるように残してある（読み替えは partRangeMm が担当）。
+   */
   x0?: number;
   x1?: number;
   /**
@@ -191,7 +204,8 @@ export function faceElevationToParts(fe: FaceElevation): ElevationPartsBundle {
     });
   });
 
-  return { parts, geom };
+  // E-8-v3a: 自動生成分も最初から自由座標を持たせる（パレット由来と同じ形にする）。
+  return { parts: withFreeCoords(parts, geom), geom };
 }
 
 /** 仮想支柱の間隔(mm)。既存の支柱列を外へ延ばすときの標準スパン (= E-8-v2n)。 */
@@ -303,20 +317,60 @@ export function postXAt(
   return i < 0 ? xs[0] + i * pitch : xs[xs.length - 1] + (i - (xs.length - 1)) * pitch;
 }
 
-/** 部材の実座標（面軸グリッド）。post/jack は支柱位置から、その他は x0/x1 から。 */
-function partSpanX(
+/** 面軸グリッド 1 目盛りの実寸(mm)。横は grid、縦は mm という既存の座標系の橋渡し。 */
+export const GRID_MM = 10;
+
+/**
+ * 部材の面軸レンジ(mm) (= E-8-v3a)。**位置の一次データ**。
+ *
+ * 解決の優先順:
+ *   1. x0Mm / x1Mm … v3 以降の自由座標（これがあれば index も geom も見ない）
+ *   2. x0 / x1     … 旧データ（面軸グリッド）を mm へ読み替え
+ *   3. postIndex / spanIndex … さらに古い「スロット番号だけ」のデータを geom から復元
+ * 3 が残っているので、保存済みの立面はそのまま描ける（変換バッチは不要）。
+ */
+export function partRangeMm(
   part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
-): { x0: number; x1: number } | null {
+): { x0Mm: number; x1Mm: number } | null {
+  if (part.x0Mm != null && part.x1Mm != null) return { x0Mm: part.x0Mm, x1Mm: part.x1Mm };
+  if (part.x0 != null && part.x1 != null) {
+    return { x0Mm: part.x0 * GRID_MM, x1Mm: part.x1 * GRID_MM };
+  }
   if (!sg) return null;
   if (part.kind === 'post' || part.kind === 'jack') {
     const px = part.postIndex != null ? postXAt(sg, part.postIndex) : null;
-    return px == null ? null : { x0: px, x1: px };
+    return px == null ? null : { x0Mm: px * GRID_MM, x1Mm: px * GRID_MM };
   }
-  if (part.x0 != null && part.x1 != null) return { x0: part.x0, x1: part.x1 };
-  // 手動追加でレンジ未指定ならスパン幅を使う（はまる場所にしかはまらない）。
   const i = part.spanIndex ?? 0;
   const a = postXAt(sg, i), b = postXAt(sg, i + 1);
-  return a == null || b == null ? null : { x0: a, x1: b };
+  return a == null || b == null ? null : { x0Mm: a * GRID_MM, x1Mm: b * GRID_MM };
+}
+
+/** 部材の実座標（面軸グリッド）。描画パイプラインが grid なので、ここで 1 回だけ換算する。 */
+function partSpanX(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+): { x0: number; x1: number } | null {
+  const r = partRangeMm(part, sg);
+  return r ? { x0: r.x0Mm / GRID_MM, x1: r.x1Mm / GRID_MM } : null;
+}
+
+/**
+ * 保存済みの部材を自由座標へ変換する (= E-8-v3a)。
+ * スロット番号やグリッド座標しか持っていない部材に x0Mm/x1Mm を埋める。
+ * 既に自由座標を持つ部材・解決できない部材はそのまま返す（べき等）。
+ */
+export function withFreeCoords(
+  parts: ElevationPart[], geom: ElevationPartGeometry,
+): ElevationPart[] {
+  let changed = false;
+  const out = parts.map((p) => {
+    if (p.x0Mm != null && p.x1Mm != null) return p;
+    const r = partRangeMm(p, geom.scaffolds[p.scaffoldIndex]);
+    if (!r) return p;
+    changed = true;
+    return { ...p, x0Mm: r.x0Mm, x1Mm: r.x1Mm };
+  });
+  return changed ? out : parts;
 }
 
 /**
