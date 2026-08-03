@@ -37,7 +37,7 @@ import {
   type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
 import {
-  postMemberBottomMm, postMemberKomaCount, postSlotBandMm, postXAt, withPartDeleted,
+  postMemberBottomMm, postMemberKomaCount, postSlotBandMm, postStackTopMm, postXAt, withPartDeleted,
   type ElevationPart,
 } from '@/lib/konva/elevation/elevationParts';
 import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
@@ -310,16 +310,45 @@ function ElevationInteractiveGroup({
     }
   };
 
+  /**
+   * ドラッグしたのに部材が動かなかったことを必ず知らせる (= E-8-v2u-fix5)。
+   *
+   * ここは「早期 return で無言のまま何も起きない」経路が 3 つあり、実機で
+   * 「掴めるのに置けない」が起きても画面にも Console にも痕跡が残らなかった。
+   * 原因の切り分けに何往復もかかったので、中止した理由と判断に使った数値を必ず出す。
+   * 正常に動いたときは何も出さない（通常操作でうるさくならない）。
+   */
+  const warnNoMove = (reason: string, part: ElevationPart, d: { x: number; y: number },
+    slot: ElevationSlot | null) => {
+    const sg = view.geom?.scaffolds[part.scaffoldIndex];
+    const isPost = part.kind === 'post' || part.kind === 'jack';
+    console.warn(`[elevation] 部材を動かせませんでした: ${reason}`, {
+      id: part.id, kind: part.kind,
+      ...(isPost && sg ? {
+        コマ数: postMemberKomaCount(part, sg),
+        現在の下端mm: Math.round(postMemberBottomMm(part, sg)),
+        離した下端mm: Math.round(postMemberBottomMm(part, sg) - d.y * 10),
+        支柱の頭mm: Math.round(postStackTopMm(sg)),
+      } : {}),
+      ドラッグ量: { dx: Number(d.x.toFixed(2)), dy: Number(d.y.toFixed(2)) },
+      吸着先: slot
+        ? { post: slot.postIndex, span: slot.spanIndex, level: slot.levelMm ?? '(高さ維持)' }
+        : null,
+    });
+  };
+
   /** 部材を最寄りの有効スロットへ移す（同じスロットなら何もしない）。 */
   const moveToNearestSlot = (part: ElevationPart, d: { x: number; y: number }) => {
     setPreview(null);
     const slot = dragTargetSlot(part, d);
-    if (!slot) return;
+    if (!slot) { warnNoMove('置き場所が見つからない', part, d, null); return; }
     const same = slot.spanIndex === part.spanIndex && slot.postIndex === part.postIndex
       && slot.levelMm === part.levelMm && slot.scaffoldIndex === part.scaffoldIndex;
-    if (same) return;
+    if (same) { warnNoMove('元と同じ場所（動かしていない）', part, d, slot); return; }
     // 埋まっている位置へは移さない（支柱は同じ段が埋まっているときだけ）
-    if (slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part))) return;
+    if (slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part))) {
+      warnNoMove('その場所には既に同じ部材がある', part, d, slot); return;
+    }
     const moved: ElevationPart = { ...slotToPart(slot, part.id), origin: 'manual' };
     if (part.kind === 'post') {
       if (slot.levelMm != null) {
