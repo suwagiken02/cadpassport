@@ -4,8 +4,9 @@ import { partsToPrimitives } from '../elevationParts';
 import { ELEV_PART_COLORS } from '../elevationPartStyle';
 import {
   PALETTE_KINDS, buildElevationSlots, neighborSlot, nextPartId, slotAnchor, slotKey,
-  slotOccupied, slotToPart, snapToSlot,
+  slotOccupied, slotToPart, snapPostSlot, snapToSlot,
 } from '../elevationSlots';
+import { postMemberBottomMm, postStackTopMm } from '../elevationParts';
 
 // ============================================================
 // E-8-v2c: 吸着スロット。「はまる場所にしかはまらない」を担保する有効位置。
@@ -276,11 +277,13 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
     const sg = geom.scaffolds[0];
     const stackSlots = buildElevationSlots(geom, 'post', ext)
       .filter((s) => s.postIndex === 1 && s.levelMm != null);
+    /** 規格部材を積み上げた実際の頭。天端(topRailMm)ではない (= E-8-v2s)。 */
+    const head = postStackTopMm(sg);
 
-    it('天端とその上のコマが候補になる（levelMm ＝ 部材の下端）', () => {
-      expect(stackSlots.map((s) => s.levelMm)).toEqual([
-        sg.topRailMm, sg.topRailMm + 450, sg.topRailMm + 900, sg.topRailMm + 1350,
-      ]);
+    it('候補の基準は「実際の頭」で、そこから 450 刻み（levelMm ＝ 部材の下端）', () => {
+      expect(stackSlots[0].levelMm).toBe(head);
+      expect(stackSlots.map((s) => s.levelMm))
+        .toEqual(Array.from({ length: 9 }, (_, k) => head + 450 * k));
       expect(stackSlots.every((s) => s.virtual)).toBe(true);
       expect(stackSlots.every((s) => s.x0 === s.x1 && s.x0 === sg.postXs[1])).toBe(true);
     });
@@ -293,42 +296,74 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       expect(buildElevationSlots(geom, 'post').every((s) => s.levelMm == null)).toBe(true);
     });
 
-    it('天端より上へドラッグすると継ぎ足し先へ吸着する', () => {
-      const px = sg.postXs[1];
-      // 天端(6500)のすぐ上あたりを指す → 天端に底を合わせる位置
-      const s0 = snapToSlot({ x: px, yMm: sg.topRailMm + 100 }, geom, 'post', ext)!;
-      expect(s0.postIndex).toBe(1);
-      expect(s0.levelMm).toBe(sg.topRailMm);
-      // さらに 1 コマ上 → 1 つ上の継ぎ足し先
-      const s1 = snapToSlot({ x: px, yMm: sg.topRailMm + 500 }, geom, 'post', ext)!;
-      expect(s1.levelMm).toBe(sg.topRailMm + 450);
-      // 足場の中ほどを指せば従来どおり「足元〜天端の 1 本」
-      const mid = snapToSlot({ x: px, yMm: 2000 }, geom, 'post', ext)!;
-      expect(mid.levelMm).toBeUndefined();
+    // ------------------------------------------------------------
+    // 吸着の基準点。指の位置で寄せると、部材が長いぶん上の候補に付いて宙に浮いた。
+    // ------------------------------------------------------------
+    /** 掴んだ部材（上段・6 コマ品）。下端は seg1 の底。 */
+    const grabbed: ElevationPart = {
+      id: 'post:0:1:1', kind: 'post', scaffoldIndex: 0, origin: 'auto', postIndex: 1, segmentIndex: 1,
+    };
+    const curBottom = postMemberBottomMm(grabbed, sg);
+    const px1 = sg.postXs[1];
+
+    it('部材の下端を頭に合わせると、ぴったり頭に吸着する（宙に浮かない）', () => {
+      const s = snapPostSlot(geom, grabbed, { x: px1, bottomMm: head }, curBottom, ext)!;
+      expect(s.postIndex).toBe(1);
+      expect(s.levelMm).toBe(head);
     });
 
-    it('置いた部材は「下端＋規格長」で描かれ、下端に継ぎ目が出る', () => {
-      const slot = stackSlots[0];                       // 天端に載せる
-      const moved: ElevationPart = {
-        ...slotToPart(slot, 'post:0:1:1'),
-        komaCount: 6,                                   // 掴んだ部材（6 コマ品）の長さを引き継ぐ
-        origin: 'manual',
-      };
-      expect(moved).toMatchObject({ kind: 'post', postIndex: 1, levelMm: sg.topRailMm, komaCount: 6 });
+    it('下端が頭の少し上でも頭へ吸着する（1 コマ上には飛ばない）', () => {
+      const s = snapPostSlot(geom, grabbed, { x: px1, bottomMm: head + 100 }, curBottom, ext)!;
+      expect(s.levelMm).toBe(head);
+      // ちょうど 1 コマ上まで持っていけば 1 つ上の候補
+      const up = snapPostSlot(geom, grabbed, { x: px1, bottomMm: head + 450 }, curBottom, ext)!;
+      expect(up.levelMm).toBe(head + 450);
+    });
 
-      const prims = partsToPrimitives({ geom, parts: [moved] });
+    it('横へ動かしただけなら高さは変わらない（v2q の挙動を保つ）', () => {
+      const s = snapPostSlot(geom, grabbed, { x: sg.postXs[2], bottomMm: curBottom }, curBottom, ext)!;
+      expect(s.postIndex).toBe(2);
+      expect(s.levelMm).toBeUndefined();
+    });
+
+    it('継ぎ足した部材の天も候補なので、その上へさらに継げる', () => {
+      const levels = stackSlots.map((s) => s.levelMm);
+      expect(levels).toContain(head + 450 * 4);   // 4 コマ品を載せた天
+      expect(levels).toContain(head + 450 * 8);   // 8 コマ品を載せた天
+    });
+
+    it('置いた部材は「下端＝頭」で描かれ、接合点に継ぎ目が出る', () => {
+      // 頭がちょうど 5000 になる足場（皿 50＋450×11＝5000）で座標を固定する
+      const g5000: ElevationPartGeometry = {
+        minXg: 0,
+        scaffolds: [{
+          postXs: [0, 180], jackTopMm: 50, topRailMm: 5000,
+          levelsMm: [1400, 3200, 5000],
+          komaGridMm: Array.from({ length: 11 }, (_, k) => 300 + 450 * k),
+        }],
+      };
+      expect(postStackTopMm(g5000.scaffolds[0])).toBe(5000);
+      const slot = buildElevationSlots(g5000, 'post', ext)
+        .find((s) => s.postIndex === 1 && s.levelMm === 5000)!;
+      const moved: ElevationPart = {
+        ...slotToPart(slot, 'post:0:1:1'), komaCount: 6, origin: 'manual',
+      };
+      expect(moved).toMatchObject({ kind: 'post', postIndex: 1, levelMm: 5000, komaCount: 6 });
+
+      const prims = partsToPrimitives({ geom: g5000, parts: [moved] });
       const bar = prims.find((p) => p.kind === 'line' && p.x1 === p.x2 && p.stroke === ELEV_PART_COLORS.post);
       if (!bar || bar.kind !== 'line') throw new Error('支柱の棒が無い');
-      // 下端＝天端、上端＝下端＋450×6（ローカル y は -mm/10）
-      expect(bar.y1).toBeCloseTo(-sg.topRailMm / 10);
-      expect(bar.y2).toBeCloseTo(-(sg.topRailMm + 450 * 6) / 10);
-      // 下端には端キャップではなく継ぎ目のスリーブが出る
-      const sleeves = prims.filter((p) => p.kind === 'line' && p.x1 === p.x2
+      // 下端＝5000（＝既存の頭）、上端＝5000＋450×6（ローカル y は -mm/10）
+      expect(bar.y1).toBe(-500);
+      expect(bar.y2).toBe(-(5000 + 450 * 6) / 10);
+      // 接合点にはスリーブ（縦帯）が出る。端キャップは上端だけ
+      const sleeve = prims.find((p) => p.kind === 'line' && p.x1 === p.x2
         && p.stroke === ELEV_PART_COLORS.joint);
-      expect(sleeves).toHaveLength(1);
+      if (!sleeve || sleeve.kind !== 'line') throw new Error('継ぎ目が無い');
+      expect((sleeve.y1 + sleeve.y2) / 2).toBeCloseTo(-500);
       const caps = prims.filter((p) => p.kind === 'circle');
-      expect(caps).toHaveLength(1);                     // 上端だけ
-      expect(caps[0].kind === 'circle' && caps[0].y).toBeCloseTo(-(sg.topRailMm + 450 * 6) / 10);
+      expect(caps).toHaveLength(1);
+      expect(caps[0].kind === 'circle' && caps[0].y).toBeCloseTo(-(5000 + 450 * 6) / 10);
     });
 
     it('同じ高さに既に継ぎ足していれば埋まり', () => {

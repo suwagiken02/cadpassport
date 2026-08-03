@@ -33,10 +33,11 @@ import {
   ELEV_PART_STYLE, ELEV_SELECT_COLOR, partHitPx, partWidthPx,
 } from '@/lib/konva/elevation/elevationPartStyle';
 import {
-  buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapToSlot, type ElevationSlot,
+  buildElevationSlots, nextPartId, slotKey, slotOccupied, slotToPart, snapPostSlot, snapToSlot,
+  type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
 import {
-  POST_MEMBER_DEFAULT_KOMA, postMemberKomaCount, withPartDeleted, type ElevationPart,
+  postMemberBottomMm, postMemberKomaCount, postXAt, withPartDeleted, type ElevationPart,
 } from '@/lib/konva/elevation/elevationParts';
 import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
 import type { ElevationPrimitive, ElevationView } from '@/types';
@@ -267,9 +268,29 @@ function ElevationInteractiveGroup({
    */
   const segmentOf = (part: ElevationPart) => part.segmentIndex;
 
+  /**
+   * ドラッグ中の部材の移動先スロット (= E-8-v2s)。
+   * 支柱は「掴んだ部材の下端」を寄せる（指の位置だと、部材が長いぶん上の候補に
+   * 吸着して既存支柱の頭から浮く）。d はドラッグ量（Group ローカル単位）。
+   */
+  const dragTargetSlot = (part: ElevationPart, d: { x: number; y: number }): ElevationSlot | null => {
+    const geom = view.geom;
+    if (!geom) return null;
+    if (part.kind === 'post' || part.kind === 'jack') {
+      const sg = geom.scaffolds[part.scaffoldIndex];
+      const x0 = postXAt(sg, part.postIndex ?? 0);
+      if (x0 == null) return null;
+      const bottomMm = postMemberBottomMm(part, sg);
+      // ローカル y は下向きが正・1 単位 = 10mm なので、上へ動かすと mm は増える。
+      return snapPostSlot(
+        geom, part, { x: x0 + d.x, bottomMm: bottomMm - d.y * 10 }, bottomMm, { extend: true });
+    }
+    return nearestSlot(part.kind);
+  };
+
   /** ドラッグ中: 最寄りコマを一時ハイライト（置けるかどうかも色で見せる）。 */
-  const onPartDragMove = (part: ElevationPart) => {
-    const slot = nearestSlot(part.kind);
+  const onPartDragMove = (part: ElevationPart, d: { x: number; y: number }) => {
+    const slot = dragTargetSlot(part, d);
     if (!slot) { if (preview) setPreview(null); return; }
     const taken = slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part));
     if (!preview || slotKey(preview.slot) !== slotKey(slot) || preview.taken !== taken) {
@@ -278,9 +299,9 @@ function ElevationInteractiveGroup({
   };
 
   /** 部材を最寄りの有効スロットへ移す（同じスロットなら何もしない）。 */
-  const moveToNearestSlot = (part: ElevationPart) => {
+  const moveToNearestSlot = (part: ElevationPart, d: { x: number; y: number }) => {
     setPreview(null);
-    const slot = nearestSlot(part.kind);
+    const slot = dragTargetSlot(part, d);
     if (!slot) return;
     const same = slot.spanIndex === part.spanIndex && slot.postIndex === part.postIndex
       && slot.levelMm === part.levelMm && slot.scaffoldIndex === part.scaffoldIndex;
@@ -328,9 +349,13 @@ function ElevationInteractiveGroup({
     const x0 = toLocalX(preview.slot.x0), x1 = toLocalX(preview.slot.x1);
     const isPostKind = preview.slot.kind === 'post' || preview.slot.kind === 'jack';
     if (isPostKind) {
+      // E-8-v2s: 継ぎ足し先（levelMm=下端）は接合点の 1 コマ帯、それ以外は足元〜天端。
+      const [pyBottom, pyTop] = preview.slot.levelMm != null
+        ? [-preview.slot.levelMm / 10, -(preview.slot.levelMm + KOMA_PITCH_MM) / 10]
+        : [-sg.jackTopMm / 10, -sg.topRailMm / 10];
       return (
         <Line
-          points={[x0, -sg.jackTopMm / 10, x0, -sg.topRailMm / 10]}
+          points={[x0, pyBottom, x0, pyTop]}
           stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
           strokeScaleEnabled={false} listening={false}
         />
@@ -372,9 +397,10 @@ function ElevationInteractiveGroup({
         {slots.map((slot, i) => {
           const sg = geom.scaffolds[slot.scaffoldIndex];
           const isPostKind = slot.kind === 'post' || slot.kind === 'jack';
-          // E-8-v2r: 支柱の継ぎ足し先（levelMm=部材の下端）は、載る部材ぶんの高さで見せる。
+          // E-8-v2r/v2s: 支柱の継ぎ足し先（levelMm=部材の下端）は「そこに底が載る」1 コマ帯で
+          //   見せる。部材の全長で出すと 450 刻みの候補が重なって狙えない。
           const stackPost = slot.kind === 'post' && slot.levelMm != null;
-          const topMm = stackPost ? slot.levelMm! + KOMA_PITCH_MM * POST_MEMBER_DEFAULT_KOMA
+          const topMm = stackPost ? slot.levelMm! + KOMA_PITCH_MM
             : isPostKind ? sg.topRailMm : (slot.levelMm ?? 0) + 150;
           const botMm = stackPost ? slot.levelMm!
             : isPostKind ? sg.jackTopMm : (slot.levelMm ?? 0) - 150;
@@ -494,10 +520,12 @@ function ElevationInteractiveGroup({
               //   指向けの距離まで上げ、掴んだ時点で選択しておく（＝ぶれたタップ＝選択）。
               dragDistance={EDIT_DRAG_PX}
               onDragStart={() => { if (part && mode === 'select') onPrimitiveTap(id); }}
-              onDragMove={() => { if (part) onPartDragMove(part); }}
+              onDragMove={(e) => { if (part) onPartDragMove(part, e.target.position()); }}
               onDragEnd={(e) => {
+                // ドラッグ量は位置を戻す前に読む（吸着はこの量で決まる）
+                const d = e.target.position();
                 e.target.position({ x: 0, y: 0 });
-                if (part) moveToNearestSlot(part);
+                if (part) moveToNearestSlot(part, d);
               }}
               onClick={() => onPrimitiveTap(id)}
               onTap={() => onPrimitiveTap(id)}

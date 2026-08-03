@@ -11,7 +11,10 @@
 //   筋交          → スパン × 作業床の高さ（その床から下 1 段の対角）
 // 幅はスパン幅から自動で決まる（部材側で長さを指定しない）。
 // ============================================================
-import { postXAt, type ElevationPart, type ElevationPartGeometry, type ElevationPartKind } from './elevationParts';
+import {
+  postStackTopMm, postXAt,
+  type ElevationPart, type ElevationPartGeometry, type ElevationPartKind,
+} from './elevationParts';
 import { KOMA_PITCH_MM } from './komaGrid';
 
 /**
@@ -21,6 +24,12 @@ import { KOMA_PITCH_MM } from './komaGrid';
  */
 export const GRID_EXT_SPANS = 3;
 export const GRID_EXT_KOMA = 3;
+/**
+ * 支柱の継ぎ足し先を、既存支柱の頭から何コマ上まで出すか (= E-8-v2s)。
+ * 規格部材の最長（8 コマ＝3600mm）ぶん。継ぎ足した部材の天もこの範囲に入るので、
+ * その上へさらに継ぐ（2 段目・3 段目）ことができる。
+ */
+export const POST_STACK_EXT_KOMA = 8;
 
 /** 部材を置ける 1 箇所。座標はビューローカル（横=グリッド、縦=mm）。 */
 export type ElevationSlot = {
@@ -125,9 +134,13 @@ export function buildElevationSlots(
         //   （手摺は v2n でコマ列が上へ延びたのに、支柱だけ延びなかった差分）。
         //   ジャッキは足元の部材なので継ぎ足さない。
         if (kind === 'post' && extKoma > 0) {
-          for (let k = 0; k <= extKoma; k++) {
+          // 基準は「規格部材を積み上げた実際の頭」。天端(topRailMm)ではない (= E-8-v2s)。
+          const head = postStackTopMm(sg);
+          // 規格部材 1 本ぶん（最大 8 コマ）まで上へ。継ぎ足した部材の天も候補になるので、
+          // その上へさらに継げる（2 段目・3 段目）。
+          for (let k = 0; k <= POST_STACK_EXT_KOMA; k++) {
             out.push({
-              kind, scaffoldIndex: si, postIndex: i, levelMm: sg.topRailMm + KOMA_PITCH_MM * k,
+              kind, scaffoldIndex: si, postIndex: i, levelMm: head + KOMA_PITCH_MM * k,
               x0: px, x1: px, virtual: true,
             });
           }
@@ -185,6 +198,49 @@ export function snapToSlot(
     if (!best || d < best.d) best = { slot: s, d };
   }
   return best ? best.slot : null;
+}
+
+/**
+ * 支柱部材のドラッグ移動先 (= E-8-v2s)。
+ *
+ * 実機症状: 天端の上へ継ぎ足そうとすると、頭に載らず隙間を空けて宙に浮いた。
+ * 原因は吸着の基準点で、汎用の snapToSlot は「指の位置」を寄せていた。支柱は 1 本が
+ * 長い（1800〜3600mm）ので、部材の真ん中あたりを掴むと指は下端よりずっと上にあり、
+ * 450 刻みの継ぎ足し候補のうち「掴んだ位置ぶん上」のものに吸着していた。
+ *
+ * ここでは掴んだ部材の「下端」を寄せる:
+ *   ・横 = 最寄りの支柱位置（実在＋仮想）
+ *   ・縦 = 「今の高さのまま」と「継ぎ足し先」のうち、動かした下端が近い方
+ *          （横へ動かしただけなら高さは変わらない ＝ v2q の挙動をそのまま保つ）
+ */
+export function snapPostSlot(
+  geom: ElevationPartGeometry,
+  part: ElevationPart,
+  moved: { x: number; bottomMm: number },
+  currentBottomMm: number,
+  opts?: SlotGridOptions,
+): ElevationSlot | null {
+  const slots = buildElevationSlots(geom, part.kind, opts);
+  if (slots.length === 0) return null;
+  // 横: 最寄りの支柱位置（縦は見ない）
+  let nearest: ElevationSlot | null = null;
+  let bestDx = Infinity;
+  for (const s of slots) {
+    const dx = Math.abs(s.x0 - moved.x);
+    if (dx < bestDx - 1e-9) { bestDx = dx; nearest = s; }
+  }
+  if (!nearest) return null;
+  const here = slots.filter(
+    (s) => s.scaffoldIndex === nearest!.scaffoldIndex && s.postIndex === nearest!.postIndex);
+  // 縦: 既定は「今の高さのまま」（levelMm を持たない足元〜天端のスロット）
+  let chosen = here.find((s) => s.levelMm == null) ?? nearest;
+  let bestDy = Math.abs(moved.bottomMm - currentBottomMm);
+  for (const s of here) {
+    if (s.levelMm == null) continue;
+    const dy = Math.abs(moved.bottomMm - s.levelMm);
+    if (dy < bestDy - 1e-9) { bestDy = dy; chosen = s; }
+  }
+  return chosen;
 }
 
 /** スロット → 手動追加の部材。id は呼び出し側が採番する。 */

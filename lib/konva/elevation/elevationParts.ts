@@ -205,6 +205,36 @@ export const VIRTUAL_SPAN_MM = 1800;
 export const POST_MEMBER_DEFAULT_KOMA = 4;
 
 /**
+ * その支柱位置に自動生成で積まれている支柱の「物理的な頭」の高さ(mm) (= E-8-v2s)。
+ * 規格部材を積み上げた実際の上端であって、天端(topRailMm＝手摺天端の設計高さ)ではない。
+ * 皿がスタート端数から逆算されるので普通は一致するが、一致を前提にしない。
+ */
+export function postStackTopMm(sg: ElevationPartGeometry['scaffolds'][number] | undefined): number {
+  if (!sg) return 0;
+  const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+  return segs.length > 0 ? segs[segs.length - 1].topMm : sg.topRailMm;
+}
+
+/**
+ * その支柱部材の「下端」の高さ(mm) (= E-8-v2s)。
+ * 継ぎ足した部材は levelMm、自動生成の段は segmentIndex の下端、どちらも無ければ皿。
+ * ドラッグの吸着はこの下端を基準にする（指の位置で寄せると、部材の長い支柱では
+ * 掴んだ位置ぶん上の候補に吸着して宙に浮く）。
+ */
+export function postMemberBottomMm(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+): number {
+  if (part.levelMm != null) return part.levelMm;
+  if (!sg) return 0;
+  if (part.segmentIndex != null) {
+    const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+    const seg = segs[part.segmentIndex];
+    if (seg) return seg.bottomMm;
+  }
+  return sg.jackTopMm;
+}
+
+/**
  * その支柱部材の長さ（コマ数）(= E-8-v2r)。
  * 明示的な komaCount →（自動生成なら）segmentIndex の規格 → 既定 の順で決まる。
  */
