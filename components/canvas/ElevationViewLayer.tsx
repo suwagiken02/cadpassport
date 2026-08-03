@@ -288,8 +288,13 @@ function ElevationInteractiveGroup({
       if (x0 == null) return null;
       const bottomMm = postMemberBottomMm(part, sg);
       // ローカル y は下向きが正・1 単位 = 10mm なので、上へ動かすと mm は増える。
+      // 指の高さも渡す (= E-8-v2u): 長い部材を上寄りで掴むと下端は継ぎ目のずっと下にあり、
+      // 下端だけで判定すると部材が長いほど吸着しなくなるため。
+      const local = pointerLocal();
       return snapPostSlot(
-        geom, part, { x: x0 + d.x, bottomMm: bottomMm - d.y * 10 }, bottomMm, gridOpts);
+        geom, part,
+        { x: x0 + d.x, bottomMm: bottomMm - d.y * 10, pointerMm: local ? -local.y * 10 : undefined },
+        bottomMm, gridOpts);
     }
     return nearestSlot(part.kind);
   };

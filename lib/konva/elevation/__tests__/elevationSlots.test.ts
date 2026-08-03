@@ -322,6 +322,62 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       expect(up.levelMm).toBe(head + 450);
     });
 
+    // ------------------------------------------------------------
+    // E-8-v2u: 吸着の成否が部材の長さで変わってはいけない。
+    // 1 コマ品は効くのに 2/8 コマ品が効かなかった（掴んだ位置〜下端の距離が
+    // ドラッグ量を超えると「高さ維持」に倒れていた）。
+    // ------------------------------------------------------------
+    describe('部材長に依存しない', () => {
+      /** 下端 900mm に置いた手動支柱（長さ違い）。 */
+      const member = (komaCount: number): ElevationPart => ({
+        id: `manual:post:${komaCount}`, kind: 'post', scaffoldIndex: 0, origin: 'manual',
+        postIndex: 1, levelMm: 900, komaCount,
+      });
+      /** 部材の中央を掴んで、指を頭へ運んだときの吸着先。 */
+      const dropWithFingerAtHead = (komaCount: number) => {
+        const p = member(komaCount);
+        const B = p.levelMm!, L = komaCount * 450;
+        const delta = head - (B + L / 2);          // 指の移動量
+        return snapPostSlot(
+          geom, p, { x: sg.postXs[1], bottomMm: B + delta, pointerMm: head }, B, ext);
+      };
+
+      it('1 コマ品も 8 コマ品も、指で頭を指せば同じ位置に吸着する', () => {
+        for (const koma of [1, 2, 4, 6, 8]) {
+          const s = dropWithFingerAtHead(koma);
+          expect(s?.levelMm, `${koma}コマ品`).toBe(head);
+          expect(s?.postIndex, `${koma}コマ品`).toBe(1);
+        }
+      });
+
+      it('下端で狙う経路も長さに依存しない', () => {
+        for (const koma of [1, 8]) {
+          const p = member(koma);
+          const s = snapPostSlot(
+            geom, p, { x: sg.postXs[1], bottomMm: head, pointerMm: head + koma * 225 },
+            p.levelMm!, ext);
+          expect(s?.levelMm, `${koma}コマ品`).toBe(head);
+        }
+      });
+
+      it('上へ動かしていなければ、指が頭の近くでも高さは変わらない', () => {
+        const p = member(8);
+        // 横へ動かしただけ（下端はそのまま・指は部材の上寄り＝頭の近く）
+        const s = snapPostSlot(
+          geom, p, { x: sg.postXs[2], bottomMm: p.levelMm!, pointerMm: head }, p.levelMm!, ext);
+        expect(s?.levelMm).toBeUndefined();
+        expect(s?.postIndex).toBe(2);
+      });
+
+      it('指が継ぎ目より上なら、指以下でいちばん高い継ぎ目へ載る', () => {
+        const p = member(8);
+        const s = snapPostSlot(
+          geom, p, { x: sg.postXs[1], bottomMm: p.levelMm! + 1000, pointerMm: head + 700 },
+          p.levelMm!, ext);
+        expect(s?.levelMm).toBe(head + 450);   // 頭+700 以下でいちばん高い候補
+      });
+    });
+
     it('横へ動かしただけなら高さは変わらない（v2q の挙動を保つ）', () => {
       const s = snapPostSlot(geom, grabbed, { x: sg.postXs[2], bottomMm: curBottom }, curBottom, ext)!;
       expect(s.postIndex).toBe(2);

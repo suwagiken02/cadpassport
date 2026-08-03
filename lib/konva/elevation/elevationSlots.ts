@@ -80,6 +80,13 @@ function levelsFor(
 const MAX_KOMA_STEPS = 400;
 
 /**
+ * 継ぎ足しの吸着許容（mm）(= E-8-v2u)。候補は 450 刻みなので半コマ。
+ * 部材の長さに依らない固定値にするのが要点（従来はドラッグ量と比べていたため、
+ * 長い部材ほど吸着しなかった）。
+ */
+const STACK_SNAP_TOL_MM = KOMA_PITCH_MM / 2;
+
+/**
  * 縦位置の延長 (= E-8-v2n / E-8-v2t)。既存のコマ列の上下へ 450 刻みで伸ばす。
  * 下方向は GL より下に行かないところで止める（皿より下は部材が掛からない）。
  *
@@ -269,7 +276,7 @@ export function snapToSlot(
 export function snapPostSlot(
   geom: ElevationPartGeometry,
   part: ElevationPart,
-  moved: { x: number; bottomMm: number },
+  moved: { x: number; bottomMm: number; pointerMm?: number },
   currentBottomMm: number,
   opts?: SlotGridOptions,
 ): ElevationSlot | null {
@@ -285,15 +292,34 @@ export function snapPostSlot(
   if (!nearest) return null;
   const here = slots.filter(
     (s) => s.scaffoldIndex === nearest!.scaffoldIndex && s.postIndex === nearest!.postIndex);
-  // 縦: 既定は「今の高さのまま」（levelMm を持たない足元〜天端のスロット）
-  let chosen = here.find((s) => s.levelMm == null) ?? nearest;
-  let bestDy = Math.abs(moved.bottomMm - currentBottomMm);
-  for (const s of here) {
-    if (s.levelMm == null) continue;
-    const dy = Math.abs(moved.bottomMm - s.levelMm);
-    if (dy < bestDy - 1e-9) { bestDy = dy; chosen = s; }
+  const base = here.find((s) => s.levelMm == null) ?? nearest;
+  const stack = here.filter((s) => s.levelMm != null).sort((a, b) => a.levelMm! - b.levelMm!);
+  if (stack.length === 0) return base;
+
+  // 縦 1: 部材の下端が継ぎ目のすぐ近くなら、そこへ載せる（下端で狙う）。
+  //   候補は 450 刻みなので、許容を半コマにすると頭から上は隙間なく覆われる。
+  let byBottom: ElevationSlot | null = null;
+  let bestDy = STACK_SNAP_TOL_MM + 1e-9;
+  for (const s of stack) {
+    const dy = Math.abs(moved.bottomMm - s.levelMm!);
+    if (dy < bestDy) { bestDy = dy; byBottom = s; }
   }
-  return chosen;
+  if (byBottom) return byBottom;
+
+  // 縦 2: 指で継ぎ目のあたりを指していて、かつ上へ動かしているなら、
+  //   指の下にぶら下がる形で「指以下の最も高い継ぎ目」へ落とす。
+  //   長い部材を真ん中や上寄りで掴むと、下端は継ぎ目からその掴んだぶんだけ下にある。
+  //   下端だけで判定していたため、部材が長いほどスナップしなくなっていた (= E-8-v2u)。
+  const head = stack[0].levelMm!;
+  const movedUp = moved.bottomMm - currentBottomMm;
+  if (moved.pointerMm != null
+    && movedUp >= STACK_SNAP_TOL_MM
+    && moved.pointerMm >= head - STACK_SNAP_TOL_MM) {
+    let byPointer = stack[0];
+    for (const s of stack) if (s.levelMm! <= moved.pointerMm + 1e-9) byPointer = s;
+    return byPointer;
+  }
+  return base;
 }
 
 /** スロット → 手動追加の部材。id は呼び出し側が採番する。 */
