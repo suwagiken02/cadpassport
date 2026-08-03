@@ -181,15 +181,13 @@ export function faceElevationToPrimitives(
         return;
       }
       segs.forEach((seg, gi) => {
-        const isLast = gi === segs.length - 1;
         pushPost(prims, lx(px), ly(seg.bottomMm), ly(seg.topMm),
           { kind: 'post', id: `post:${si}:${pi}:${gi}`, index: pi, x: q(lx(px)), heightMm: seg.topMm },
           {
             komaYs: sc.levels.komaGridMm
               .filter((h) => h >= seg.bottomMm - 1e-6 && h <= seg.topMm + 1e-6).map(ly),
+            // E-8-v2u: 上端は常に受け（カップ）。下端は足元だけ座で、以降はホゾ。
             capBottom: gi === 0,
-            capTop: isLast,
-            jointY: isLast ? undefined : ly(seg.topMm),
           });
       });
     });

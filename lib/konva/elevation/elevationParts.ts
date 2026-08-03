@@ -343,7 +343,6 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         const koma = p.komaCount ?? seg?.komaCount ?? POST_MEMBER_DEFAULT_KOMA;
         const bottomMm = stacked ? p.levelMm! : (seg ? seg.bottomMm : sg.jackTopMm);
         const topMm = stacked ? bottomMm + KOMA_PITCH_MM * koma : (seg ? seg.topMm : sg.topRailMm);
-        const isLast = !seg || p.segmentIndex === segs.length - 1;
         pushPost(out, lx(span.x0), ly(bottomMm), ly(topMm),
           { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm },
           {
@@ -351,10 +350,8 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
             komaYs: (stacked
               ? komaLevelsFromJackMm(bottomMm, topMm)
               : sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6)).map(ly),
+            // E-8-v2u: 上端は常に受け（カップ）、下端は足元なら座・継いでいるならホゾ。
             capBottom: stacked ? false : (!seg || p.segmentIndex === 0),
-            capTop: stacked ? true : isLast,
-            jointY: !stacked && !isLast ? ly(topMm) : undefined,
-            jointBottomY: stacked ? ly(bottomMm) : undefined,
           });
         break;
       }

@@ -364,12 +364,23 @@ function ElevationInteractiveGroup({
       const [pyBottom, pyTop] = preview.slot.levelMm != null
         ? [-preview.slot.levelMm / 10, -(preview.slot.levelMm + KOMA_PITCH_MM) / 10]
         : [-sg.jackTopMm / 10, -sg.topRailMm / 10];
+      const jh = ELEV_PART_STYLE.jointHalfGrid;
       return (
-        <Line
-          points={[x0, pyBottom, x0, pyTop]}
-          stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
-          strokeScaleEnabled={false} listening={false}
-        />
+        <>
+          <Line
+            points={[x0, pyBottom, x0, pyTop]}
+            stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
+            strokeScaleEnabled={false} listening={false}
+          />
+          {/* E-8-v2u: 受け口（メス）を強調する＝「ここに刺さる」 */}
+          {preview.slot.levelMm != null && (
+            <Line
+              points={[x0 - jh * 1.4, pyBottom, x0 + jh * 1.4, pyBottom]}
+              stroke={c} strokeWidth={ELEV_PART_STYLE.jointWidthPx + 3} opacity={0.95} lineCap="round"
+              strokeScaleEnabled={false} listening={false}
+            />
+          )}
+        </>
       );
     }
     const y = -(preview.slot.levelMm ?? 0) / 10;
@@ -381,13 +392,24 @@ function ElevationInteractiveGroup({
           stroke={c} strokeWidth={SNAP_BAND_PX} opacity={0.35} lineCap="round"
           strokeScaleEnabled={false} listening={false}
         />
-        {/* 吸着先のコマ（両端の支柱の受け金具）を強調する */}
+        {/* E-8-v2u: 吸着先のポケット（両端の受け口）を拡大して強調する＝「ここに刺さる」。
+            皿＋外端の唇まで描くので、クサビが落ちる口がどこかまで見える。 */}
         {[x0, x1].map((cx, i) => (
-          <Line
-            key={`koma-${i}`} points={[cx - kh, y, cx + kh, y]}
-            stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 2} opacity={0.95}
-            strokeScaleEnabled={false} listening={false}
-          />
+          <React.Fragment key={`pocket-${i}`}>
+            <Line
+              points={[cx - kh * 1.4, y, cx + kh * 1.4, y]}
+              stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95}
+              strokeScaleEnabled={false} listening={false}
+            />
+            {[-1, 1].map((dir) => (
+              <Line
+                key={`lip-${dir}`}
+                points={[cx + dir * kh * 1.4, y, cx + dir * kh * 1.4, y - ELEV_PART_STYLE.komaLipGrid * 1.4]}
+                stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95}
+                strokeScaleEnabled={false} listening={false}
+              />
+            ))}
+          </React.Fragment>
         ))}
       </>
     );

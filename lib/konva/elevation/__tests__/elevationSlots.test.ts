@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
 import { partsToPrimitives } from '../elevationParts';
-import { ELEV_PART_COLORS } from '../elevationPartStyle';
+import { ELEV_PART_COLORS, ELEV_PART_STYLE } from '../elevationPartStyle';
 import {
   PALETTE_KINDS, buildElevationSlots, neighborSlot, nextPartId, slotAnchor, slotKey,
   slotOccupied, slotToPart, snapPostSlot, snapToSlot,
@@ -414,14 +414,20 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       // 下端＝5000（＝既存の頭）、上端＝5000＋450×6（ローカル y は -mm/10）
       expect(bar.y1).toBe(-500);
       expect(bar.y2).toBe(-(5000 + 450 * 6) / 10);
-      // 接合点にはスリーブ（縦帯）が出る。端キャップは上端だけ
-      const sleeve = prims.find((p) => p.kind === 'line' && p.x1 === p.x2
-        && p.stroke === ELEV_PART_COLORS.joint);
-      if (!sleeve || sleeve.kind !== 'line') throw new Error('継ぎ目が無い');
-      expect((sleeve.y1 + sleeve.y2) / 2).toBeCloseTo(-500);
-      const caps = prims.filter((p) => p.kind === 'circle');
-      expect(caps).toHaveLength(1);
-      expect(caps[0].kind === 'circle' && caps[0].y).toBeCloseTo(-(5000 + 450 * 6) / 10);
+      // E-8-v2u: 下端はホゾ（オス・細い）＝下の支柱の受けへ差し込む形で出る
+      const spigot = prims.find((p) => p.kind === 'line' && p.x1 === p.x2
+        && p.stroke === ELEV_PART_COLORS.joint
+        && p.widthGrid === ELEV_PART_STYLE.jointSpigotGrid);
+      if (!spigot || spigot.kind !== 'line') throw new Error('ホゾが無い');
+      expect(spigot.y1).toBe(-500);                                    // 接合点＝既存の頭
+      expect(spigot.y2).toBe(-500 + ELEV_PART_STYLE.jointSpigotLenGrid);
+      // 上端は受け（メス）。さらに上へ継げることが見える
+      const cup = prims.find((p) => p.kind === 'line' && p.x1 === p.x2
+        && p.stroke === ELEV_PART_COLORS.joint
+        && p.widthGrid === ELEV_PART_STYLE.jointCupGrid);
+      expect(cup && cup.kind === 'line' && cup.y1).toBeCloseTo(-(5000 + 450 * 6) / 10);
+      // 丸（座）は足元だけなので、継ぎ足した部材には出ない
+      expect(prims.filter((p) => p.kind === 'circle')).toHaveLength(0);
     });
 
     it('同じ高さに既に継ぎ足していれば埋まり', () => {

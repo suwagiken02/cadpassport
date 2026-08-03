@@ -141,9 +141,10 @@ describe('仮想位置の部材（足場の外へ延長したグリッド）', (
       origin: 'manual' as const, spanIndex: 4, levelMm: 1500,
     };
     const prims = partsToPrimitives({ geom: bundle.geom, parts: [rail] });
-    // 仮想スパン 4 = [270,450] → ローカル [720,900]。両端は railInsetGrid(9) だけ内側。
+    // 仮想スパン 4 = [270,450] → ローカル [720,900]。
+    // 両端は railInsetGrid(4.5 = ポケットの外縁) だけ内側 (= E-8-v2u)。
     const body = prims.find((p) => p.kind === 'line' && p.widthGrid === 8);
-    expect(body && body.kind === 'line' && [body.x1, body.x2]).toEqual([729, 891]);
+    expect(body && body.kind === 'line' && [body.x1, body.x2]).toEqual([724.5, 895.5]);
   });
 });
 

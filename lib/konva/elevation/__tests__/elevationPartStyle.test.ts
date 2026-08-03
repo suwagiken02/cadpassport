@@ -146,14 +146,20 @@ describe('モジュール感（支柱位置の切れ目）', () => {
     expect(insetRange(5, 5, 9)).toEqual({ a: 5, b: 5 });
   });
 
-  it('手摺は支柱位置に届かない＝隣のスパンとつながらない', () => {
-    const postLocals = sg.postXs.map((px) => px - bundle.geom.minXg);
-    const railLines = byKind('rail').filter((p) => p.kind === 'line');
-    for (const p of railLines) {
-      if (p.kind !== 'line') continue;
-      for (const px of postLocals) {
-        expect(Math.abs(p.x1 - px)).toBeGreaterThan(1);
-        expect(Math.abs(p.x2 - px)).toBeGreaterThan(1);
+  it('手摺は自分のスパンからはみ出さない（隣のスパンとつながらない）', () => {
+    // E-8-v2u: 端はポケットの外縁まで来て、爪が支柱側へ回り込む（＝掛かって見える）。
+    //   支柱の中心は越えないので、隣のスパンの手摺と重ならない。
+    const minXg = bundle.geom.minXg;
+    for (const part of bundle.parts.filter((p) => p.kind === 'rail')) {
+      const lo = (part.x0 ?? 0) - minXg, hi = (part.x1 ?? 0) - minXg;
+      const lines = partsToPrimitives({ geom: bundle.geom, parts: [part] })
+        .filter((p) => p.kind === 'line');
+      for (const p of lines) {
+        if (p.kind !== 'line') continue;
+        for (const x of [p.x1, p.x2]) {
+          expect(x).toBeGreaterThanOrEqual(lo - 1e-6);
+          expect(x).toBeLessThanOrEqual(hi + 1e-6);
+        }
       }
     }
   });
@@ -207,14 +213,14 @@ describe('手摺端の下向きフック', () => {
       .toEqual([body.stroke, body.stroke, body.stroke, body.stroke]);
   });
 
-  it('フックは支柱を越えて隣スパンへはみ出さない', () => {
-    const postLocals = sg.postXs.map((px) => px - bundle.geom.minXg);
-    const xs = byKind('rail').filter((p) => p.kind === 'line')
-      .flatMap((p) => (p.kind === 'line' ? [p.x1, p.x2] : []));
-    for (const x of xs) {
-      // 爪(5) < インセット(9) なので、支柱位置には触れない＝切れ目が残る
-      for (const px of postLocals) expect(Math.abs(x - px)).toBeGreaterThan(1);
-    }
+  it('端はポケットの外縁に合い、爪はフランジの下へ回り込む（＝掛かって見える）', () => {
+    const S = ELEV_PART_STYLE;
+    // 端の位置 = コマ（ポケット）の張り出しと同じ → クサビが皿の外縁に落ちる
+    expect(S.railInsetGrid).toBe(S.komaHalfGrid);
+    // 爪は支柱の中心までで止める（越えると隣スパンの手摺と重なる）
+    expect(S.railHookToeGrid).toBeLessThanOrEqual(S.railInsetGrid);
+    // 落ちはフランジ（皿）をまたぐ深さ。唇より深く、部材の太さ程度
+    expect(S.railHookDropGrid).toBeGreaterThan(S.komaLipGrid);
   });
 });
 
@@ -255,19 +261,42 @@ describe('コマの描画', () => {
     for (const lv of sg.levelsMm) expect(sg.komaGridMm).toContain(lv);
   });
 
-  it('支柱 1 本ごとにコマ列ぶんの印が出る（分割しても重複・欠落なし）', () => {
-    expect(komaMarks).toHaveLength(sg.postXs.length * sg.komaGridMm.length);
+  // E-8-v2u: コマは「受け口（メス）」。皿（水平）＋外端の唇（上向き）の 3 本で 1 個。
+  const plates = komaMarks.filter((p) => p.kind === 'line' && p.y1 === p.y2);
+  const lips = komaMarks.filter((p) => p.kind === 'line' && p.x1 === p.x2);
+
+  it('支柱 1 本ごとにコマ列ぶんの受け口が出る（分割しても重複・欠落なし）', () => {
+    const komaCount = sg.postXs.length * sg.komaGridMm.length;
+    expect(plates).toHaveLength(komaCount);
+    expect(lips).toHaveLength(komaCount * 2);          // 左右の唇
+    expect(komaMarks).toHaveLength(komaCount * 3);
   });
 
-  it('コマは水平の短い印で、支柱の中心に左右対称', () => {
-    const m = komaMarks[0];
+  it('皿は水平で支柱の中心に左右対称', () => {
+    const m = plates[0];
     if (m.kind !== 'line') throw new Error('line が出ていない');
     expect(m.y1).toBe(m.y2);
     expect(m.x2 - m.x1).toBe(ELEV_PART_STYLE.komaHalfGrid * 2);
   });
 
+  it('唇は皿の外端から「上向き」に立つ＝受け口が上を向いている', () => {
+    const S = ELEV_PART_STYLE;
+    const plate = plates[0];
+    if (plate.kind !== 'line') throw new Error('形が違う');
+    const center = (plate.x1 + plate.x2) / 2;   // その皿が付いている支柱
+    const pair = lips.filter((p) => p.kind === 'line' && p.y1 === plate.y1
+      && Math.abs(p.x1 - center) <= S.komaHalfGrid + 1e-6);
+    expect(pair).toHaveLength(2);
+    for (const p of pair) {
+      if (p.kind !== 'line') throw new Error('形が違う');
+      expect(Math.abs(p.x1)).toBeCloseTo(Math.abs(p.x2));          // 垂直
+      expect(p.y2).toBe(p.y1 - S.komaLipGrid);                      // ローカル y は上が負
+      expect(Math.abs(p.x1 - (plate.x1 + plate.x2) / 2)).toBeCloseTo(S.komaHalfGrid);
+    }
+  });
+
   it('コマの高さはコマ列そのもの（ローカル y = -mm/10）', () => {
-    const ys = new Set(komaMarks.map((p) => (p.kind === 'line' ? p.y1 : NaN)));
+    const ys = new Set(plates.map((p) => (p.kind === 'line' ? p.y1 : NaN)));
     expect(ys).toEqual(new Set(sg.komaGridMm.map((mm) => -mm / 10)));
   });
 
@@ -296,51 +325,65 @@ describe('支柱の部材分割と継ぎ目', () => {
     expect(postBars).toHaveLength(sg.postXs.length * segs.length);
   });
 
-  it('継ぎ目の印は部材の境目にだけ出る（最上段には出ない）', () => {
-    // E-8-v2o: 継ぎ目は「縁取り＋本体」の短い縦帯。本体（joint 色）が 1 継ぎ目に 1 本。
-    expect(jointMarks).toHaveLength(sg.postXs.length * (segs.length - 1));
+  // E-8-v2u: 接合はオス・メスのペア。
+  //   上端 = 受け（カップ・太い）／下端 = ホゾ（差し込み・細い）。
+  const S = ELEV_PART_STYLE;
+  const vert = (stroke: string, widthGrid: number) => byKind('post').filter(
+    (p) => p.kind === 'line' && p.stroke === stroke && p.x1 === p.x2 && p.widthGrid === widthGrid);
+  const cups = vert(ELEV_PART_COLORS.joint, S.jointCupGrid);
+  const spigots = vert(ELEV_PART_COLORS.joint, S.jointSpigotGrid);
+
+  it('受け（メス）は部材の上端すべてに出る＝「ここに継げる」が常に見える', () => {
+    expect(cups).toHaveLength(sg.postXs.length * segs.length);
+    for (const p of cups) {
+      if (p.kind !== 'line') throw new Error('形が違う');
+      expect(p.y2).toBe(p.y1 + S.jointCupLenGrid);   // 上端から下へ（ローカル y は下が正）
+    }
+    // 部材の天の高さに出ている
+    const ys = new Set(cups.map((p) => (p.kind === 'line' ? p.y1 : NaN)));
+    expect(ys).toEqual(new Set(segs.map((s) => -s.topMm / 10)));
+  });
+
+  it('ホゾ（オス）は下に部材がある側だけに出て、受けより長く突き出す', () => {
+    expect(spigots).toHaveLength(sg.postXs.length * (segs.length - 1));
+    for (const p of spigots) {
+      if (p.kind !== 'line') throw new Error('形が違う');
+      expect(p.y1).toBeCloseTo(-segs[0].topMm / 10);          // 上段の下端＝継ぎ目
+      expect(p.y2).toBe(p.y1 + S.jointSpigotLenGrid);         // 下へ差し込む
+    }
+    // 差し込みが見えるよう、ホゾはカップより長い
+    expect(S.jointSpigotLenGrid).toBeGreaterThan(S.jointCupLenGrid);
+  });
+
+  it('太さがオス・メスの関係になっている（飲み込む側/飲み込まれる側）', () => {
+    expect(S.jointCupGrid).toBeGreaterThan(S.postWidthGrid);      // 受けは支柱より太い
+    expect(S.jointSpigotGrid).toBeLessThan(S.postWidthGrid);      // ホゾは支柱より細い
+    expect(S.jointCupEdgeGrid).toBeGreaterThan(S.jointCupGrid);   // 縁取りが一回り外
+    expect(S.jointCupEdgeMinPx).toBeGreaterThan(S.jointCupMinPx); // 縮小時も縁が残る
+    const edges = vert(ELEV_PART_COLORS.jointEdge, S.jointCupEdgeGrid);
+    expect(edges).toHaveLength(cups.length);
+  });
+
+  it('継ぎ目では受けとホゾが同じ高さで出会う＝刺さって見える', () => {
     const jointY = -segs[0].topMm / 10;
-    for (const p of jointMarks) {
-      if (p.kind !== 'line') throw new Error('形が違う');
-      expect(p.x1).toBe(p.x2);                       // 縦帯
-      expect((p.y1 + p.y2) / 2).toBeCloseTo(jointY);  // 継ぎ目の高さが中心
-    }
-  });
-
-  it('継ぎ目はホゾの膨らみ＝支柱より太い縦帯で、縁取りが付く', () => {
-    const S = ELEV_PART_STYLE;
-    expect(S.jointSleeveGrid).toBeGreaterThan(S.postWidthGrid);   // 支柱より太い＝膨らみ
-    expect(S.jointEdgeGrid).toBeGreaterThan(S.jointSleeveGrid);   // 縁取りが一回り外
-    expect(S.jointEdgeMinPx).toBeGreaterThan(S.jointSleeveMinPx); // 縮小時も縁が残る
-    // 縁取りの縦帯が本体と同じ位置に、本体より先に出る（下に敷く）
-    const edges = byKind('post').filter((p) => p.kind === 'line'
-      && p.stroke === ELEV_PART_COLORS.jointEdge && p.x1 === p.x2);
-    expect(edges).toHaveLength(jointMarks.length);
-  });
-
-  it('継ぎ目の境目の線はコマより主張が強く、形も違う（縦帯 vs 細い横棒）', () => {
-    const S = ELEV_PART_STYLE;
-    expect(S.jointHalfGrid).toBeGreaterThan(S.komaHalfGrid);   // 左右へ広く出る
-    expect(S.jointWidthPx).toBeGreaterThan(S.komaWidthPx);     // 太い
-    // 境目の線は継ぎ目の高さちょうどに、スリーブより左右へはみ出して出る
-    const seams = byKind('post').filter((p) => p.kind === 'line'
+    const cupHere = cups.filter((p) => p.kind === 'line' && p.y1 === jointY);
+    const spigotHere = spigots.filter((p) => p.kind === 'line' && p.y1 === jointY);
+    expect(cupHere).toHaveLength(sg.postXs.length);
+    expect(spigotHere).toHaveLength(sg.postXs.length);
+    // 受け口の縁（口の線）はコマより広く・太い＝コマと取り違えない
+    expect(S.jointHalfGrid).toBeGreaterThan(S.komaHalfGrid);
+    expect(S.jointWidthPx).toBeGreaterThan(S.komaWidthPx);
+    const mouths = byKind('post').filter((p) => p.kind === 'line'
       && p.stroke === ELEV_PART_COLORS.jointEdge && p.y1 === p.y2);
-    expect(seams).toHaveLength(jointMarks.length);
-    for (const p of seams) {
-      if (p.kind !== 'line') throw new Error('形が違う');
-      expect(p.y1).toBeCloseTo(-segs[0].topMm / 10);
-      expect(Math.abs(p.x2 - p.x1)).toBeCloseTo(S.jointHalfGrid * 2);
-      expect(Math.abs(p.x2 - p.x1)).toBeGreaterThan(S.jointSleeveGrid);  // スリーブからはみ出す
-    }
-    // コマは細い横棒のまま（色も形も別物）
-    const komas = byKind('post').filter((p) => p.kind === 'line' && p.stroke === ELEV_PART_COLORS.koma);
-    expect(komas.length).toBeGreaterThan(0);
-    expect(komas.every((p) => p.kind === 'line' && p.y1 === p.y2)).toBe(true);
+    expect(mouths).toHaveLength(cups.length);
   });
 
-  it('端キャップは支柱の一番下と一番上だけ（継ぎ目では出さない）', () => {
+  it('丸は足元（ジャッキに載る座）だけ', () => {
     const caps = byKind('post').filter((p) => p.kind === 'circle');
-    expect(caps).toHaveLength(sg.postXs.length * 2);
+    expect(caps).toHaveLength(sg.postXs.length);
+    for (const c of caps) {
+      expect(c.kind === 'circle' && c.y).toBeCloseTo(-sg.jackTopMm / 10);
+    }
   });
 
   it('部材は隙間なく積まれ、最上段は天端でクリップされる', () => {

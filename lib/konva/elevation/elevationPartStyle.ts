@@ -75,15 +75,19 @@ export const ELEV_PART_STYLE = {
   // 手摺: 平面と同じ太さ（8 グリッド ＝ 80mm）
   railWidthGrid: 8,
   railWidthMinPx: 3.2,
-  /** 手摺をスパン端から内側に寄せる量。支柱位置に切れ目を作る。 */
-  railInsetGrid: 9,
   /**
-   * 手摺端の下向きフック (= E-8-v2l)。実物のクサビ式手摺は両端に下向きのフック金具が付き、
-   * 支柱のポケットに掛かる。立面＝横から見た形なので「端から下へ短い鉤」で描く。
-   * 丸ハンドル（平面の表現）は実物と違ううえ、踏板(アンチ)と見分けが付きにくかった（鮎澤氏）。
+   * 手摺をスパン端から内側に寄せる量。支柱位置に切れ目を作る。
+   * E-8-v2u: ポケット(コマ)の外縁と同じにして、フックがフランジに掛かる位置で終わるようにした。
    */
-  railHookDropGrid: 12,   // 下向きの落ち 120mm
-  railHookToeGrid: 5,     // 爪 50mm（支柱側＝外向き）
+  railInsetGrid: 4.5,
+  /**
+   * 手摺端の下向きフック＝クサビ(オス) (= E-8-v2l / E-8-v2u)。
+   * 実物のクサビ式手摺は両端に下向きのフック金具が付き、支柱のポケット(フランジ)に
+   * 上から差し込んで固定する。立面＝横から見た形なので「端で下へ折れ、爪が支柱側へ回り込む」
+   * 鉤で描く。端をポケットの外縁に合わせてあるので、掛かると爪がフランジを抱く絵になる。
+   */
+  railHookDropGrid: 6,    // 下向きの落ち 60mm（フランジをまたぐ深さ）
+  railHookToeGrid: 4.5,   // 爪 45mm（支柱側＝フランジの下へ回り込む）
   railHookWidthGrid: 6,
   railHookWidthMinPx: 2.8,
 
@@ -113,25 +117,37 @@ export const ELEV_PART_STYLE = {
   /** ベース底辺の片側幅（グリッド）。 */
   jackBaseHalfGrid: 1.6,
 
-  // コマ: 濃色の短い横棒。太さは px 固定（密なので実寸比で太らせると潰れる）。
+  // コマ = ポケット（受け口・メス）(= E-8-v2u)。
+  //   単なる横棒では「どこに刺さるのか」が読めなかった（鮎澤氏）。実物のフランジは
+  //   支柱の左右へ張り出した皿で、そこへ手摺のクサビを上から落とし込む。
+  //   記号も「左右へ張り出した皿＋外端の立ち上がり（受け口が上を向いている）」にする。
   komaWidthPx: 2.5,
   /** コマの片側の張り出し（グリッド）。支柱(6)より広くして「乗っている」ように見せる。 */
   komaHalfGrid: 4.5,
+  /** 受け口の立ち上がり（皿の外端で上を向く唇）。 */
+  komaLipGrid: 2.5,
 
-  // 継ぎ目 (= E-8-v2o): 実物のジョイントはホゾ差しで少し膨らむ。記号も「支柱より太い
-  //   短いスリーブ（濃い縁取り付き）＋境目の線」にする。コマ（濃茶の細い横棒）とは
-  //   形そのものが違うので、縮小しても取り違えない（v2j の細い横線 1 本は見落とされた）。
-  /** スリーブの縦の長さの半分（1 = 10mm）。継ぎ目の上下へこのぶん伸びる。 */
-  jointHalfLenGrid: 7,
-  /** スリーブ本体の太さ。支柱(6)より太く＝膨らみに見える。 */
-  jointSleeveGrid: 10,
-  jointSleeveMinPx: 5.5,
-  /** スリーブの縁取り（本体より一回り太い濃色。背景から浮かせる）。 */
-  jointEdgeGrid: 13.5,
-  jointEdgeMinPx: 7.5,
-  /** 境目の線の張り出し（片側）。スリーブからはみ出し、コマ(4.5)より広い。 */
+  // 継ぎ目 (= E-8-v2o → E-8-v2u): オス・メスのペアで描く。
+  //   ・部材の上端 = 受け（メス）。次の部材を受けるカップ。支柱より太い短い帯＋濃い縁取り
+  //   ・部材の下端 = ホゾ（オス）。下の部材のカップへ差し込む細い突起（支柱より細い）
+  //   両方が同じ高さで出会うと、太いカップの中に細いホゾが刺さった絵になる。
+  //   どちらの部材が先に描かれても分かるよう、ホゾはカップより長く出す。
+  /** 受け（カップ）の縦の長さ。上端から下へこのぶん。 */
+  jointCupLenGrid: 5,
+  /** 受けの太さ（支柱 6 より太い＝飲み込む側）。 */
+  jointCupGrid: 11,
+  jointCupMinPx: 6,
+  /** 受けの縁取り（本体より一回り外・濃色）。 */
+  jointCupEdgeGrid: 14,
+  jointCupEdgeMinPx: 7.5,
+  /** ホゾ（差し込み）の長さ。カップ(5)より長く出して、刺さっているのが分かるように。 */
+  jointSpigotLenGrid: 7,
+  /** ホゾの太さ（支柱 6 より細い＝飲み込まれる側）。 */
+  jointSpigotGrid: 3.2,
+  jointSpigotMinPx: 2.2,
+  /** 受け口の縁（カップの口を示す線）の張り出し（片側）。コマ(4.5)より広い。 */
   jointHalfGrid: 8,
-  /** 境目の線の太さ(px 固定)。コマ(2.5)より太い。 */
+  /** 受け口の縁の太さ(px 固定)。コマ(2.5)より太い。 */
   jointWidthPx: 3,
 } as const;
 
@@ -237,18 +253,60 @@ export function pushBoard(out: Out, x0: number, x1: number, y: number, meta: Ele
   line(out, a, y, b, y, C.board, S.boardWidthMinPx, S.boardWidthGrid, 1, meta);
 }
 
-/** pushPost の描き分け。支柱を規格部材ごとに分けて描くための指定 (= E-8-v2j)。 */
+/**
+ * コマ ＝ ポケット（受け口・メス）(= E-8-v2u)。
+ * 支柱の左右へ張り出した皿（フランジ）＋外端の立ち上がり。受け口が上を向いているので、
+ * 手摺のクサビ（下向きフック）が上から落ちて掛かる、という関係が形で読める。
+ */
+export function pushKoma(out: Out, x: number, y: number, meta: ElevationPrimitiveMeta): void {
+  const C = ELEV_PART_COLORS, S = ELEV_PART_STYLE;
+  const inner = S.postWidthGrid / 2;      // 支柱の縁から出す
+  line(out, x - S.komaHalfGrid, y, x + S.komaHalfGrid, y, C.koma, S.komaWidthPx, undefined, 1, meta);
+  for (const dir of [-1, 1]) {
+    // 外端の唇（上向き）。ここがクサビの落ちる口。
+    line(out, x + dir * S.komaHalfGrid, y, x + dir * S.komaHalfGrid, y - S.komaLipGrid,
+      C.koma, S.komaWidthPx, undefined, 1, meta);
+  }
+  void inner;
+}
+
+/**
+ * 部材の上端 ＝ 受け（メス・カップ）(= E-8-v2u)。
+ * 支柱より太い短い帯＋濃い縁取り＋口の線。次の部材のホゾをここで飲み込む。
+ * どの支柱部材の上端にも出るので、「ここに継げる」が常に見えている。
+ */
+export function pushJointCup(out: Out, x: number, yTop: number, meta: ElevationPrimitiveMeta): void {
+  const C = ELEV_PART_COLORS, S = ELEV_PART_STYLE;
+  const yIn = yTop + S.jointCupLenGrid;   // ローカル y は下向きが正＝上端から下へ
+  line(out, x, yTop, x, yIn, C.jointEdge, S.jointCupEdgeMinPx, S.jointCupEdgeGrid, 1, meta);
+  line(out, x, yTop, x, yIn, C.joint, S.jointCupMinPx, S.jointCupGrid, 1, meta);
+  // 口（受け側の縁）。カップより左右へはみ出させて「開いている」ことを示す。
+  line(out, x - S.jointHalfGrid, yTop, x + S.jointHalfGrid, yTop,
+    C.jointEdge, S.jointWidthPx, undefined, 1, meta);
+}
+
+/**
+ * 部材の下端 ＝ ホゾ（オス・差し込み）(= E-8-v2u)。
+ * 支柱より細い突起を下へ出す。下に部材があればその受け（カップ）の中に入り、
+ * 無ければ宙に突き出したまま＝まだ接合していないことが分かる。
+ */
+export function pushJointSpigot(
+  out: Out, x: number, yBottom: number, meta: ElevationPrimitiveMeta,
+): void {
+  const C = ELEV_PART_COLORS, S = ELEV_PART_STYLE;
+  line(out, x, yBottom, x, yBottom + S.jointSpigotLenGrid,
+    C.joint, S.jointSpigotMinPx, S.jointSpigotGrid, 1, meta);
+}
+
+/** pushPost の描き分け。支柱を規格部材ごとに分けて描くための指定 (= E-8-v2j/v2u)。 */
 export type PostDrawOpts = {
-  /** コマ(受け金具)の縦位置（ローカル y）。 */
+  /** コマ(ポケット)の縦位置（ローカル y）。 */
   komaYs?: number[];
-  /** 下端キャップを描くか（規格部材の途中なら描かない）。既定 true。 */
+  /**
+   * 下端を「足元（座）」として描くか。既定 true。
+   * false ＝下に別の部材がある／継ぎ足した部材なので、ホゾ（オス）を出す。
+   */
   capBottom?: boolean;
-  /** 上端キャップを描くか。既定 true。 */
-  capTop?: boolean;
-  /** 継ぎ目の印を出す縦位置（ローカル y）。上に別部材が載るときだけ指定する。 */
-  jointY?: number;
-  /** 下端側の継ぎ目 (= E-8-v2r)。既存支柱の頭に継ぎ足した部材で使う。 */
-  jointBottomY?: number;
 };
 
 /**
@@ -263,31 +321,18 @@ export function pushPost(
 ): void {
   const C = ELEV_PART_COLORS, S = ELEV_PART_STYLE;
   line(out, x, yBottom, x, yTop, C.post, S.postWidthMinPx, S.postWidthGrid, undefined, meta);
-  for (const ky of opts?.komaYs ?? []) {
-    line(out, x - S.komaHalfGrid, ky, x + S.komaHalfGrid, ky, C.koma, S.komaWidthPx, undefined, 1, meta);
-  }
-  // 継ぎ目 (= E-8-v2o): 縁取り → 本体 の順に重ねた短い縦帯（＝ホゾの膨らみ）＋境目の線。
-  //   コマは「細い横棒」、継ぎ目は「太い縦の膨らみ」なので、形で見分けられる。
-  const pushJoint = (jy: number) => {
-    const h = S.jointHalfLenGrid;
-    line(out, x, jy - h, x, jy + h, C.jointEdge, S.jointEdgeMinPx, S.jointEdgeGrid, 1, meta);
-    line(out, x, jy - h, x, jy + h, C.joint, S.jointSleeveMinPx, S.jointSleeveGrid, 1, meta);
-    // 部材が切り替わる高さそのものを線で示す（スリーブより左右へはみ出させる）
-    line(out, x - S.jointHalfGrid, jy, x + S.jointHalfGrid, jy,
-      C.jointEdge, S.jointWidthPx, undefined, 1, meta);
-  };
-  if (opts?.jointY != null) pushJoint(opts.jointY);
-  // E-8-v2r: 継ぎ足した部材は下端が既存支柱の頭に載る＝そこにも継ぎ目が出る。
-  if (opts?.jointBottomY != null) pushJoint(opts.jointBottomY);
-  // 端キャップ（棒の端であることを明示。輪郭を付けて背景から浮かせる）
-  const caps: number[] = [];
-  if (opts?.capTop !== false) caps.push(yTop);
-  if (opts?.capBottom !== false) caps.push(yBottom);
-  for (const cy of caps) {
+  for (const ky of opts?.komaYs ?? []) pushKoma(out, x, ky, meta);
+  // E-8-v2u: 端は接合のオス・メスで描く。上端＝受け（カップ）、下端＝ホゾ（差し込み）。
+  //   上下の部材が同じ高さで出会うと、太いカップに細いホゾが刺さった絵になる。
+  pushJointCup(out, x, yTop, meta);
+  if (opts?.capBottom !== false) {
+    // 足元（ジャッキに載る側）は座。差し込みではないので丸で締める。
     out.push({
-      kind: 'circle', x, y: cy, r: S.postCapMinPx, rGrid: S.postCapGrid,
+      kind: 'circle', x, y: yBottom, r: S.postCapMinPx, rGrid: S.postCapGrid,
       fill: C.post, stroke: C.postEdge, strokeWidth: 1, meta,
     });
+  } else {
+    pushJointSpigot(out, x, yBottom, meta);
   }
 }
 
