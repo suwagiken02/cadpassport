@@ -37,7 +37,8 @@ import {
   type ElevationSlot,
 } from '@/lib/konva/elevation/elevationSlots';
 import {
-  postMemberBottomMm, postMemberKomaCount, postXAt, withPartDeleted, type ElevationPart,
+  postMemberBottomMm, postMemberKomaCount, postSlotBandMm, postXAt, withPartDeleted,
+  type ElevationPart,
 } from '@/lib/konva/elevation/elevationParts';
 import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
 import type { ElevationPrimitive, ElevationView } from '@/types';
@@ -232,7 +233,8 @@ function ElevationInteractiveGroup({
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
   const groupRef = useRef<Konva.Group>(null);
   /** ドラッグ中の吸着先（E-8-v2g のスナップフィードバック）。 */
-  const [preview, setPreview] = useState<{ slot: ElevationSlot; taken: boolean } | null>(null);
+  const [preview, setPreview] = useState<
+    { slot: ElevationSlot; taken: boolean; komaCount?: number } | null>(null);
 
   // ローカル → 画面 の変換は Group に持たせる（子はローカル座標のまま置く）。
   const s = gridPx * view.scale;
@@ -288,13 +290,9 @@ function ElevationInteractiveGroup({
       if (x0 == null) return null;
       const bottomMm = postMemberBottomMm(part, sg);
       // ローカル y は下向きが正・1 単位 = 10mm なので、上へ動かすと mm は増える。
-      // 指の高さも渡す (= E-8-v2u): 長い部材を上寄りで掴むと下端は継ぎ目のずっと下にあり、
-      // 下端だけで判定すると部材が長いほど吸着しなくなるため。
-      const local = pointerLocal();
+      // 置く高さは「離した部材の下端に最も近い継ぎ目」＝見た目どおり (= E-8-v2u-fix2)。
       return snapPostSlot(
-        geom, part,
-        { x: x0 + d.x, bottomMm: bottomMm - d.y * 10, pointerMm: local ? -local.y * 10 : undefined },
-        bottomMm, gridOpts);
+        geom, part, { x: x0 + d.x, bottomMm: bottomMm - d.y * 10 }, bottomMm, gridOpts);
     }
     return nearestSlot(part.kind);
   };
@@ -304,8 +302,11 @@ function ElevationInteractiveGroup({
     const slot = dragTargetSlot(part, d);
     if (!slot) { if (preview) setPreview(null); return; }
     const taken = slotOccupied(parts.filter((p) => p.id !== part.id), slot, segmentOf(part));
+    // 支柱は「置いたときに占める範囲」でゴーストを出す＝確定位置と必ず一致する。
+    const komaCount = part.kind === 'post'
+      ? postMemberKomaCount(part, view.geom?.scaffolds[part.scaffoldIndex]) : undefined;
     if (!preview || slotKey(preview.slot) !== slotKey(slot) || preview.taken !== taken) {
-      setPreview({ slot, taken });
+      setPreview({ slot, taken, komaCount });
     }
   };
 
@@ -360,9 +361,12 @@ function ElevationInteractiveGroup({
     const x0 = toLocalX(preview.slot.x0), x1 = toLocalX(preview.slot.x1);
     const isPostKind = preview.slot.kind === 'post' || preview.slot.kind === 'jack';
     if (isPostKind) {
-      // E-8-v2s: 継ぎ足し先（levelMm=下端）は接合点の 1 コマ帯、それ以外は足元〜天端。
-      const [pyBottom, pyTop] = preview.slot.levelMm != null
-        ? [-preview.slot.levelMm / 10, -(preview.slot.levelMm + KOMA_PITCH_MM) / 10]
+      // E-8-v2u-fix2: 継ぎ足し先のゴーストは「置いたときに占める範囲」そのもの。
+      //   確定・描画と同じ postSlotBandMm を通すので、ゴーストと結果が食い違わない。
+      const band = preview.slot.levelMm != null
+        ? postSlotBandMm(preview.slot.levelMm, preview.komaCount ?? 1) : null;
+      const [pyBottom, pyTop] = band
+        ? [-band.bottomMm / 10, -band.topMm / 10]
         : [-sg.jackTopMm / 10, -sg.topRailMm / 10];
       const jh = ELEV_PART_STYLE.jointHalfGrid;
       return (

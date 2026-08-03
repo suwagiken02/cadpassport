@@ -6,7 +6,7 @@ import {
   PALETTE_KINDS, buildElevationSlots, neighborSlot, nextPartId, slotAnchor, slotKey,
   slotOccupied, slotToPart, snapPostSlot, snapToSlot,
 } from '../elevationSlots';
-import { postMemberBottomMm, postStackTopMm } from '../elevationParts';
+import { postMemberBottomMm, postSlotBandMm, postStackTopMm } from '../elevationParts';
 
 // ============================================================
 // E-8-v2c: 吸着スロット。「はまる場所にしかはまらない」を担保する有効位置。
@@ -323,59 +323,93 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
     });
 
     // ------------------------------------------------------------
-    // E-8-v2u: 吸着の成否が部材の長さで変わってはいけない。
-    // 1 コマ品は効くのに 2/8 コマ品が効かなかった（掴んだ位置〜下端の距離が
-    // ドラッグ量を超えると「高さ維持」に倒れていた）。
+    // E-8-v2u-fix2: 確定位置が部材の長さでズレてはいけない。
+    // 実機「長い支柱を離すと、離した位置の上の方に置かれる」。指の高さから置き場所を
+    // 決めていたため、掴んだ位置（＝部材長に比例）ぶん上へズレていた。
+    //   8 コマ品・狙い 300mm ずれ → 1350mm 浮く / 1 コマ品 → 0mm
+    // 置く高さは常に「離した部材の下端にいちばん近い継ぎ目」にする。
     // ------------------------------------------------------------
-    describe('部材長に依存しない', () => {
+    describe('確定位置が部材長でズレない', () => {
       /** 下端 900mm に置いた手動支柱（長さ違い）。 */
       const member = (komaCount: number): ElevationPart => ({
         id: `manual:post:${komaCount}`, kind: 'post', scaffoldIndex: 0, origin: 'manual',
         postIndex: 1, levelMm: 900, komaCount,
       });
-      /** 部材の中央を掴んで、指を頭へ運んだときの吸着先。 */
-      const dropWithFingerAtHead = (komaCount: number) => {
-        const p = member(komaCount);
-        const B = p.levelMm!, L = komaCount * 450;
-        const delta = head - (B + L / 2);          // 指の移動量
-        return snapPostSlot(
-          geom, p, { x: sg.postXs[1], bottomMm: B + delta, pointerMm: head }, B, ext);
-      };
+      const drop = (komaCount: number, bottomMm: number) => snapPostSlot(
+        geom, member(komaCount), { x: sg.postXs[1], bottomMm }, member(komaCount).levelMm!, ext);
 
-      it('1 コマ品も 8 コマ品も、指で頭を指せば同じ位置に吸着する', () => {
+      it('狙いどおり下端を頭に置けば、全長ぴったり頭に載る', () => {
         for (const koma of [1, 2, 4, 6, 8]) {
-          const s = dropWithFingerAtHead(koma);
-          expect(s?.levelMm, `${koma}コマ品`).toBe(head);
-          expect(s?.postIndex, `${koma}コマ品`).toBe(1);
+          expect(drop(koma, head)?.levelMm, `${koma}コマ品`).toBe(head);
         }
       });
 
-      it('下端で狙う経路も長さに依存しない', () => {
+      it('狙いが多少ずれても、部材長に関わらず頭へ載る（浮かない）', () => {
+        for (const koma of [1, 2, 4, 6, 8]) {
+          for (const e of [-300, -700, +200]) {
+            expect(drop(koma, head + e)?.levelMm, `${koma}コマ品 e=${e}`).toBe(head);
+          }
+        }
+      });
+
+      it('部材が頭に重なる位置で離しても、頭へ座る（上へ飛ばない）', () => {
+        // 長い部材を上へ運ぶと、下端が頭より下でも部材は頭にかぶる
+        for (const koma of [4, 6, 8]) {
+          const s = drop(koma, head - koma * 450 / 2);
+          expect(s?.levelMm, `${koma}コマ品`).toBe(head);
+        }
+      });
+
+      it('1 コマ上を狙えば 1 コマ上へ（候補は 450 刻みで選べる）', () => {
+        for (const koma of [1, 8]) {
+          expect(drop(koma, head + 450)?.levelMm, `${koma}コマ品`).toBe(head + 450);
+          expect(drop(koma, head + 900)?.levelMm, `${koma}コマ品`).toBe(head + 900);
+        }
+      });
+
+      it('横へ動かしただけなら高さは変わらない（部材長によらず）', () => {
         for (const koma of [1, 8]) {
           const p = member(koma);
           const s = snapPostSlot(
-            geom, p, { x: sg.postXs[1], bottomMm: head, pointerMm: head + koma * 225 },
-            p.levelMm!, ext);
-          expect(s?.levelMm, `${koma}コマ品`).toBe(head);
+            geom, p, { x: sg.postXs[2], bottomMm: p.levelMm! }, p.levelMm!, ext);
+          expect(s?.levelMm, `${koma}コマ品`).toBeUndefined();
+          expect(s?.postIndex, `${koma}コマ品`).toBe(2);
         }
       });
+    });
 
-      it('上へ動かしていなければ、指が頭の近くでも高さは変わらない', () => {
-        const p = member(8);
-        // 横へ動かしただけ（下端はそのまま・指は部材の上寄り＝頭の近く）
-        const s = snapPostSlot(
-          geom, p, { x: sg.postXs[2], bottomMm: p.levelMm!, pointerMm: head }, p.levelMm!, ext);
-        expect(s?.levelMm).toBeUndefined();
-        expect(s?.postIndex).toBe(2);
-      });
+    // ------------------------------------------------------------
+    // 三位一体: スナップ候補（slot）＝ゴースト＝確定後の描画。
+    // 3 つが別々の式で位置を出していたため「ゴーストと違う場所に置かれる」が起きた。
+    // postSlotBandMm を唯一の定義にして、構造的に一致させる。
+    // ------------------------------------------------------------
+    describe('候補・ゴースト・確定描画が一致する', () => {
+      for (const koma of [1, 4, 8]) {
+        it(`${koma}コマ品: slot.levelMm = ゴーストの下端 = 描かれた支柱の下端`, () => {
+          const part: ElevationPart = {
+            id: 'm', kind: 'post', scaffoldIndex: 0, origin: 'manual',
+            postIndex: 1, levelMm: 900, komaCount: koma,
+          };
+          // ① スナップ候補
+          const slot = snapPostSlot(
+            geom, part, { x: sg.postXs[1], bottomMm: head - 200 }, part.levelMm!, ext)!;
+          expect(slot.levelMm).toBe(head);
 
-      it('指が継ぎ目より上なら、指以下でいちばん高い継ぎ目へ載る', () => {
-        const p = member(8);
-        const s = snapPostSlot(
-          geom, p, { x: sg.postXs[1], bottomMm: p.levelMm! + 1000, pointerMm: head + 700 },
-          p.levelMm!, ext);
-        expect(s?.levelMm).toBe(head + 450);   // 頭+700 以下でいちばん高い候補
-      });
+          // ② ゴースト（ドラッグ中の帯）＝ postSlotBandMm
+          const band = postSlotBandMm(slot.levelMm!, koma);
+          expect(band.bottomMm).toBe(slot.levelMm);
+          expect(band.topMm).toBe(slot.levelMm! + koma * 450);
+
+          // ③ 確定 → 描画
+          const placed: ElevationPart = { ...slotToPart(slot, part.id), komaCount: koma };
+          expect(placed.levelMm).toBe(slot.levelMm);
+          const bar = partsToPrimitives({ geom, parts: [placed] })
+            .find((p) => p.kind === 'line' && p.x1 === p.x2 && p.stroke === ELEV_PART_COLORS.post);
+          if (!bar || bar.kind !== 'line') throw new Error('支柱の棒が無い');
+          expect(bar.y1).toBeCloseTo(-band.bottomMm / 10);   // 描画の下端＝ゴーストの下端
+          expect(bar.y2).toBeCloseTo(-band.topMm / 10);      // 描画の上端＝ゴーストの上端
+        });
+      }
     });
 
     it('横へ動かしただけなら高さは変わらない（v2q の挙動を保つ）', () => {

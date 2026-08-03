@@ -235,6 +235,19 @@ export function postMemberBottomMm(
 }
 
 /**
+ * 継ぎ足しスロットに部材を置いたときの縦の占有範囲(mm) (= E-8-v2u-fix2)。
+ *
+ * 吸着候補（スロット）・ドラッグ中のゴースト・確定後の描画は、必ずこの 1 本の式を通す。
+ * 別々に計算していたため「ゴーストの位置と確定位置が違う」「確定位置が部材長ぶん上へ
+ * ズレる」が起きた。下端はスロットの levelMm そのもの＝ズレようがない形にしておく。
+ */
+export function postSlotBandMm(
+  levelMm: number, komaCount: number,
+): { bottomMm: number; topMm: number } {
+  return { bottomMm: levelMm, topMm: levelMm + KOMA_PITCH_MM * Math.max(1, komaCount) };
+}
+
+/**
  * その支柱部材の「上端」の高さ(mm) (= E-8-v2t)。
  * 継ぎ足した部材は 下端＋450×コマ数、自動生成の段は segmentIndex の上端、
  * どちらも無ければ（手動で置いた 1 本ものは）足元〜天端なので天端。
@@ -341,8 +354,10 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         const seg = p.segmentIndex != null ? segs[p.segmentIndex] : undefined;
         const stacked = p.levelMm != null;
         const koma = p.komaCount ?? seg?.komaCount ?? POST_MEMBER_DEFAULT_KOMA;
-        const bottomMm = stacked ? p.levelMm! : (seg ? seg.bottomMm : sg.jackTopMm);
-        const topMm = stacked ? bottomMm + KOMA_PITCH_MM * koma : (seg ? seg.topMm : sg.topRailMm);
+        // 継ぎ足した部材の占有範囲は postSlotBandMm が唯一の定義（ゴースト・確定と共通）。
+        const band = stacked ? postSlotBandMm(p.levelMm!, koma) : null;
+        const bottomMm = band ? band.bottomMm : (seg ? seg.bottomMm : sg.jackTopMm);
+        const topMm = band ? band.topMm : (seg ? seg.topMm : sg.topRailMm);
         pushPost(out, lx(span.x0), ly(bottomMm), ly(topMm),
           { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm },
           {
