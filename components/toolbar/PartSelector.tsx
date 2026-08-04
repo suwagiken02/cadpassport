@@ -465,6 +465,12 @@ export default function PartSelector() {
         title="部材（立面図）"
         pos={elevationPanelPos}
         onMove={(p) => useCanvasStore.getState().setElevationPanelPos(p)}
+        // × は明示的に閉じる操作 (= E-8-v3c-fix6)。「部材」メニュー自体を閉じる。
+        onClose={() => {
+          const st = useCanvasStore.getState();
+          st.setElevationAddTool(null);
+          if (st.showPartSelector) st.togglePartSelector();
+        }}
       >
         {paletteTabs}
         <ElevationPartPalette showText={false} />

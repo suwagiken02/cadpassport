@@ -20,14 +20,16 @@ type Props = {
   /** 移動後の位置。null＝既定位置（画面下・中央）。 */
   pos: PanelPos | null;
   onMove: (p: PanelPos) => void;
-  /** 右上に出す追加要素（閉じるボタンなど）。 */
+  /** 右上に出す追加要素。 */
   headerRight?: React.ReactNode;
+  /** 明示的に閉じる操作 (= E-8-v3c-fix6)。渡すと右上に × を出す。 */
+  onClose?: () => void;
   className?: string;
   children: React.ReactNode;
 };
 
 export default function FloatingPanel({
-  title, pos, onMove, headerRight, className = '', children,
+  title, pos, onMove, headerRight, onClose, className = '', children,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ from: PanelPos; origin: PanelPos } | null>(null);
@@ -94,6 +96,13 @@ export default function FloatingPanel({
     <div
       ref={ref}
       style={style}
+      // E-8-v3c-fix6: パネル内の操作を外へ漏らさない。キャンバスや window 側の
+      //   「外側を触った」系の処理に拾われて、選択が外れる／パネルが消えるのを防ぐ。
+      //   閉じるのは明示操作（× / Esc / パネルの外の実クリック）だけにする。
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       className={`fixed z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl max-w-[94vw] max-h-[80vh] overflow-y-auto ${className}`}
     >
       {/* タイトルバー＝ドラッグハンドル（平面パネルと同じ ⠿）。 */}
@@ -107,7 +116,18 @@ export default function FloatingPanel({
           <span className="text-dimension text-sm leading-none">⠿</span>
           <span className="text-xs font-bold text-canvas truncate">{title}</span>
         </div>
-        {headerRight}
+        <div className="flex items-center gap-1 shrink-0">
+          {headerRight}
+          {onClose && (
+            <button type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={onClose}
+              aria-label="閉じる"
+              className="px-2 leading-none text-dimension hover:text-canvas text-sm">
+              ×
+            </button>
+          )}
+        </div>
       </div>
       <div className="px-3 py-2">{children}</div>
     </div>

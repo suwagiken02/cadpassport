@@ -51,6 +51,19 @@ export function movedEnough(
   return Math.hypot(to.clientX - from.clientX, to.clientY - from.clientY) >= thresholdPx;
 }
 
+/**
+ * キーボード由来の click か (= E-8-v3c-fix6)。MouseEvent.detail はクリック回数で、
+ * Enter / Space で押したときだけ 0 になる。
+ *
+ * パレットのボタンは「押した時点(pointerdown)」で選択と引き出しを始める。click にも
+ * 同じ処理を持たせると 1 回のクリックで 2 回動き（選択 → 同じ種類なので解除）、
+ * 実機では「押した途端に選択が消える／パネルが畳まれる」になる。
+ * click 側はキーボード操作のぶんだけを拾う。
+ */
+export function isKeyboardClick(detail: number): boolean {
+  return detail === 0;
+}
+
 export type PaletteDragOutOptions = {
   /** 掴んだ位置（pointerdown のクライアント座標）。 */
   from: { clientX: number; clientY: number };

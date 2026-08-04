@@ -60,6 +60,27 @@ describe('立面パレットの構成（平面部材と同等）', () => {
     expect(read('components/ui/FloatingPanel.tsx')).toContain('clampPanelPos');
   });
 
+  it('部材ボタンの選択は押した時点だけが持つ（E-8-v3c-fix6・1 クリックで解除される事故）', () => {
+    // pointerdown で選び、click でも同じ処理をすると 1 回のクリックで選択→解除になる。
+    expect(PALETTE).toContain('onKindDown');
+    // click 側は必ずキーボード判定を通す（素の setElevationAddTool を click に置かない）
+    // （種類ボタンの素の toggle。文字ボタンは pointerdown を持たないので対象外）
+    const rawKindClick = /onClick=\{\(\) => useCanvasStore\.getState\(\)\.setElevationAddTool\(addTool === k /;
+    expect(rawKindClick.test(PALETTE)).toBe(false);
+    expect(PALETTE).toContain('onKeyboardClick(e, () =>');
+    expect(PALETTE).toContain('isKeyboardClick');
+  });
+
+  it('パネル内の操作は外へ漏れない／閉じるのは明示操作だけ（E-8-v3c-fix6）', () => {
+    const FP = read('components/ui/FloatingPanel.tsx');
+    expect(FP).toContain('onPointerDown={(e) => e.stopPropagation()}');
+    expect(FP).toContain('onClick={(e) => e.stopPropagation()}');
+    expect(FP).toContain('aria-label="閉じる"');
+    // × は 2 つの入口の両方にある
+    expect(read('components/elevation/ElevationEditBar.tsx')).toContain('onClose=');
+    expect(PLANE).toContain('onClose=');
+  });
+
   it('部材を選んでいる間は常に出る（種類だけの表示に戻っていない）', () => {
     // `{part && (` で姿図・角度ブロックを出している＝立面の有無や折りたたみで隠さない
     expect(PALETTE).toContain('{part && (');

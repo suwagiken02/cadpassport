@@ -48,9 +48,11 @@ export default function ElevationEditBar() {
     if (!viewId) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // E-8-v3c-fix6: 段階的に降りる。ツール → 部材の選択 → 立面の選択（＝パネルを閉じる）。
       const s = useCanvasStore.getState();
       if (s.elevationAddTool) s.setElevationAddTool(null);
       else if (s.elevationEditSelectedId) s.setElevationEditSelectedId(null);
+      else s.setSelectedIds([]);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -70,6 +72,13 @@ export default function ElevationEditBar() {
       title="立面図"
       pos={panelPos}
       onMove={(p) => useCanvasStore.getState().setElevationPanelPos(p)}
+      // × は明示的に閉じる操作。立面の選択を外す＝このパネルが出る条件そのものを解く。
+      onClose={() => {
+        const s = useCanvasStore.getState();
+        s.setElevationAddTool(null);
+        s.setElevationEditSelectedId(null);
+        s.setSelectedIds([]);
+      }}
     >
       {/* E-8-v3c-fix: 画面下の「部材」メニューと同一のパレット（入口が 2 つでも中身は 1 つ）。 */}
       {!showPartSelector && <ElevationPartPalette />}

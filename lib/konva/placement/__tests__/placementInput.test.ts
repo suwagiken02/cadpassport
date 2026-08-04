@@ -4,7 +4,7 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import {
-  clientToCanvasPoint, isInsideRect, movedEnough, placementModeForPointer,
+  clientToCanvasPoint, isInsideRect, isKeyboardClick, movedEnough, placementModeForPointer,
 } from '../placementInput';
 
 describe('入力方式の判定', () => {
@@ -61,5 +61,18 @@ describe('クライアント座標 → キャンバス座標', () => {
 
   it('キャンバスが無ければ null（図ごとの変換に進ませない）', () => {
     expect(clientToCanvasPoint({ clientX: 300, clientY: 200 }, null)).toBeNull();
+  });
+});
+
+describe('click がキーボード由来か (= E-8-v3c-fix6)', () => {
+  // 事故: パレットのボタンが pointerdown と click の両方で選択を持ち、1 回のクリックで
+  //   「選ぶ → 同じ種類なので解除」と 2 回動いた（実機では「パネルが閉じる」と見えた）。
+  //   pointerdown 側に処理を寄せ、click はキーボード操作(detail===0)だけを拾う。
+  it('Enter/Space の click だけ true（detail===0）', () => {
+    expect(isKeyboardClick(0)).toBe(true);
+  });
+  it('ポインタ由来の click は false（1 回でも 2 回でも）', () => {
+    expect(isKeyboardClick(1)).toBe(false);
+    expect(isKeyboardClick(2)).toBe(false);
   });
 });

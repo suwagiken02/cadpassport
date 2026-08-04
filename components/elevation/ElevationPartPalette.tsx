@@ -23,7 +23,8 @@ import {
   POST_KOMA_CHOICES, SPAN_LENGTH_CHOICES_MM, type ElevationPartKind,
 } from '@/lib/konva/elevation/elevationParts';
 import {
-  defaultPlacementMode, placementModeForPointer, startPaletteDragOut, type PlacementMode,
+  defaultPlacementMode, isKeyboardClick, placementModeForPointer, startPaletteDragOut,
+  type PlacementMode,
 } from '@/lib/konva/placement/placementInput';
 import {
   ANGLE_STEPS, anglePresetsForNatural, normalizeAngleDeg, stepAngle,
@@ -56,6 +57,28 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
     });
   };
 
+  /**
+   * 部材ボタンを押したとき (= E-8-v3c-fix6)。
+   *
+   * 事故: 選択(setElevationAddTool)を pointerdown と click の**両方**が持っていたため、
+   *   1 回のクリックで「pointerdown で選ぶ → click で同じ種類なので解除」となり、
+   *   姿図・角度・長さの行が一瞬で消えた（実機では「パネルが閉じる」と見えた。
+   *   押しっぱなしの間は click が来ないので正しく出たまま＝症状の説明がつく）。
+   * 対策: 押した時点(pointerdown)だけが選択を持つ。同じ種類をもう一度押したら解除。
+   */
+  const onKindDown = (kind: ElevationPartKind, e: React.PointerEvent) => {
+    if (useCanvasStore.getState().elevationAddTool === kind) {
+      useCanvasStore.getState().setElevationAddTool(null);   // 2 回目＝選択解除
+      return;
+    }
+    startDragOut(kind, e);
+  };
+  /** キーボード操作(Enter/Space)だけを拾う click。ポインタ由来(detail>0)は pointerdown 側で処理済み。 */
+  const onKeyboardClick = (e: React.MouseEvent, run: () => void) => {
+    if (!isKeyboardClick(e.detail)) return;
+    run();
+  };
+
   const isPost = addTool === 'post' || addTool === 'postExt';
   const sizes = isPost
     ? POST_KOMA_CHOICES.map((k) => ({ value: k as number, label: `${k}` }))
@@ -72,8 +95,9 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
         <span className="text-[10px] text-dimension mr-1">部材</span>
         {PALETTE_KINDS.map((k) => (
           <button key={k} type="button"
-            onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === k ? null : k)}
-            onPointerDown={(e) => startDragOut(k, e)}
+            onPointerDown={(e) => onKindDown(k, e)}
+            onClick={(e) => onKeyboardClick(e, () =>
+              useCanvasStore.getState().setElevationAddTool(addTool === k ? null : k))}
             className={btn(addTool === k)}>
             {PART_LABEL[k]}
           </button>
@@ -141,11 +165,12 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
           <span className="text-[10px] text-dimension mr-1">{isPost ? '長さ(コマ)' : '長さ(mm)'}</span>
           {sizes.map(({ value, label }) => (
             <button key={value} type="button"
-              onClick={() => useCanvasStore.getState().setElevationAddSize(value)}
               onPointerDown={(e) => {
                 useCanvasStore.getState().setElevationAddSize(value);
                 startDragOut(part, e);
               }}
+              onClick={(e) => onKeyboardClick(e, () =>
+                useCanvasStore.getState().setElevationAddSize(value))}
               className={btn(addSize === value)}>
               {label}
             </button>
