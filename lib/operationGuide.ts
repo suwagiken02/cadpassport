@@ -36,6 +36,8 @@ export type GuideState = {
   directionPointCount: number;
   /** 選択モードが有効か（mode==='select' のとき）。 */
   selectActive: boolean;
+  /** 立面パレットで部材を選んでいるか (= E-8-v3c-fix)。置く操作の案内に使う。 */
+  elevationPlacing?: 'hover-click' | 'drag-drop' | null;
   /** 屋根領域を描画中か（建物方向入力を pendingTargetType='roof' で流用・R-1e-fix7b）。 */
   isRoofDraw: boolean;
   /**
@@ -100,7 +102,14 @@ export function getOperationGuide(s: GuideState): string | null {
     case 'obstacle': return '障害物を配置する位置をタップしてください';
     case 'memo': return 'メモを配置する位置をタップしてください';
     // R-1g: 'roof' モードは撤去。屋根は mode='building' + pendingTargetType='roof' の領域描き（上の分岐）。
-    case 'select': return s.selectActive ? 'オブジェクトをタップ、またはドラッグで範囲選択してください' : null;
+    case 'select':
+      // E-8-v3c-fix: 立面の部材を選んでいる間は「置く」操作の案内に切り替える。
+      if (s.elevationPlacing) {
+        return s.elevationPlacing === 'drag-drop'
+          ? 'パレットから部材を引き出し、置きたい位置で離してください（接合部に近づけると吸着します）'
+          : '置きたい位置をクリックしてください（接合部に近づけると吸着します）。Esc で終了';
+      }
+      return s.selectActive ? 'オブジェクトをタップ、またはドラッグで範囲選択してください' : null;
     case 'move-select': return null; // moveSelectActive 側で扱う
     case 'view': return null;        // 閲覧中（ツール未選択）はガイド非表示
     default: return null;

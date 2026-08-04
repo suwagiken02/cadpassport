@@ -39,6 +39,7 @@ import {
 } from '@/lib/konva/elevation/elevationParts';
 import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
 import { snapJoint, type JointPoint } from '@/lib/konva/elevation/elevationJoints';
+import { pickTargetView, type ViewBox } from '@/lib/konva/elevation/elevationTargetView';
 import type { ElevationPrimitive, ElevationView } from '@/types';
 
 type ToScreen = (lx: number, ly: number) => { x: number; y: number };
@@ -204,6 +205,8 @@ function localBounds(view: ElevationView) {
 
 type CommonProps = {
   view: ElevationView;
+  /** 同じページの全立面（枠外に置いたときの帰属先を選ぶのに使う・E-8-v3c-fix）。 */
+  allViews: ElevationView[];
   gridPx: number;
   panX: number;
   panY: number;
@@ -219,7 +222,7 @@ type CommonProps = {
  * ドラッグ終了時は「最寄りの有効スロット」へ吸着させる（はまる場所にしかはまらない）。
  */
 function ElevationInteractiveGroup({
-  view, gridPx, panX, panY, mode, selected, setSelectedIds, moveElevationView,
+  view, allViews, gridPx, panX, panY, mode, selected, setSelectedIds, moveElevationView,
 }: CommonProps) {
   const selectedPartId = useCanvasStore((s) => s.elevationEditSelectedId);
   const setSelectedPartId = useCanvasStore((s) => s.setElevationEditSelectedId);
@@ -227,8 +230,8 @@ function ElevationInteractiveGroup({
   const addSize = useCanvasStore((s) => s.elevationAddSize);
   const addFlip = useCanvasStore((s) => s.elevationAddFlip);
   const dropAt = useCanvasStore((s) => s.elevationDropAt);
-  /** パレット選択中に、指/カーソルが指している位置（ローカル）。シャドーを出す。 */
-  const [hoverLocal, setHoverLocal] = useState<{ x: number; y: number } | null>(null);
+  /** パレット選択中に指/カーソルが指している画面位置。シャドーを出す (= E-8-v3c-fix)。 */
+  const [hoverScreen, setHoverScreen] = useState<{ x: number; y: number } | null>(null);
   const prims = useMemo(() => composeViewPrimitives(view), [view]);
   const groups = useMemo(() => groupByPartId(prims), [prims]);
   const overridden = useMemo(() => overriddenTextIds(view.edits), [view.edits]);
@@ -349,26 +352,32 @@ function ElevationInteractiveGroup({
   // ゴーストの許可制は全廃。選んだ部材のシャドーが指/カーソルに追従し、離した(押した)位置に
   // そのまま出る。接合が近ければ v3b の吸着が効く。
   /** 追加しようとしている部材（プレビュー兼、確定時の実体）。 */
-  const draftPartAt = (local: { x: number; y: number }): ElevationPart | null => {
-    if (!addTool || addTool === 'text' || !view.geom) return null;
-    const at = { xMm: (local.x + minXg) * GRID_MM, yMm: -local.y * GRID_MM };
+  const draftPartAt = (
+    local: { x: number; y: number }, target: ElevationView = view,
+  ): ElevationPart | null => {
+    if (!addTool || addTool === 'text' || !target.geom) return null;
+    const at = {
+      xMm: (local.x + (target.geom.minXg ?? 0)) * GRID_MM,
+      yMm: -local.y * GRID_MM,
+    };
     const isPost = addTool === 'post' || addTool === 'postExt';
     const draft = newElevationPart(addTool, 'draft', 0, at, {
       komaCount: isPost ? addSize : undefined,
       sizeMm: isPost ? undefined : addSize,
       flip: addFlip,
     });
-    const sg = view.geom.scaffolds[0];
-    const snap = snapJoint(draft, parts, sg, { dxMm: 0, dyMm: 0 }, {
-      pxPerMm: s / GRID_MM, tolPx: JOINT_SNAP_PX,
+    const sg = target.geom.scaffolds[0];
+    const snap = snapJoint(draft, target.parts ?? [], sg, { dxMm: 0, dyMm: 0 }, {
+      pxPerMm: (gridPx * target.scale) / GRID_MM, tolPx: JOINT_SNAP_PX,
     });
     return (snap.dxMm || snap.dyMm) ? movePart(draft, sg, snap) : draft;
   };
 
   /** シャドー（半透明の部材そのもの）。実物と同じ描画経路なので見た目が一致する。 */
   const draftPreview = (() => {
-    if (!selected || !hoverLocal || !view.geom) return null;
-    const draft = draftPartAt(hoverLocal);
+    if (!selected || !hoverScreen || !view.geom) return null;
+    // 画面座標 → このビューのローカル。枠の外でもそのまま延長した座標になる。
+    const draft = draftPartAt({ x: (hoverScreen.x - gx) / s, y: (hoverScreen.y - gy) / s });
     if (!draft) return null;
     return (
       <Group opacity={0.45} listening={false}>
@@ -390,21 +399,43 @@ function ElevationInteractiveGroup({
     const stage = groupRef.current?.getStage();
     const box = stage?.container().getBoundingClientRect();
     if (!stage || !box) return;
-    const local = {
-      x: (dropAt.clientX - box.left - gx) / s,
-      y: (dropAt.clientY - box.top - gy) / s,
-    };
-    placeDraft(local);
+    placeAtScreen({ x: dropAt.clientX - box.left, y: dropAt.clientY - box.top });
     useCanvasStore.getState().setElevationDropAt(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropAt]);
 
-  /** その位置に置く（連続配置できるようツールは解除しない）。 */
-  const placeDraft = (local: { x: number; y: number }) => {
-    const draft = draftPartAt(local);
-    if (!draft || !addTool || addTool === 'text') return;
+  /** 各立面の画面上の外接矩形（枠外に置いたときの帰属先を選ぶのに使う）。 */
+  const screenBoxes = (): ViewBox[] => allViews.flatMap((v) => {
+    const b = localBounds(v);
+    if (!b) return [];
+    const vs = gridPx * v.scale;
+    const vx = v.originGrid.x * gridPx + panX, vy = v.originGrid.y * gridPx + panY;
+    const x0 = vx + b.minX * vs, y0 = vy + b.minY * vs;
+    const x1 = vx + b.maxX * vs, y1 = vy + b.maxY * vs;
+    return [{
+      id: v.id,
+      x: Math.min(x0, x1), y: Math.min(y0, y1),
+      w: Math.abs(x1 - x0), h: Math.abs(y1 - y0),
+    }];
+  });
+
+  /**
+   * 画面上のどこかに置く (= E-8-v3c-fix)。立面の枠の中に限らない。
+   * 帰属は「その点を含む立面 → いちばん近い立面 → 操作中の立面」の順で決める。
+   */
+  const placeAtScreen = (pt: { x: number; y: number }) => {
+    if (!addTool || addTool === 'text') return;
+    const targetId = pickTargetView(screenBoxes(), pt, view.id);
+    const target = allViews.find((v) => v.id === targetId) ?? view;
+    const ts = gridPx * target.scale;
+    const local = {
+      x: (pt.x - (target.originGrid.x * gridPx + panX)) / ts,
+      y: (pt.y - (target.originGrid.y * gridPx + panY)) / ts,
+    };
+    const draft = draftPartAt(local, target);
+    if (!draft) return;
     useCanvasStore.getState().addElevationPart(
-      view.id, { ...draft, id: nextPartId(parts, addTool) },
+      target.id, { ...draft, id: nextPartId(target.parts ?? [], addTool) },
     );
   };
 
@@ -445,20 +476,8 @@ function ElevationInteractiveGroup({
 
   const onBgTap = () => {
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
-    // E-8-v3c: パレットで部材を選んでいるときは、押した位置にその部材を出す
-    //   （ゴーストの許可位置ではなく、指した場所そのもの。連続配置できる）。
-    if (addTool && addTool !== 'text') {
-      const local = pointerLocal();
-      if (local) { placeDraft(local); return; }
-    }
     setSelectedIds([view.id]);
     setSelectedPartId(null);
-  };
-  /** パレット選択中のシャドー追従（PC はカーソル、スマホは指を置いた位置）。 */
-  const onBgHover = () => {
-    if (!addTool || addTool === 'text') { if (hoverLocal) setHoverLocal(null); return; }
-    const local = pointerLocal();
-    if (local) setHoverLocal(local);
   };
   /** ドラッグ中は変換 Group を一緒に動かして見た目を追従させる（Rect は透明なので単体では見えない）。 */
   const onBgDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -480,6 +499,34 @@ function ElevationInteractiveGroup({
   // 選択枠（ビュー自体が選択されているとき）。
   const selRect = selected && bg ? { x: bg.x, y: bg.y, w: bg.w, h: bg.h } : null;
 
+  /**
+   * 部材を置くための面 (= E-8-v3c-fix)。立面の枠ではなく**キャンバス全域**に敷く。
+   * 立面の隣に張り出す・独立して組む、が普通の操作なので、枠で制限しない。
+   * パレットで部材を選んでいる間だけ出す（それ以外は従来どおり図の枠が受ける）。
+   */
+  const placeSurface = selected && addTool && addTool !== 'text' ? (
+    <Rect
+      x={-1e5} y={-1e5} width={2e5} height={2e5} fill="#000" opacity={0}
+      onMouseMove={() => {
+        const p = groupRef.current?.getStage()?.getPointerPosition();
+        if (p) setHoverScreen(p);
+      }}
+      onMouseLeave={() => setHoverScreen(null)}
+      onTouchMove={() => {
+        const p = groupRef.current?.getStage()?.getPointerPosition();
+        if (p) setHoverScreen(p);
+      }}
+      onClick={() => {
+        const p = groupRef.current?.getStage()?.getPointerPosition();
+        if (p) placeAtScreen(p);
+      }}
+      onTap={() => {
+        const p = groupRef.current?.getStage()?.getPointerPosition();
+        if (p) placeAtScreen(p);
+      }}
+    />
+  ) : null;
+
   return (
     <>
       {bg && (
@@ -491,10 +538,9 @@ function ElevationInteractiveGroup({
           dragDistance={6}
           onDragMove={onBgDragMove} onDragEnd={onBgDragEnd}
           onClick={onBgTap} onTap={onBgTap}
-          onMouseMove={onBgHover} onMouseLeave={() => setHoverLocal(null)}
-          onTouchMove={onBgHover}
         />
       )}
+      {placeSurface}
       <Group ref={groupRef} x={gx} y={gy} scaleX={s} scaleY={s}>
         {snapPreview}
         {groups.map(({ id, from, items }) => {
@@ -691,7 +737,7 @@ export default function ElevationViewLayer() {
     <Layer>
       {arr.map((view) => {
         const common = {
-          view, gridPx, panX, panY, mode,
+          view, allViews: arr, gridPx, panX, panY, mode,
           selected: selectedIds.includes(view.id),
           setSelectedIds, moveElevationView,
         };

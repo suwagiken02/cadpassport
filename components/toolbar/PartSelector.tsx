@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
+import ElevationPartPalette from '@/components/elevation/ElevationPartPalette';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 import { HandrailLengthMm, HandrailDirection, AntiWidth, ObstacleType } from '@/types';
 import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
@@ -96,6 +97,11 @@ const PART_TABS: { id: PartTab; label: string }[] = [
 ];
 
 export default function PartSelector() {
+  // E-8-v3c-fix: 立面を 1 つ選んでいるか（＝立面の文脈か）。
+  const elevationContext = useCanvasStore((st) => (
+    st.mode === 'select' && st.selectedIds.length === 1
+    && (st.canvasData.elevationViews ?? []).some((v) => v.id === st.selectedIds[0])
+  ));
   const {
     mode, setMode,
     selectedHandrailLength, setSelectedHandrailLength,
@@ -421,6 +427,18 @@ export default function PartSelector() {
   }, [toolbarDrag, addHandrail, addAnti, addPost, addObstacle, isOverTrash]);
 
   if (mode === 'erase' || mode === 'building') return null;
+
+  // E-8-v3c-fix: 立面を選んでいるときは、この「部材」メニューからも立面のパレットを出す。
+  //   入口が 2 つ（立面タップのバー / 下の部材メニュー）でも、中身は同じ 1 つの
+  //   コンポーネントなので迷わない。平面の文脈では従来どおり平面の部材を出す。
+  if (elevationContext) {
+    return (
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
+        <ElevationPartPalette showText={false} />
+        <p className="text-[10px] text-dimension">立面図の部材（選択中の立面に置きます）</p>
+      </div>
+    );
+  }
 
   // タブ系モードかどうか（'view' = 図面を開いた直後の閲覧モード。 部材パレットを開いた時点で
   // タブ＋部材リストを表示する。 配置は mode 非依存のドラッグ&ドロップなのでこれだけで配置可能）

@@ -30,6 +30,7 @@ export default function OperationGuideBar() {
       buildingInputMethod: s.buildingInputMethod,
       directionPointCount: s.directionPoints.length,
       selectActive: s.selectActive,
+      elevationPlacing: s.elevationAddTool && s.elevationAddTool !== 'text' ? 'hover-click' as const : null,
       isRoofDraw: s.pendingTargetType === 'roof',
       // R-1h-4: 複数階の物件のときだけ「(2F)」等を文言に出す（単一階では従来どおり階を出さない）。
       targetFloor: isMultiFloor(s.canvasData.buildings) ? s.activeFloor : null,
