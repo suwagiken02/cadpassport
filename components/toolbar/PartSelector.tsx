@@ -97,11 +97,53 @@ const PART_TABS: { id: PartTab; label: string }[] = [
 ];
 
 export default function PartSelector() {
-  // E-8-v3c-fix: 立面を 1 つ選んでいるか（＝立面の文脈か）。
-  const elevationContext = useCanvasStore((st) => (
-    st.mode === 'select' && st.selectedIds.length === 1
-    && (st.canvasData.elevationViews ?? []).some((v) => v.id === st.selectedIds[0])
-  ));
+  // ===== E-8-v3c-fix2: 平面／立面の部材タブ =====
+  const elevationViews = useCanvasStore((st) => st.canvasData.elevationViews);
+  const paletteTab = useCanvasStore((st) => st.partPaletteTab);
+  const lastElevationViewId = useCanvasStore((st) => st.lastElevationViewId);
+  const selectedIds = useCanvasStore((st) => st.selectedIds);
+  const modeNow = useCanvasStore((st) => st.mode);
+  const elevViews = useMemo(() => elevationViews ?? [], [elevationViews]);
+  const hasElevation = elevViews.length > 0;
+  /** いま立面を触っている文脈か（既定タブの決定にだけ使う）。 */
+  const elevationContext = modeNow === 'select'
+    && selectedIds.some((id) => elevViews.some((v) => v.id === id));
+
+  // 立面を選んだ状態で開いたら立面タブから始める（外したときに勝手に平面へ戻さない）。
+  useEffect(() => {
+    if (elevationContext) useCanvasStore.getState().setPartPaletteTab('elevation');
+  }, [elevationContext]);
+
+  /** 立面タブのとき、置き先のビューを確保する（未選択なら直近の立面を選ぶ）。 */
+  useEffect(() => {
+    if (!hasElevation || paletteTab !== 'elevation' || elevationContext) return;
+    const target = elevViews.find((v) => v.id === lastElevationViewId) ?? elevViews[0];
+    const st = useCanvasStore.getState();
+    if (st.mode !== 'select') st.setMode('select');
+    st.setSelectedIds([target.id]);
+    st.setLastElevationViewId(target.id);
+  }, [paletteTab, hasElevation, elevationContext, elevViews, lastElevationViewId]);
+
+  const FACE_LABEL: Record<string, string> = {
+    north: '北面', south: '南面', east: '東面', west: '西面',
+  };
+  const targetView = elevViews.find((v) => selectedIds.includes(v.id))
+    ?? elevViews.find((v) => v.id === lastElevationViewId) ?? elevViews[0];
+  const targetViewLabel = targetView ? (FACE_LABEL[targetView.face] ?? '立面') : null;
+
+  const paletteTabs = hasElevation ? (
+    <div className="flex items-center gap-1 mb-2">
+      {([['plane', '平面部材'], ['elevation', '立面部材']] as const).map(([id, label]) => (
+        <button key={id} type="button"
+          onClick={() => useCanvasStore.getState().setPartPaletteTab(id)}
+          className={`px-3 py-1 rounded-lg text-[11px] font-bold border ${
+            paletteTab === id ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
+          }`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  ) : null;
   const {
     mode, setMode,
     selectedHandrailLength, setSelectedHandrailLength,
@@ -428,14 +470,20 @@ export default function PartSelector() {
 
   if (mode === 'erase' || mode === 'building') return null;
 
-  // E-8-v3c-fix: 立面を選んでいるときは、この「部材」メニューからも立面のパレットを出す。
-  //   入口が 2 つ（立面タップのバー / 下の部材メニュー）でも、中身は同じ 1 つの
-  //   コンポーネントなので迷わない。平面の文脈では従来どおり平面の部材を出す。
-  if (elevationContext) {
+  // E-8-v3c-fix2: 平面／立面の切替はタブで明示する。
+  //   文脈の推測（立面を選択中か）だけに頼ると、何も選んでいない状態で「部材」を開いたときに
+  //   平面へ落ちて「立面パレットが出ない」になる。推測は既定タブの決定にだけ使い、
+  //   ユーザーはいつでも手で切り替えられるようにする。
+  if (hasElevation && paletteTab === 'elevation') {
     return (
       <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
+        {paletteTabs}
         <ElevationPartPalette showText={false} />
-        <p className="text-[10px] text-dimension">立面図の部材（選択中の立面に置きます）</p>
+        <p className="text-[10px] text-dimension">
+          {targetViewLabel
+            ? `立面図の部材（${targetViewLabel}に置きます）`
+            : '立面図がありません。📐 から配置してください'}
+        </p>
       </div>
     );
   }
@@ -591,6 +639,8 @@ export default function PartSelector() {
     <>
       {/* ===== モバイル（sm未満）: 画面下部固定バー ===== */}
       <div ref={mobilePanelRef} data-palette-panel className={`sm:hidden fixed bottom-16 left-0 right-0 z-50 border-t ${isDarkMode ? 'bg-gray-300 border-gray-400' : 'bg-dark-surface/95 border-dark-border'}`}>
+        {/* E-8-v3c-fix2: 平面／立面の切替（立面がある図面だけ出る） */}
+        {paletteTabs && <div className="px-3 pt-2">{paletteTabs}</div>}
         {isTabMode && (
           <>
             {/* タブ */}
@@ -829,6 +879,8 @@ export default function PartSelector() {
         {/* コンテンツ */}
         {expanded && (
           <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+            {/* E-8-v3c-fix2: 平面／立面の切替（立面がある図面だけ出る） */}
+            {paletteTabs && <div className="px-3 pt-2 shrink-0">{paletteTabs}</div>}
             {isTabMode && (
               <>
                 <div className="flex border-b border-dark-border shrink-0">

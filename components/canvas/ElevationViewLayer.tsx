@@ -310,6 +310,7 @@ function ElevationInteractiveGroup({
       return;
     }
     setSelectedIds([view.id]);   // 部材を触ったビューを選択状態にする（パレットが出る）
+    st.setLastElevationViewId(view.id);
     setSelectedPartId(id);
   };
 
@@ -478,6 +479,7 @@ function ElevationInteractiveGroup({
     if (mode === 'erase') { useCanvasStore.getState().removeElement(view.id); return; }
     setSelectedIds([view.id]);
     setSelectedPartId(null);
+    useCanvasStore.getState().setLastElevationViewId(view.id);
   };
   /** ドラッグ中は変換 Group を一緒に動かして見た目を追従させる（Rect は透明なので単体では見えない）。 */
   const onBgDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {

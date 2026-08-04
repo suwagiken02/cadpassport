@@ -32,6 +32,8 @@ export default function ElevationEditBar() {
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const mode = useCanvasStore((s) => s.mode);
   const selectedIds = useCanvasStore((s) => s.selectedIds);
+  /** 部材メニューが開いているときは、そちらがパレットを出す（同じ位置に二重で出さない）。 */
+  const showPartSelector = useCanvasStore((s) => s.showPartSelector);
 
   // 立面図を 1 つ選んでいるときだけ出す（平面の部材操作と同じで、モードは持たない）。
   const view = (mode === 'select' && selectedIds.length === 1)
@@ -92,8 +94,9 @@ export default function ElevationEditBar() {
 
   return (
     <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
-      {/* E-8-v3c-fix: 画面下の「部材」メニューと同一のパレット（入口が 2 つでも中身は 1 つ）。 */}
-      <ElevationPartPalette />
+      {/* E-8-v3c-fix: 画面下の「部材」メニューと同一のパレット（入口が 2 つでも中身は 1 つ）。
+          E-8-v3c-fix2: 「部材」メニューが開いているときは、そちらに任せて重複表示しない。 */}
+      {!showPartSelector && <ElevationPartPalette />}
 
       {/* E-8d: 再生成で引き継げなかった編集 */}
       {orphans.length > 0 && (

@@ -478,6 +478,15 @@ type CanvasStore = {
    *  E-8-v2e: 自由線ツールは撤去（部材はパレット、文字は上書き/追加のみ）。 */
   elevationAddTool: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'text' | null;
   setElevationAddTool: (t: import('@/lib/konva/elevation/elevationParts').ElevationPartKind | 'text' | null) => void;
+  /**
+   * 部材メニューのタブ (= E-8-v3c-fix2)。平面の部材か立面の部材か。
+   * 文脈の推測に頼らず、ユーザーが明示的に選べるようにする。
+   */
+  partPaletteTab: 'plane' | 'elevation';
+  setPartPaletteTab: (t: 'plane' | 'elevation') => void;
+  /** 直近に触れた立面ビュー (= E-8-v3c-fix2)。部材メニューから立面へ入るときの既定の対象。 */
+  lastElevationViewId: string | null;
+  setLastElevationViewId: (id: string | null) => void;
   /** 立面パレットで選んでいる寸法 (= E-8-v3c)。支柱はコマ数、手摺・踏板・筋交は長さ(mm)。 */
   elevationAddSize: number;
   setElevationAddSize: (v: number) => void;
@@ -1569,6 +1578,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     elevationAddSize: t && t !== 'text'
       ? defaultPartSize(t) : get().elevationAddSize,
   }),
+  partPaletteTab: 'plane',
+  setPartPaletteTab: (t) => set({ partPaletteTab: t }),
+  lastElevationViewId: null,
+  setLastElevationViewId: (id) => set({ lastElevationViewId: id }),
   elevationAddSize: 1800,
   setElevationAddSize: (v) => set({ elevationAddSize: v }),
   elevationAddFlip: false,
