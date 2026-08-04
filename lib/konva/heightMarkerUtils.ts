@@ -12,9 +12,18 @@ export function getOutlinePolygon(building: BuildingShape): Point[] {
   return building.points;
 }
 
+/** 距離が「同じ」とみなす許容差（グリッド）。壁を共有する 2 棟の辺は完全に重なる。 */
+const EDGE_TIE_EPS = 1e-6;
+
 /**
  * クリック点に最も近い建物 outline の辺を見つける。
  * 閾値内に辺があれば { buildingId, edgeIndex, t } を返す、 なければ null。
+ *
+ * R-1m: 隣り合う 2 棟が壁を共有していると候補の距離が完全に一致し、どちらの辺になるかが
+ *   **配列順**（先に作った建物）で決まっていた。狙った建物の辺に置けない（下屋の妻に
+ *   TOP マーカーが付かない）ので、同距離のときは**短い辺**を採る。長い通し壁より、
+ *   その場所だけの短い壁（下屋の妻など）の方がユーザーの狙いに一致する。
+ *   ※距離が同じときだけの決着なので、通常のクリックの挙動は一切変わらない。
  */
 export function findClosestOutlineEdge(
   clickGrid: Point,
@@ -22,6 +31,7 @@ export function findClosestOutlineEdge(
   thresholdGrid: number,
 ): { buildingId: string; edgeIndex: number; t: number } | null {
   let bestDist = Infinity;
+  let bestLen = Infinity;
   let bestResult: { buildingId: string; edgeIndex: number; t: number } | null = null;
   for (const b of buildings) {
     const outline = getOutlinePolygon(b);
@@ -36,8 +46,13 @@ export function findClosestOutlineEdge(
       const projX = p1.x + t * ex;
       const projY = p1.y + t * ey;
       const dist = Math.hypot(clickGrid.x - projX, clickGrid.y - projY);
-      if (dist < bestDist && dist < thresholdGrid) {
-        bestDist = dist;
+      if (dist >= thresholdGrid) continue;
+      const len = Math.sqrt(len2);
+      const better = dist < bestDist - EDGE_TIE_EPS
+        || (dist < bestDist + EDGE_TIE_EPS && len < bestLen);   // 同距離なら短い辺
+      if (better) {
+        bestDist = Math.min(bestDist, dist);
+        bestLen = len;
         bestResult = { buildingId: b.id, edgeIndex: i, t };
       }
     }

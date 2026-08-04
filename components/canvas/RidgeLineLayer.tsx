@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
-import { buildingAtPointOnFloor } from '@/lib/konva/floorScope';
+import { buildingAtPointOnFloor, isPointOnOrInPolygon, resolveFloorScope } from '@/lib/konva/floorScope';
 import { computeRidgeGuides, snapRidgeInput } from '@/lib/konva/elevation/ridgeProjection';
 import type { Point, BuildingShape } from '@/types';
 
@@ -42,8 +42,13 @@ export default function RidgeLineLayer() {
   // R-1h-3: 棟の所属建物は編集中の階から選ぶ。総二階では 1F/2F の外形が重なり、
   //   従来の「配列順で最初に見つかった建物」だと 2F の棟が必ず 1F に紐づいていた。
   //   対象階に建物が無ければ全建物＝従来挙動（resolveFloorScope の安全側フォールバック）。
+  // R-1m: 壁の上（＝他棟と重なる辺）を指しても「建物外」にならないよう、外周から
+  //   スナップ距離ぶんの許容を持たせる（isPointInPolygon は辺の上の扱いが向きで非対称）。
+  const wallTolGrid = SNAP_PX / gridPx;
   const buildingAt = (pt: Point): BuildingShape | undefined =>
-    buildingAtPointOnFloor(pt, canvasData.buildings, activeFloor);
+    buildingAtPointOnFloor(pt, canvasData.buildings, activeFloor, wallTolGrid);
+  /** ガイドを出す対象（編集中の階の建物）。 */
+  const scopedBuildings = resolveFloorScope(canvasData.buildings, activeFloor);
 
   const snapIn = (pt: Point, b: BuildingShape) => snapRidgeInput(pt, b.points, SNAP_PX / gridPx);
 
@@ -67,6 +72,9 @@ export default function RidgeLineLayer() {
     const b = buildingAt(g);
     if (!b) { setCursor(null); return; } // 建物外は無視
     const snapped = snapIn(g, b).point;
+    // R-1m: 壁の許容ぶん外側を拾えるようになったので、確定する点は「内部か壁の上」だけ。
+    //   （頂点・辺中点へ吸着した点は壁の上なので通る＝妻の中央に棟端を置ける）
+    if (!isPointOnOrInPolygon(snapped, b.points, 0.5)) { setCursor(null); return; }
     if (!draft) {
       setDraft({ buildingId: b.id, p1: snapped });
       setCursor(snapped);
@@ -136,6 +144,24 @@ export default function RidgeLineLayer() {
             <Line points={segPts(g.centerLine)} stroke={RIDGE_COLOR} strokeWidth={1.2} dash={[6, 6]} opacity={0.5} listening={false} />
           </React.Fragment>
         );
+      })}
+
+      {/* R-1m: 吸着点のガイド（対象階の建物の全辺に、角 ○ と辺中点 ◇ を出す）。
+          他棟と壁が重なる辺でも必ず出す＝「どこへ吸着できるか」が壁の重なりに依存しない。 */}
+      {isRidgeLineMode && scopedBuildings.flatMap((b) => {
+        if (b.points.length < 3) return [];
+        return b.points.flatMap((p1, i) => {
+          const p2 = b.points[(i + 1) % b.points.length];
+          const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+          const gr = Math.max(3, 3.5 * zoom);
+          return [
+            <Circle key={`snap-v-${b.id}-${i}`} x={sx(p1.x)} y={sy(p1.y)} radius={gr}
+              fill={SNAP_COLOR} opacity={0.5} listening={false} />,
+            <Rect key={`snap-m-${b.id}-${i}`} x={sx(mid.x)} y={sy(mid.y)}
+              width={gr * 2} height={gr * 2} offsetX={gr} offsetY={gr} rotation={45}
+              fill={SNAP_COLOR} opacity={0.5} listening={false} />,
+          ];
+        });
       })}
 
       {/* ドラフト線プレビュー＋カーソルマーカー（スナップ時は色変更） */}

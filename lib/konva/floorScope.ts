@@ -78,11 +78,59 @@ export function floorOfBuildingId(buildings: BuildingShape[], buildingId: string
   return b ? getFloor(b) : null;
 }
 
-/** 点を含む建物を対象階優先で返す（棟ラインの始点判定）。該当なしは undefined。 */
+/** 点 pt と線分 p→q の距離（グリッド）。 */
+function distPointSeg(pt: Point, p: Point, q: Point): number {
+  const dx = q.x - p.x, dy = q.y - p.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return Math.hypot(pt.x - p.x, pt.y - p.y);
+  const t = Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / len2));
+  return Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy));
+}
+
+/** 点から polygon の外周（辺）までの最短距離（グリッド）。内外は問わない。 */
+export function distanceToPolygonEdges(pt: Point, polygon: Point[]): number {
+  if (polygon.length < 2) return Infinity;
+  let best = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const d = distPointSeg(pt, polygon[i], polygon[(i + 1) % polygon.length]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * 点が polygon の内部、または外周から tol 以内か (= R-1m)。
+ *
+ * isPointInPolygon は ray-cast の `px <` 比較なので、**辺の上**の点の扱いが向きで非対称になる
+ * （右／東の辺の上は「外」、左／西の辺の上は「内」）。隣り合う 2 棟が壁を共有していると、
+ * 共有線上の点は必ず「西側の建物の内・東側の建物の外」に落ち、東辺を持つ建物では
+ * 壁の上を指しても「建物外」と判定されていた（実機: 1F 下屋の東辺で棟・ガイドが出ない）。
+ * 壁そのものを指す操作（棟の端点・妻の TOP）では、辺の上は「その建物の上」として扱う。
+ */
+export function isPointOnOrInPolygon(pt: Point, polygon: Point[], tol = 0): boolean {
+  if (isPointInPolygon(pt.x, pt.y, polygon)) return true;
+  return tol > 0 && distanceToPolygonEdges(pt, polygon) <= tol;
+}
+
+/**
+ * 点を含む建物を対象階優先で返す（棟ラインの始点判定）。該当なしは undefined。
+ *
+ * tolGrid > 0 のとき、壁（外周）から tolGrid 以内の点もその建物として扱う (= R-1m)。
+ * 内部に含む建物があればそちらが優先で、無い場合だけ最寄りの壁の建物を返す。
+ */
 export function buildingAtPointOnFloor(
-  pt: Point, buildings: BuildingShape[], floor: number,
+  pt: Point, buildings: BuildingShape[], floor: number, tolGrid = 0,
 ): BuildingShape | undefined {
-  return resolveFloorScope(buildings, floor).find((b) => isPointInPolygon(pt.x, pt.y, b.points));
+  const scope = resolveFloorScope(buildings, floor);
+  const inside = scope.find((b) => isPointInPolygon(pt.x, pt.y, b.points));
+  if (inside || !(tolGrid > 0)) return inside;
+  let best: BuildingShape | undefined;
+  let bestD = Infinity;
+  for (const b of scope) {
+    const d = distanceToPolygonEdges(pt, b.points);
+    if (d < bestD) { bestD = d; best = b; }
+  }
+  return bestD <= tolGrid ? best : undefined;
 }
 
 /** 屋根領域 polygon が乗る建物 id を対象階優先で返す（屋根描き確定時）。該当なしは null。 */

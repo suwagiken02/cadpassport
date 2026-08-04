@@ -287,6 +287,19 @@ export default function HeightMarkerLayer() {
           );
         });
       })}
+      {/* R-1m: 角 ○ ガイド。中点 ◇ と同じく対象階の建物の全辺に出す（角スナップの見える化）。
+          他棟と壁が重なる辺でも必ず出る＝置ける場所が壁の重なりに依存しない。 */}
+      {isHeightMarkerMode && scopedBuildings.flatMap((building) => {
+        const outline = getOutlinePolygon(building);
+        const cr = Math.max(3, 3.5 * zoom);
+        return outline.map((p, i) => (
+          <Circle
+            key={`corner-${building.id}-${i}`}
+            x={p.x * gridPx + panX} y={p.y * gridPx + panY}
+            radius={cr} fill={MARKER_COLOR} opacity={0.5} listening={false}
+          />
+        ));
+      })}
       {markers.map((marker) => {
         const building = canvasData.buildings.find((b) => b.id === marker.buildingId);
         if (!building) return null;
