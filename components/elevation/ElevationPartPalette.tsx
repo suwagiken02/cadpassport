@@ -1,15 +1,19 @@
 'use client';
 
 // ============================================================
-// 立面の部材パレット (E-8-v3c-fix)
+// 立面の部材パレット (E-8-v3c-fix / 姿図・角度は fix4)
 //
 // 入口を 1 つにするため、立面タップで出るバー(ElevationEditBar)と
 // 画面下の「部材」メニュー(PartSelector)の**両方がこの同じコンポーネント**を出す。
 // 中身も見た目も完全に同一なので、どちらから開いても迷わない。
 //
+// 構成は平面の部材パレットに合わせる (= E-8-v3c-fix4):
+//   [種類] → [姿図プレビュー ＋ 角度（プリセット・数値・微調整）] → [長さ・向き]
+// 姿図は「実際に置かれる部材の絵」そのもの（ElevationPartPreview）。
+//
 // 操作（平面の部材配置と同じ流儀・placementInput が判定）:
 //   ・マウス … 選ぶとシャドーがカーソルに追従し、クリックで置く（連続配置可）
-//   ・指     … パレットのボタンを掴んだままキャンバスへ引き出し、離した位置に置く
+//   ・指     … パレットのボタン／姿図を掴んだままキャンバスへ引き出し、離した位置に置く
 // 置ける場所の制限（ゴーストの許可位置）は無い。接合が近ければ吸着する。
 // ============================================================
 import React, { useEffect, useState } from 'react';
@@ -21,6 +25,11 @@ import {
 import {
   defaultPlacementMode, placementModeForPointer, startPaletteDragOut, type PlacementMode,
 } from '@/lib/konva/placement/placementInput';
+import {
+  ANGLE_STEPS, anglePresetsForNatural, normalizeAngleDeg, stepAngle,
+} from '@/lib/konva/placement/anglePresets';
+import ElevationPartPreview from './ElevationPartPreview';
+import NumInput from '@/components/ui/NumInput';
 
 /** パレットの部材名。 */
 const PART_LABEL: Record<ElevationPartKind, string> = {
@@ -32,6 +41,7 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const addSize = useCanvasStore((s) => s.elevationAddSize);
   const addFlip = useCanvasStore((s) => s.elevationAddFlip);
+  const addAngle = useCanvasStore((s) => s.elevationAddAngle);
   /** 入力方式。マウス=シャドー追従+クリック / 指=パレットから引き出して離す。 */
   const [inputMode, setInputMode] = useState<PlacementMode>('hover-click');
   useEffect(() => { setInputMode(defaultPlacementMode()); }, []);
@@ -50,6 +60,11 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
   const sizes = isPost
     ? POST_KOMA_CHOICES.map((k) => ({ value: k as number, label: `${k}` }))
     : SPAN_LENGTH_CHOICES_MM.map((l) => ({ value: l as number, label: `${l}` }));
+  /** 姿図・角度・長さを出すのは部材のときだけ（文字は別物）。 */
+  const part = addTool && addTool !== 'text' ? (addTool as ElevationPartKind) : null;
+  const setAngle = (v: number) => useCanvasStore.getState().setElevationAddAngle(normalizeAngleDeg(v));
+  const btn = (on: boolean) => `px-2 py-1 rounded-lg text-[11px] font-bold border ${
+    on ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'}`;
 
   return (
     <>
@@ -59,22 +74,18 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
           <button key={k} type="button"
             onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === k ? null : k)}
             onPointerDown={(e) => startDragOut(k, e)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
-              addTool === k ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
-            }`}>
+            className={btn(addTool === k)}>
             {PART_LABEL[k]}
           </button>
         ))}
         {showText && (
           <button type="button"
             onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === 'text' ? null : 'text')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
-              addTool === 'text' ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
-            }`}>
+            className={btn(addTool === 'text')}>
             文字
           </button>
         )}
-        {addTool && addTool !== 'text' && (
+        {part && (
           <span className="text-[10px] text-accent ml-1 whitespace-nowrap">
             {inputMode === 'drag-drop' ? 'パレットから引き出して離す' : '置きたい位置をクリック'}
           </span>
@@ -84,8 +95,48 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
         )}
       </div>
 
+      {/* 姿図（掴んで引き出せる）＋ 角度。平面パレットと同じ並び。 */}
+      {part && (
+        <div className="flex items-start gap-2 mb-2">
+          <ElevationPartPreview
+            kind={part}
+            sizeMm={isPost ? undefined : addSize}
+            komaCount={isPost ? addSize : undefined}
+            flip={addFlip}
+            angleDeg={addAngle}
+            className="bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none shrink-0"
+            onPointerDown={(e) => startDragOut(part, e)}
+          />
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex gap-1 flex-wrap">
+              <span className="text-[10px] text-dimension self-center mr-1">角度</span>
+              {anglePresetsForNatural(isPost || part === 'jack' ? 'vertical' : 'horizontal').map((p) => (
+                <button key={p.label} type="button" onClick={() => setAngle(p.deg)}
+                  className={btn(addAngle === p.deg)}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              <NumInput
+                value={addAngle}
+                onChange={(v) => setAngle(v)}
+                className="w-16 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
+              />
+              <span className="text-[10px] text-dimension mr-1">°</span>
+              {ANGLE_STEPS.map((d) => (
+                <button key={d} type="button" onClick={() => setAngle(stepAngle(addAngle, d))}
+                  className="px-2 py-1 rounded-lg text-[11px] font-bold border bg-dark-bg border-dark-border text-dimension">
+                  {d > 0 ? `+${d}°` : `${d}°`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 長さ（支柱＝コマ数／手摺・踏板・筋交＝標準スパン）と、筋交の向き。 */}
-      {addTool && addTool !== 'text' && addTool !== 'jack' && (
+      {part && part !== 'jack' && (
         <div className="flex items-center gap-1 mb-2 flex-wrap">
           <span className="text-[10px] text-dimension mr-1">{isPost ? '長さ(コマ)' : '長さ(mm)'}</span>
           {sizes.map(({ value, label }) => (
@@ -93,16 +144,14 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
               onClick={() => useCanvasStore.getState().setElevationAddSize(value)}
               onPointerDown={(e) => {
                 useCanvasStore.getState().setElevationAddSize(value);
-                startDragOut(addTool, e);
+                startDragOut(part, e);
               }}
-              className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
-                addSize === value ? 'bg-accent text-white border-accent' : 'bg-dark-bg border-dark-border text-dimension'
-              }`}>
+              className={btn(addSize === value)}>
               {label}
             </button>
           ))}
           {isPost && <span className="text-[10px] text-dimension ml-1">＝{addSize * 450}mm</span>}
-          {addTool === 'brace' && (
+          {part === 'brace' && (
             <button type="button"
               onClick={() => useCanvasStore.getState().toggleElevationAddFlip()}
               className="px-2 py-1 rounded-lg text-[11px] font-bold border bg-dark-bg border-dark-border text-dimension ml-1">

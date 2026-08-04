@@ -83,6 +83,13 @@ export type ElevationPart = {
   /** 筋交の向き反転 (= E-8-v3c)。false=右上がり / true=左上がり。 */
   flip?: boolean;
   /**
+   * 部材の傾き（度・E-8-v3c-fix4）。**その部材の自然な向きからの回転**で、
+   * 手摺・踏板は水平が 0°、支柱・ジャッキは垂直が 0°。正の値は右端（上端）が上がる向き。
+   * 回転の中心は、手摺・踏板・筋交は中央、支柱・ジャッキは下端（＝置いた基準点）。
+   * 現場では斜めに使う場面もあるので任意角度を許す。未指定＝0＝従来どおり。
+   */
+  angleDeg?: number;
+  /**
    * 削除マーク (= E-8-v2e)。ユーザーが自動生成部材を消したことを意味データとして残す墓標。
    * 描画されず、再生成時は「同じスロットに生えてくる自動部材」を抑止する。
    * 手動追加部材の削除は配列から取り除くだけなので墓標は作らない。
@@ -363,6 +370,68 @@ export function partRangeMm(
   return a == null || b == null ? null : { x0Mm: a * GRID_MM, x1Mm: b * GRID_MM };
 }
 
+/**
+ * 部材の回転の中心(mm) (= E-8-v3c-fix4)。
+ * どれも「置いたときの基準点」を軸にする＝手摺・踏板・筋交は中央、支柱は下端、
+ * ジャッキは上端（ジャッキは上端が基準点＝支柱を受ける面）。
+ */
+export function partPivotMm(
+  part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
+): { xMm: number; yMm: number } | null {
+  const r = partRangeMm(part, sg);
+  if (!r) return null;
+  if (part.kind === 'post' || part.kind === 'postExt') {
+    return { xMm: r.x0Mm, yMm: postMemberBottomMm(part, sg) };
+  }
+  if (part.kind === 'jack') return { xMm: r.x0Mm, yMm: part.levelMm ?? sg?.jackTopMm ?? 0 };
+  return { xMm: (r.x0Mm + r.x1Mm) / 2, yMm: part.levelMm ?? 0 };
+}
+
+/**
+ * 点を軸まわりに回す (= E-8-v3c-fix4)。
+ * 高さが上向きの座標系（mm）で使う。正の角度で反時計回り＝右端が上がる。
+ */
+export function rotateAboutMm(
+  p: { xMm: number; yMm: number }, pivot: { xMm: number; yMm: number }, deg: number,
+): { xMm: number; yMm: number } {
+  if (!deg) return p;
+  const r = (deg * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
+  const dx = p.xMm - pivot.xMm, dy = p.yMm - pivot.yMm;
+  return { xMm: pivot.xMm + dx * cos - dy * sin, yMm: pivot.yMm + dx * sin + dy * cos };
+}
+
+/**
+ * 出したプリミティブを回す（描画ローカル座標・y は下向きが正なので符号を反転）。
+ * from 以降＝その部材のぶんだけが対象。
+ */
+function rotatePrimitives(
+  out: ElevationPrimitive[], from: number, pivot: { x: number; y: number }, deg: number,
+): void {
+  if (!deg) return;
+  const r = (-deg * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
+  const rp = (x: number, y: number) => {
+    const dx = x - pivot.x, dy = y - pivot.y;
+    return { x: pivot.x + dx * cos - dy * sin, y: pivot.y + dx * sin + dy * cos };
+  };
+  for (let i = from; i < out.length; i++) {
+    const p = out[i];
+    if (p.kind === 'line') {
+      const a = rp(p.x1, p.y1), b = rp(p.x2, p.y2);
+      out[i] = { ...p, x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+    } else if (p.kind === 'polygon') {
+      const pts = [...p.points];
+      for (let k = 0; k < pts.length; k += 2) {
+        const a = rp(pts[k], pts[k + 1]);
+        pts[k] = a.x; pts[k + 1] = a.y;
+      }
+      out[i] = { ...p, points: pts };
+    } else {
+      const a = rp(p.x, p.y);
+      out[i] = { ...p, x: a.x, y: a.y };
+    }
+  }
+}
+
 /** 部材の実座標（面軸グリッド）。描画パイプラインが grid なので、ここで 1 回だけ換算する。 */
 function partSpanX(
   part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
@@ -406,6 +475,7 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
     const span = partSpanX(p, sg);
     if (!sg || !span) continue;
     // E-8-v2f: 見た目は elevationPartStyle が single source（旧 primitives 経路と共通）。
+    const emittedFrom = out.length;   // E-8-v3c-fix4: この部材のぶんだけ後で回す
 
     switch (p.kind) {
       case 'board':
@@ -474,6 +544,11 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         break;
       }
     }
+    // E-8-v3c-fix4: 傾き。部材の自然な向きからの回転を、出したプリミティブに適用する。
+    if (p.angleDeg) {
+      const pv = partPivotMm(p, sg);
+      if (pv) rotatePrimitives(out, emittedFrom, { x: lx(pv.xMm / GRID_MM), y: ly(pv.yMm) }, p.angleDeg);
+    }
   }
   return out;
 }
@@ -499,9 +574,11 @@ export function defaultPartSize(kind: ElevationPartKind): number {
 export function newElevationPart(
   kind: ElevationPartKind, id: string, scaffoldIndex: number,
   at: { xMm: number; yMm: number },
-  opts?: { sizeMm?: number; komaCount?: number; flip?: boolean },
+  opts?: { sizeMm?: number; komaCount?: number; flip?: boolean; angleDeg?: number },
 ): ElevationPart {
-  const base = { id, kind, scaffoldIndex, origin: 'manual' as const };
+  // E-8-v3c-fix4: 角度はそのまま部材の属性。0 のときは持たせない（既存データと同じ形）。
+  const angle = opts?.angleDeg ? { angleDeg: opts.angleDeg } : {};
+  const base = { id, kind, scaffoldIndex, origin: 'manual' as const, ...angle };
   if (kind === 'post' || kind === 'postExt') {
     return {
       ...base, x0Mm: at.xMm, x1Mm: at.xMm, levelMm: at.yMm,

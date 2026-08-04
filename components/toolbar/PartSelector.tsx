@@ -10,6 +10,8 @@ import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
 import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstacleToWall, snapToMagnetPin } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import NumInput from '@/components/ui/NumInput';
+// E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
+import { ANGLE_PRESETS, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
 
 /** アンチの既定サイズセット（手摺と intersect してパレット表示する）。規格別。 */
 const ANTI_BASE_LENGTHS_METRIC: number[] = [1800, 1200, 900, 600, 400];
@@ -64,30 +66,6 @@ type ToolbarDrag =
   | { type: 'anti'; lengthMm: number; direction: 'horizontal' | 'vertical'; antiWidth: AntiWidth; currentX: number; currentY: number }
   | { type: 'post'; currentX: number; currentY: number }
   | { type: 'obstacle'; obstacleType: ObstacleType; widthMm: number; heightMm: number; rotation: number; currentX: number; currentY: number };
-
-const ANGLE_PRESETS: { label: string; value: 'horizontal' | 'vertical' | number }[] = [
-  { label: '横', value: 'horizontal' as const },
-  { label: '縦', value: 'vertical' as const },
-  { label: '15°', value: 15 },
-  { label: '30°', value: 30 },
-  { label: '45°', value: 45 },
-  { label: '60°', value: 60 },
-  { label: '75°', value: 75 },
-];
-
-function getAnglePreviewPoints(angle: number | 'horizontal' | 'vertical') {
-  const W = 80, H = 80;
-  const cx = W / 2, cy = H / 2;
-  const len = 30;
-  let dx = len, dy = 0;
-  if (angle === 'vertical') { dx = 0; dy = len; }
-  else if (typeof angle === 'number') {
-    const rad = angle * Math.PI / 180;
-    dx = Math.cos(rad) * len;
-    dy = Math.sin(rad) * len;
-  }
-  return { W, H, cx, cy, dx, dy };
-}
 
 type PartTab = 'handrail' | 'post' | 'anti';
 const PART_TABS: { id: PartTab; label: string }[] = [

@@ -229,6 +229,7 @@ function ElevationInteractiveGroup({
   const addTool = useCanvasStore((s) => s.elevationAddTool);
   const addSize = useCanvasStore((s) => s.elevationAddSize);
   const addFlip = useCanvasStore((s) => s.elevationAddFlip);
+  const addAngle = useCanvasStore((s) => s.elevationAddAngle);   // E-8-v3c-fix4: 傾き
   const dropAt = useCanvasStore((s) => s.elevationDropAt);
   /** パレット選択中に指/カーソルが指している画面位置。シャドーを出す (= E-8-v3c-fix)。 */
   const [hoverScreen, setHoverScreen] = useState<{ x: number; y: number } | null>(null);
@@ -366,6 +367,7 @@ function ElevationInteractiveGroup({
       komaCount: isPost ? addSize : undefined,
       sizeMm: isPost ? undefined : addSize,
       flip: addFlip,
+      angleDeg: addAngle,
     });
     const sg = target.geom.scaffolds[0];
     const snap = snapJoint(draft, target.parts ?? [], sg, { dxMm: 0, dyMm: 0 }, {

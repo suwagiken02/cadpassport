@@ -494,6 +494,12 @@ type CanvasStore = {
   elevationAddFlip: boolean;
   toggleElevationAddFlip: () => void;
   /**
+   * 立面パレットで選んでいる傾き（度・E-8-v3c-fix4）。平面部材の角度指定と同じ流儀。
+   * 手摺・踏板は水平が 0°、支柱・ジャッキは垂直が 0°。置く前に決めてシャドーにも出す。
+   */
+  elevationAddAngle: number;
+  setElevationAddAngle: (v: number) => void;
+  /**
    * パレットからキャンバスへドロップした位置（クライアント座標）(= E-8-v3c)。
    * 平面の部材配置と同じ流儀で、パレットのボタンを掴んだままキャンバスで離すと置ける。
    * 立面レイヤーが拾って自分のローカル座標へ直し、置いたら null に戻す。
@@ -1586,6 +1592,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setElevationAddSize: (v) => set({ elevationAddSize: v }),
   elevationAddFlip: false,
   toggleElevationAddFlip: () => set({ elevationAddFlip: !get().elevationAddFlip }),
+  elevationAddAngle: 0,
+  setElevationAddAngle: (v) => set({ elevationAddAngle: v }),
   elevationDropAt: null,
   setElevationDropAt: (p) => set({ elevationDropAt: p }),
   setElevationOrphanParts: (viewId, orphans) => {

@@ -16,7 +16,7 @@
 //   吸着距離は mm 距離 × pxPerMm の等方比較でよい。
 // ============================================================
 import {
-  partRangeMm, postKomaMm, postMemberBottomMm, postMemberTopMm,
+  partPivotMm, partRangeMm, postKomaMm, postMemberBottomMm, postMemberTopMm, rotateAboutMm,
   type ElevationPart, type ElevationPartGeometry,
 } from './elevationParts';
 
@@ -55,8 +55,12 @@ export function partJoints(part: ElevationPart, sg: Scaffold | undefined): Joint
   if (part.removed) return [];
   const r = partRangeMm(part, sg);
   if (!r) return [];
-  const at = (xMm: number, yMm: number, kind: JointKind): JointPoint =>
-    ({ xMm, yMm, kind, partId: part.id });
+  // E-8-v3c-fix4: 傾けた部材は接合点も一緒に回る（斜めに掛けた手摺の端も吸着する）。
+  const pivot = part.angleDeg ? partPivotMm(part, sg) : null;
+  const at = (xMm: number, yMm: number, kind: JointKind): JointPoint => {
+    const p = pivot ? rotateAboutMm({ xMm, yMm }, pivot, part.angleDeg ?? 0) : { xMm, yMm };
+    return { xMm: p.xMm, yMm: p.yMm, kind, partId: part.id };
+  };
 
   switch (part.kind) {
     case 'post':
