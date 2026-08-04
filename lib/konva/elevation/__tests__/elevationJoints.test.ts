@@ -144,13 +144,27 @@ describe('原則2: ホゾ ⇔ 受け / 下端 ⇔ ジャッキ', () => {
     expect(500 + snap.dyMm).toBe(sg.jackTopMm);
   });
 
-  it('オス同士・メス同士は吸着しない', () => {
+  it('オス同士・メス同士は吸着しない（吸う組は必ずオス⇔メス）', () => {
     const railA: ElevationPart = {
       id: 'a', kind: 'rail', scaffoldIndex: 0, origin: 'manual', x0Mm: 0, x1Mm: 1800, levelMm: 1550,
     };
     const railB: ElevationPart = { ...railA, id: 'b', levelMm: 1560 };
-    // 楔(オス)同士なので、10mm しか離れていなくても吸わない
-    expect(snapJoint(railA, [railB], sg, { dxMm: 0, dyMm: 0 }, opts)).toMatchObject({ dxMm: 0, dyMm: 0 });
+    // E-8-v3e: 手摺同士は「楔 ⇔ 楔」では吸わない。相手の楔が出す**仮想ポケット**（＝そこに
+    //   立つはずの支柱の受け口）に吸う。組は必ずオス⇔メスのまま。
+    const snap = snapJoint(railA, [railB], sg, { dxMm: 0, dyMm: 0 }, opts);
+    expect(snap.from?.kind).toBe('wedge');
+    expect(snap.to?.kind).toBe('pocket');
+    expect(snap.to?.virtual).toBe(true);
+
+    // ホゾ(オス) と 楔(オス) は、近くても組にならない
+    const post: ElevationPart = {
+      id: 'p', kind: 'post', scaffoldIndex: 0, origin: 'manual',
+      x0Mm: 0, x1Mm: 0, levelMm: 1560, komaCount: 1,
+    };
+    const spigot = partJoints(post, sg).find((j) => j.kind === 'spigot')!;
+    expect(spigot.yMm).toBe(1560);
+    const s2 = snapJoint(post, [railA], sg, { dxMm: 0, dyMm: 0 }, opts);
+    expect(s2.from?.kind).not.toBe('spigot');    // ホゾは楔へは吸わない
   });
 });
 

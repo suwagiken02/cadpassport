@@ -326,17 +326,21 @@ function ElevationInteractiveGroup({
     const y = -preview.to.yMm / 10;
     const kh = ELEV_PART_STYLE.komaHalfGrid * 1.4;
     const jh = ELEV_PART_STYLE.jointHalfGrid * 1.4;
+    // E-8-v3e: 仮想の受け口（＝そこに将来入る支柱のコマ）は破線＋薄めで、
+    //   「今そこに部材がある」わけではないことを見た目でも区別する。
+    const dash = preview.to.virtual ? [3, 3] : undefined;
+    const op = preview.to.virtual ? 0.7 : 0.95;
     if (preview.to.kind === 'pocket') {
       // コマ（受け皿）: 皿＋外端の唇を拡大して「ここに楔が落ちる」を見せる
       return (
         <>
-          <Line points={[x - kh, y, x + kh, y]} stroke={c}
-            strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95} lineCap="round"
+          <Line points={[x - kh, y, x + kh, y]} stroke={c} dash={dash}
+            strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={op} lineCap="round"
             strokeScaleEnabled={false} listening={false} />
           {[-1, 1].map((dir) => (
             <Line key={`lip-${dir}`}
               points={[x + dir * kh, y, x + dir * kh, y - ELEV_PART_STYLE.komaLipGrid * 1.4]}
-              stroke={c} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={0.95}
+              stroke={c} dash={dash} strokeWidth={ELEV_PART_STYLE.komaWidthPx + 3} opacity={op}
               strokeScaleEnabled={false} listening={false} />
           ))}
         </>
@@ -344,8 +348,8 @@ function ElevationInteractiveGroup({
     }
     // 支柱の受け（カップ）／ジャッキの上端: 受け口の縁を強調
     return (
-      <Line points={[x - jh, y, x + jh, y]} stroke={c}
-        strokeWidth={ELEV_PART_STYLE.jointWidthPx + 3} opacity={0.95} lineCap="round"
+      <Line points={[x - jh, y, x + jh, y]} stroke={c} dash={dash}
+        strokeWidth={ELEV_PART_STYLE.jointWidthPx + 3} opacity={op} lineCap="round"
         strokeScaleEnabled={false} listening={false} />
     );
   })();
