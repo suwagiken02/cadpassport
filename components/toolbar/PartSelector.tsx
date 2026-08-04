@@ -131,9 +131,10 @@ export default function PartSelector() {
     ?? elevViews.find((v) => v.id === lastElevationViewId) ?? elevViews[0];
   const targetViewLabel = targetView ? (FACE_LABEL[targetView.face] ?? '立面') : null;
 
-  const paletteTabs = hasElevation ? (
+  // E-8-v3c-fix3: タブは常に出す。立面が無いページで隠すと「タブが見当たらない」になる。
+  const paletteTabs = (
     <div className="flex items-center gap-1 mb-2">
-      {([['plane', '平面部材'], ['elevation', '立面部材']] as const).map(([id, label]) => (
+      {([['plane', '平面部材'], ['elevation', '立面図']] as const).map(([id, label]) => (
         <button key={id} type="button"
           onClick={() => useCanvasStore.getState().setPartPaletteTab(id)}
           className={`px-3 py-1 rounded-lg text-[11px] font-bold border ${
@@ -143,7 +144,7 @@ export default function PartSelector() {
         </button>
       ))}
     </div>
-  ) : null;
+  );
   const {
     mode, setMode,
     selectedHandrailLength, setSelectedHandrailLength,
@@ -474,7 +475,7 @@ export default function PartSelector() {
   //   文脈の推測（立面を選択中か）だけに頼ると、何も選んでいない状態で「部材」を開いたときに
   //   平面へ落ちて「立面パレットが出ない」になる。推測は既定タブの決定にだけ使い、
   //   ユーザーはいつでも手で切り替えられるようにする。
-  if (hasElevation && paletteTab === 'elevation') {
+  if (paletteTab === 'elevation') {
     return (
       <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
         {paletteTabs}
@@ -639,8 +640,8 @@ export default function PartSelector() {
     <>
       {/* ===== モバイル（sm未満）: 画面下部固定バー ===== */}
       <div ref={mobilePanelRef} data-palette-panel className={`sm:hidden fixed bottom-16 left-0 right-0 z-50 border-t ${isDarkMode ? 'bg-gray-300 border-gray-400' : 'bg-dark-surface/95 border-dark-border'}`}>
-        {/* E-8-v3c-fix2: 平面／立面の切替（立面がある図面だけ出る） */}
-        {paletteTabs && <div className="px-3 pt-2">{paletteTabs}</div>}
+        {/* E-8-v3c-fix3: 平面／立面の切替（常に出す） */}
+        <div className="px-3 pt-2">{paletteTabs}</div>
         {isTabMode && (
           <>
             {/* タブ */}
@@ -876,11 +877,12 @@ export default function PartSelector() {
           </button>
         </div>
 
+        {/* E-8-v3c-fix3: 平面／立面の切替。折りたたみ中でも見えるよう expanded の外に置く。 */}
+        <div className="px-3 pt-2 shrink-0">{paletteTabs}</div>
+
         {/* コンテンツ */}
         {expanded && (
           <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
-            {/* E-8-v3c-fix2: 平面／立面の切替（立面がある図面だけ出る） */}
-            {paletteTabs && <div className="px-3 pt-2 shrink-0">{paletteTabs}</div>}
             {isTabMode && (
               <>
                 <div className="flex border-b border-dark-border shrink-0">
