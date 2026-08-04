@@ -500,6 +500,13 @@ type CanvasStore = {
   elevationAddAngle: number;
   setElevationAddAngle: (v: number) => void;
   /**
+   * 立面パネル（パレット＋操作）の表示位置 (= E-8-v3c-fix5)。null＝既定（画面下・中央）。
+   * 入口が 2 つ（立面タップ／部材メニュー）でもパネルは 1 つなので、位置も 1 つで共有する。
+   * セッション内だけ覚える（図面の保存データには入れない）。
+   */
+  elevationPanelPos: { x: number; y: number } | null;
+  setElevationPanelPos: (p: { x: number; y: number } | null) => void;
+  /**
    * パレットからキャンバスへドロップした位置（クライアント座標）(= E-8-v3c)。
    * 平面の部材配置と同じ流儀で、パレットのボタンを掴んだままキャンバスで離すと置ける。
    * 立面レイヤーが拾って自分のローカル座標へ直し、置いたら null に戻す。
@@ -1594,6 +1601,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   toggleElevationAddFlip: () => set({ elevationAddFlip: !get().elevationAddFlip }),
   elevationAddAngle: 0,
   setElevationAddAngle: (v) => set({ elevationAddAngle: v }),
+  elevationPanelPos: null,
+  setElevationPanelPos: (p) => set({ elevationPanelPos: p }),
   elevationDropAt: null,
   setElevationDropAt: (p) => set({ elevationDropAt: p }),
   setElevationOrphanParts: (viewId, orphans) => {

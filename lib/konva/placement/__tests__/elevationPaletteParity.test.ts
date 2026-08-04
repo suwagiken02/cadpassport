@@ -39,6 +39,27 @@ describe('立面パレットの構成（平面部材と同等）', () => {
     expect(/const ANGLE_PRESETS[^=]*=\s*\[/.test(PLANE)).toBe(false);
   });
 
+  it('立面のパネルは同時に 1 つだけ（E-8-v3c-fix5・重なりの再発防止）', () => {
+    const BAR = read('components/elevation/ElevationEditBar.tsx');
+    // 「部材」メニューの立面タブが開いている間は、立面バー側は自分を出さない
+    expect(BAR).toContain("if (showPartSelector && paletteTab === 'elevation') return null;");
+    // 操作行（削除/元に戻す）は独立したバーではなくパネルの中身
+    expect(BAR).toContain('<ElevationPartActions');
+    expect(PLANE).toContain('<ElevationPartActions');
+    // 画面下へ固定した独立バーが復活していないこと
+    expect(BAR.includes('fixed bottom-16')).toBe(false);
+    expect(PLANE.includes('fixed bottom-16 left-1/2 -translate-x-1/2 z-[60]')).toBe(false);
+  });
+
+  it('立面パネルは掴んで動かせる（位置は入口をまたいで共有）', () => {
+    const BAR = read('components/elevation/ElevationEditBar.tsx');
+    for (const src of [BAR, PLANE]) {
+      expect(src).toContain('<FloatingPanel');
+      expect(src).toContain('setElevationPanelPos');
+    }
+    expect(read('components/ui/FloatingPanel.tsx')).toContain('clampPanelPos');
+  });
+
   it('部材を選んでいる間は常に出る（種類だけの表示に戻っていない）', () => {
     // `{part && (` で姿図・角度ブロックを出している＝立面の有無や折りたたみで隠さない
     expect(PALETTE).toContain('{part && (');

@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import ElevationPartPalette from '@/components/elevation/ElevationPartPalette';
+import ElevationPartActions from '@/components/elevation/ElevationPartActions';
+import FloatingPanel from '@/components/ui/FloatingPanel';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 import { HandrailLengthMm, HandrailDirection, AntiWidth, ObstacleType } from '@/types';
 import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
@@ -79,6 +81,8 @@ export default function PartSelector() {
   const elevationViews = useCanvasStore((st) => st.canvasData.elevationViews);
   const paletteTab = useCanvasStore((st) => st.partPaletteTab);
   const lastElevationViewId = useCanvasStore((st) => st.lastElevationViewId);
+  /** 立面パネルの位置 (= E-8-v3c-fix5)。立面タップ側のパネルと共有する。 */
+  const elevationPanelPos = useCanvasStore((st) => st.elevationPanelPos);
   const selectedIds = useCanvasStore((st) => st.selectedIds);
   const modeNow = useCanvasStore((st) => st.mode);
   const elevViews = useMemo(() => elevationViews ?? [], [elevationViews]);
@@ -453,17 +457,24 @@ export default function PartSelector() {
   //   文脈の推測（立面を選択中か）だけに頼ると、何も選んでいない状態で「部材」を開いたときに
   //   平面へ落ちて「立面パレットが出ない」になる。推測は既定タブの決定にだけ使い、
   //   ユーザーはいつでも手で切り替えられるようにする。
+  // E-8-v3c-fix5: 立面のパネルは 1 つ（パレット＋操作行）。掴んで動かせる。
+  //   立面の操作バー(ElevationEditBar)は、このタブが開いている間は自分を出さない。
   if (paletteTab === 'elevation') {
     return (
-      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] bg-dark-surface border border-dark-border rounded-xl shadow-2xl px-3 py-2 max-w-[94vw]">
+      <FloatingPanel
+        title="部材（立面図）"
+        pos={elevationPanelPos}
+        onMove={(p) => useCanvasStore.getState().setElevationPanelPos(p)}
+      >
         {paletteTabs}
         <ElevationPartPalette showText={false} />
-        <p className="text-[10px] text-dimension">
+        <p className="text-[10px] text-dimension mb-2">
           {targetViewLabel
             ? `立面図の部材（${targetViewLabel}に置きます）`
             : '立面図がありません。📐 から配置してください'}
         </p>
-      </div>
+        <ElevationPartActions />
+      </FloatingPanel>
     );
   }
 
