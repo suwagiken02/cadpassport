@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Layer, Circle, Text, Rect } from 'react-konva';
 import Konva from 'konva';
+import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import {
@@ -19,6 +20,8 @@ const LONG_PRESS_MS = 300;
 const SNAP_PX = 10;
 const PRESS_MOVE_THRESHOLD_PX = 10;
 const MIDPOINT_SNAP_PX = 10;
+/** ガイド（角 ○ ・辺中央 ◆）自身の当たり判定の半径(px)。指で押せる大きさ (= R-1m-fix2)。 */
+const GUIDE_HIT_PX = 14;
 
 type DragInfo = {
   markerId: string;
@@ -39,6 +42,21 @@ export default function HeightMarkerLayer() {
   /** 高さツール中で、かつ対象階以外の建物に付いたマーカーか（減光＋タップ不可にする）。 */
   const isOtherFloorMarker = (buildingId: string) =>
     isHeightMarkerMode && !scopedBuildingIds.has(buildingId);
+
+  /**
+   * ガイド（角 ○ ・辺中央 ◆）をタップして、その位置にマーカーを置く (= R-1m-fix2)。
+   * 「見えているガイド＝押せば必ず置ける」。壁が他棟と重なっていても、上に載っている
+   * 他の図形（棟ライン等）に当たり判定を奪われても、ここが受けるので確実に置ける。
+   */
+  const placeAtGuide = (g: { buildingId: string; edgeIndex: number; t: number }) => {
+    const s = useCanvasStore.getState();
+    const id = uuidv4();
+    s.addHeightMarker({
+      id, buildingId: g.buildingId, edgeIndex: g.edgeIndex, t: g.t,
+      heightMm: s.lastHeightInputMm,
+    });
+    s.setHeightInputMarkerId(id);
+  };
 
   const layerRef = useRef<Konva.Layer>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -269,9 +287,13 @@ export default function HeightMarkerLayer() {
         const key = `guide-${g.buildingId}-${g.edgeIndex}-${g.kind}`;
         if (g.kind === 'corner') {
           return (
-            <Circle key={key} x={screenX} y={screenY}
-              radius={Math.max(3, 3.5 * zoom)} fill={MARKER_COLOR}
-              stroke="#fff" strokeWidth={1} opacity={0.7} listening={false} />
+            <React.Fragment key={key}>
+              <Circle x={screenX} y={screenY}
+                radius={Math.max(3, 3.5 * zoom)} fill={MARKER_COLOR}
+                stroke="#fff" strokeWidth={1} opacity={0.7} listening={false} />
+              <Circle x={screenX} y={screenY} radius={GUIDE_HIT_PX} fill="transparent"
+                onClick={() => placeAtGuide(g)} onTap={() => placeAtGuide(g)} />
+            </React.Fragment>
           );
         }
         let isNear = false;
@@ -280,16 +302,22 @@ export default function HeightMarkerLayer() {
         }
         const size = isNear ? Math.max(7, 9 * zoom) : Math.max(5, 6 * zoom);
         return (
-          <Rect key={key}
-            x={screenX} y={screenY}
-            width={size * 2} height={size * 2}
-            offsetX={size} offsetY={size}
-            rotation={45}
-            fill={MARKER_COLOR}
-            stroke="#fff" strokeWidth={1}
-            opacity={isNear ? 1.0 : 0.75}
-            listening={false}
-          />
+          <React.Fragment key={key}>
+            <Rect
+              x={screenX} y={screenY}
+              width={size * 2} height={size * 2}
+              offsetX={size} offsetY={size}
+              rotation={45}
+              fill={MARKER_COLOR}
+              stroke="#fff" strokeWidth={1}
+              opacity={isNear ? 1.0 : 0.75}
+              listening={false}
+            />
+            {/* R-1m-fix2: ◆ 自身がタップを受ける＝見えているガイドは必ず置ける
+                （他レイヤーの当たり判定にタップを奪われない）。 */}
+            <Circle x={screenX} y={screenY} radius={GUIDE_HIT_PX} fill="transparent"
+              onClick={() => placeAtGuide(g)} onTap={() => placeAtGuide(g)} />
+          </React.Fragment>
         );
       })}
       {markers.map((marker) => {

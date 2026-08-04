@@ -11,6 +11,8 @@
 // 棟ツールはガイドもスナップも出さず、クリックも捨てていた。
 // ============================================================
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import type { BuildingShape, Point } from '@/types';
 import { isPointInPolygon } from '../autoLayoutUtils';
 import {
@@ -212,5 +214,134 @@ describe('表示＝吸着（nearestOutlineGuide）', () => {
     const g = nearestOutlineGuide(eastMid, outlineGuides(resolveFloorScope(buildings, 1)), 5)!;
     expect(g.buildingId).toBe('f1');
     expect(g.kind).toBe('mid');
+  });
+});
+
+// ============================================================
+// R-1m-fix2: 向き依存の漏れが無いこと（実配置の再現＋4 方向パラメトリック）。
+//
+// 実機（鮎澤氏）: 2F が左・1F が右で、1F の「左辺」が 2F の右壁と重なる配置。
+// 4 隅の角スナップと右辺・上辺の ◆ は出るのに、左辺の ◆ だけ出なかった。
+// R-1m のときは「右辺が重なり」だったので、辺の向きに依存する漏れが疑われた。
+// → 候補生成（outlineGuides）は向きにも重なりにも一切依存しないことをここで固定する。
+// ============================================================
+describe('実配置の再現: 2F が左・1F が右（1F 左辺 = 2F 右壁）', () => {
+  /** 2F 本体(x 0..100 / y 0..100) の右壁 = 1F 下屋(x 100..200 / y 20..80) の左壁。 */
+  const upperLeft = building('upper', 2, rect(0, 0, 100, 100));
+  const lowerRight = building('lower', 1, rect(100, 20, 200, 80));
+  const both = [upperLeft, lowerRight];
+  /** 1F 左辺の中点（妻の TOP を置きたい場所）。 */
+  const leftMid: Point = { x: 100, y: 50 };
+
+  it('1F を編集中の候補に、左辺（重なり辺）の中央 ◆ が入っている', () => {
+    const gs = outlineGuides(resolveFloorScope(both, 1));
+    const mids = gs.filter((g) => g.kind === 'mid');
+    expect(mids).toHaveLength(4);
+    expect(mids.some((g) => g.point.x === leftMid.x && g.point.y === leftMid.y)).toBe(true);
+    expect(gs.every((g) => g.buildingId === 'lower')).toBe(true);   // 2F は入らない（階スコープ）
+  });
+
+  it('左辺の ◆ に吸着して置ける（t=0.5・1F の辺）', () => {
+    const gs = outlineGuides(resolveFloorScope(both, 1));
+    const g = nearestOutlineGuide({ x: 99, y: 52 }, gs, 5)!;
+    expect(g.buildingId).toBe('lower');
+    expect(g.kind).toBe('mid');
+    expect(g.t).toBe(0.5);
+    expect(g.point).toEqual(leftMid);
+  });
+
+  it('4 隅の角も従来どおり（角が効いて中央だけ出ない、が起きない）', () => {
+    const gs = outlineGuides(resolveFloorScope(both, 1));
+    const corners = gs.filter((g) => g.kind === 'corner').map((g) => g.point);
+    expect(corners).toEqual([
+      { x: 100, y: 20 }, { x: 200, y: 20 }, { x: 200, y: 80 }, { x: 100, y: 80 },
+    ]);
+  });
+});
+
+describe('パラメトリック: 辺の向き 4 方向 × 重なりの有無', () => {
+  /** 対象の 1F（中央の矩形）。辺は 上/右/下/左 の 4 本。 */
+  const target = building('target', 1, rect(100, 100, 200, 160));
+  /** 各辺の中点（辺 index 順）。 */
+  const expectedMids: Point[] = [
+    { x: 150, y: 100 },   // 上
+    { x: 200, y: 130 },   // 右
+    { x: 150, y: 160 },   // 下
+    { x: 100, y: 130 },   // 左
+  ];
+  /** 隣の建物（2F）を 4 方向それぞれに接して置く（壁が完全に重なる）。 */
+  const neighbours: { dir: string; b: BuildingShape }[] = [
+    { dir: '北（上辺が重なる）', b: building('n', 2, rect(100, 40, 200, 100)) },
+    { dir: '東（右辺が重なる）', b: building('e', 2, rect(200, 100, 260, 160)) },
+    { dir: '南（下辺が重なる）', b: building('s', 2, rect(100, 160, 200, 220)) },
+    { dir: '西（左辺が重なる）', b: building('w', 2, rect(40, 100, 100, 160)) },
+  ];
+
+  it('重なり無し: 全 4 辺の中央 ◆ が出る', () => {
+    const mids = outlineGuides([target]).filter((g) => g.kind === 'mid');
+    expect(mids.map((g) => g.point)).toEqual(expectedMids);
+  });
+
+  for (const { dir, b } of neighbours) {
+    it(`${dir}: 隣の棟があっても全 4 辺の中央 ◆ が出て、それぞれ吸着できる`, () => {
+      const scope = resolveFloorScope([b, target], 1);       // 隣が配列の先でも対象は 1F だけ
+      expect(scope.map((s) => s.id)).toEqual(['target']);
+      const gs = outlineGuides(scope);
+      const mids = gs.filter((g) => g.kind === 'mid');
+      expect(mids.map((g) => g.point)).toEqual(expectedMids);
+      // 各中点で、その辺の中央として吸着できる
+      mids.forEach((m, i) => {
+        const hit = nearestOutlineGuide(m.point, gs, 5)!;
+        expect(hit.kind).toBe('mid');
+        expect(hit.edgeIndex).toBe(i);
+        expect(hit.t).toBe(0.5);
+      });
+      // 角も 4 つ
+      expect(gs.filter((g) => g.kind === 'corner')).toHaveLength(4);
+    });
+  }
+
+  it('隣の棟を 4 方向すべてに置いても内容は変わらない（重なりと無関係）', () => {
+    const alone = outlineGuides([target]);
+    const surrounded = outlineGuides(resolveFloorScope([...neighbours.map((n) => n.b), target], 1));
+    expect(surrounded).toEqual(alone);
+  });
+});
+
+// ============================================================
+// R-1m-fix2: 候補にあるのに実機で見えない＝描画側で潰れていた。
+// 「◆ は必ず一番上に描かれ、必ず押せる」を構造として固定する（DOM 無しなのでソース走査）。
+// ============================================================
+describe('描画側: ガイドが他の図形に隠されない/奪われない', () => {
+  const read = (p: string) =>
+    fs.readFileSync(path.resolve(__dirname, '../../../', p), 'utf8');
+  const CANVAS = read('components/canvas/GridCanvas.tsx');
+  const HEIGHT = read('components/canvas/HeightMarkerLayer.tsx');
+  const RIDGE = read('components/canvas/RidgeLineLayer.tsx');
+
+  it('高さレイヤーは棟ライン・★ より後（＝上）に描かれる', () => {
+    const h = CANVAS.indexOf('<HeightMarkerLayer />');
+    const r = CANVAS.indexOf('<RidgeLineLayer />');
+    const s = CANVAS.indexOf('<ScaffoldStartLayer />');
+    expect(h).toBeGreaterThan(0);
+    expect(h).toBeGreaterThan(r);
+    expect(h).toBeGreaterThan(s);
+  });
+
+  it('高さツール中、棟ラインは端点 ● とラベルを出さず当たり判定も持たない', () => {
+    expect(RIDGE).toContain('yieldToWallGuides');
+    expect(RIDGE).toContain('hitStrokeWidth={interactive ? 20 : 0}');
+    expect(RIDGE).toContain('{!yieldToWallGuides && (');
+  });
+
+  it('ガイド ◆ ○ 自身がタップを受ける（見えている＝置ける）', () => {
+    expect(HEIGHT).toContain('placeAtGuide');
+    expect(HEIGHT).toContain('radius={GUIDE_HIT_PX}');
+  });
+
+  it('表示は outlineGuides から作る（辺ごとの独自ループに戻っていない）', () => {
+    expect(HEIGHT).toContain('outlineGuides(scopedBuildings)');
+    expect(RIDGE).toContain('outlineGuides(scopedBuildings)');
+    expect(CANVAS).toContain('nearestOutlineGuide');
   });
 });

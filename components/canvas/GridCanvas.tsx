@@ -650,14 +650,16 @@ export default function GridCanvas({ width, height }: Props) {
       {/* マグネットピンレイヤー（最前面のガイド） */}
       <MagnetPinLayer />
 
-      {/* 高さマーカーレイヤー (= Task #8 Phase C、 タップで編集/削除・ドラッグで移動) */}
-      <HeightMarkerLayer />
-
       {/* 棟ラインレイヤー (= E-3.8d、 2点入力・編集・ドラッグ移動) */}
       <RidgeLineLayer />
 
       {/* 足場開始 ★ アイコン (= 起点角、 #FFD700 ゴールド) */}
       <ScaffoldStartLayer />
+
+      {/* 高さマーカーレイヤー (= Task #8 Phase C、 タップで編集/削除・ドラッグで移動)。
+          R-1m-fix2: 壁の吸着ガイド（角 ○ ・辺中央 ◆）を持つので、棟ライン・★ より**上**に置く。
+          棟の端点は壁の中点に吸着して置かれる＝ ◆ と同じ座標に来るため、下にあると隠れていた。 */}
+      <HeightMarkerLayer />
 
       {/* マグネットピン: 起点候補ピッカー（ピンモード中のみ表示） */}
       <PinAnchorPickerLayer />

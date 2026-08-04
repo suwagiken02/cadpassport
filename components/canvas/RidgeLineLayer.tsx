@@ -29,6 +29,7 @@ export default function RidgeLineLayer() {
     canvasData, zoom, panX, panY, canvasSize,
     isRidgeLineMode, setRidgeInputLineId, addRidgeLine, moveRidgeLine,
     ridgeDraft: draft, setRidgeDraft: setDraft, activeFloor,
+    isHeightMarkerMode,
   } = useCanvasStore();
   const gridPx = INITIAL_GRID_PX * zoom;
   const ridgeLines = canvasData.ridgeLines ?? [];
@@ -174,28 +175,41 @@ export default function RidgeLineLayer() {
         <Circle x={sx(cursor.x)} y={sy(cursor.y)} radius={r} fill={cursorSnapped ? SNAP_COLOR : RIDGE_COLOR} opacity={0.9} listening={false} />
       )}
 
-      {/* 既存の棟ライン */}
+      {/* 既存の棟ライン。
+          R-1m-fix2: 棟の端点は「壁の中点」に吸着して置かれる＝高さツールの ◆ と同じ座標に来る。
+          このレイヤーは高さレイヤーより上なので、端点 ●・ラベルが ◆ を覆い、20px の当たり判定が
+          タップを先取りして「棟を編集」が開く／棟をドラッグしてしまう（屋根の点線で直した
+          R-1h-fix と同じ事故）。高さツール中は薄く・当たり判定なしにして、壁のガイドを譲る。 */}
       {ridgeLines.map((line) => {
         const midX = (line.p1.x + line.p2.x) / 2;
         const midY = (line.p1.y + line.p2.y) / 2;
+        const yieldToWallGuides = isHeightMarkerMode;   // 壁のガイドを触る操作中
+        const interactive = !isRidgeLineMode && !yieldToWallGuides;
         return (
           <React.Fragment key={line.id}>
             <Line
               points={[sx(line.p1.x), sy(line.p1.y), sx(line.p2.x), sy(line.p2.y)]}
               stroke={RIDGE_COLOR} strokeWidth={2.5} dash={[12, 6]}
-              hitStrokeWidth={20}
-              draggable={!isRidgeLineMode}
+              opacity={yieldToWallGuides ? 0.35 : 1}
+              hitStrokeWidth={interactive ? 20 : 0}
+              listening={interactive}
+              draggable={interactive}
               onDragEnd={(e) => commitDrag(line.id, e.target as Konva.Line)}
               onClick={() => setRidgeInputLineId(line.id)}
               onTap={() => setRidgeInputLineId(line.id)}
             />
-            <Circle x={sx(line.p1.x)} y={sy(line.p1.y)} radius={r} fill={RIDGE_COLOR} listening={false} />
-            <Circle x={sx(line.p2.x)} y={sy(line.p2.y)} radius={r} fill={RIDGE_COLOR} listening={false} />
-            <Text
-              x={sx(midX) + 6} y={sy(midY) - fs / 2}
-              text={`棟${line.heightMm}`} fontSize={fs} fontStyle="bold"
-              fill={RIDGE_COLOR} listening={false}
-            />
+            {/* 端点 ● とラベルは、高さツール中は出さない（◆ と同じ位置に重なるため） */}
+            {!yieldToWallGuides && (
+              <>
+                <Circle x={sx(line.p1.x)} y={sy(line.p1.y)} radius={r} fill={RIDGE_COLOR} listening={false} />
+                <Circle x={sx(line.p2.x)} y={sy(line.p2.y)} radius={r} fill={RIDGE_COLOR} listening={false} />
+                <Text
+                  x={sx(midX) + 6} y={sy(midY) - fs / 2}
+                  text={`棟${line.heightMm}`} fontSize={fs} fontStyle="bold"
+                  fill={RIDGE_COLOR} listening={false}
+                />
+              </>
+            )}
           </React.Fragment>
         );
       })}
