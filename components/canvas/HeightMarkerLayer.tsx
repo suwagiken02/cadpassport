@@ -7,6 +7,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import {
   getOutlinePolygon,
+  outlineGuides,
   projectPointToOutline,
   snapToCorners,
   snapToMidpointIfNear,
@@ -33,6 +34,8 @@ export default function HeightMarkerLayer() {
   //   対象階に建物が無ければ全建物＝従来挙動（resolveFloorScope の安全側フォールバック）。
   const scopedBuildings = resolveFloorScope(canvasData.buildings, activeFloor);
   const scopedBuildingIds = new Set(scopedBuildings.map((b) => b.id));
+  // R-1m-fix: 角 ○ ・辺中央 ◆ の表示は outlineGuides（＝スナップ判定と同じ出所）から作る。
+  const guides = outlineGuides(scopedBuildings);
   /** 高さツール中で、かつ対象階以外の建物に付いたマーカーか（減光＋タップ不可にする）。 */
   const isOtherFloorMarker = (buildingId: string) =>
     isHeightMarkerMode && !scopedBuildingIds.has(buildingId);
@@ -257,48 +260,37 @@ export default function HeightMarkerLayer() {
 
   return (
     <Layer ref={layerRef}>
-      {/* 中点 ◇ ガイド (= isHeightMarkerMode 時のみ、 ドラッグ中ポインタ近傍ならハイライト) */}
-      {isHeightMarkerMode && scopedBuildings.flatMap((building) => {
-        const outline = getOutlinePolygon(building);
-        return outline.map((p1, i) => {
-          const p2 = outline[(i + 1) % outline.length];
-          const midX = (p1.x + p2.x) / 2;
-          const midY = (p1.y + p2.y) / 2;
-          const screenMidX = midX * gridPx + panX;
-          const screenMidY = midY * gridPx + panY;
-          let isNear = false;
-          if (pointerScreenPos && isDraggingRef.current) {
-            const dist = Math.hypot(pointerScreenPos.x - screenMidX, pointerScreenPos.y - screenMidY);
-            isNear = dist < MIDPOINT_SNAP_PX;
-          }
-          const size = isNear ? Math.max(7, 9 * zoom) : Math.max(5, 6 * zoom);
-          const opacity = isNear ? 1.0 : 0.5;
+      {/* 吸着ガイド（角 ○ ・辺中央 ◆）。R-1m-fix: 表示もスナップも outlineGuides が唯一の出所で、
+          対象階の建物の**全辺**に必ず出る（他棟と壁が重なっていても関係ない）。
+          白フチを付けて、重なった壁・他階のマーカーの上でも必ず見えるようにする。 */}
+      {isHeightMarkerMode && guides.map((g) => {
+        const screenX = g.point.x * gridPx + panX;
+        const screenY = g.point.y * gridPx + panY;
+        const key = `guide-${g.buildingId}-${g.edgeIndex}-${g.kind}`;
+        if (g.kind === 'corner') {
           return (
-            <Rect
-              key={`midpoint-${building.id}-${i}`}
-              x={screenMidX} y={screenMidY}
-              width={size * 2} height={size * 2}
-              offsetX={size} offsetY={size}
-              rotation={45}
-              fill={MARKER_COLOR}
-              opacity={opacity}
-              listening={false}
-            />
+            <Circle key={key} x={screenX} y={screenY}
+              radius={Math.max(3, 3.5 * zoom)} fill={MARKER_COLOR}
+              stroke="#fff" strokeWidth={1} opacity={0.7} listening={false} />
           );
-        });
-      })}
-      {/* R-1m: 角 ○ ガイド。中点 ◇ と同じく対象階の建物の全辺に出す（角スナップの見える化）。
-          他棟と壁が重なる辺でも必ず出る＝置ける場所が壁の重なりに依存しない。 */}
-      {isHeightMarkerMode && scopedBuildings.flatMap((building) => {
-        const outline = getOutlinePolygon(building);
-        const cr = Math.max(3, 3.5 * zoom);
-        return outline.map((p, i) => (
-          <Circle
-            key={`corner-${building.id}-${i}`}
-            x={p.x * gridPx + panX} y={p.y * gridPx + panY}
-            radius={cr} fill={MARKER_COLOR} opacity={0.5} listening={false}
+        }
+        let isNear = false;
+        if (pointerScreenPos && isDraggingRef.current) {
+          isNear = Math.hypot(pointerScreenPos.x - screenX, pointerScreenPos.y - screenY) < MIDPOINT_SNAP_PX;
+        }
+        const size = isNear ? Math.max(7, 9 * zoom) : Math.max(5, 6 * zoom);
+        return (
+          <Rect key={key}
+            x={screenX} y={screenY}
+            width={size * 2} height={size * 2}
+            offsetX={size} offsetY={size}
+            rotation={45}
+            fill={MARKER_COLOR}
+            stroke="#fff" strokeWidth={1}
+            opacity={isNear ? 1.0 : 0.75}
+            listening={false}
           />
-        ));
+        );
       })}
       {markers.map((marker) => {
         const building = canvasData.buildings.find((b) => b.id === marker.buildingId);

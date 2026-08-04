@@ -16,6 +16,8 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
 import { buildingAtPointOnFloor, isPointOnOrInPolygon, resolveFloorScope } from '@/lib/konva/floorScope';
 import { computeRidgeGuides, snapRidgeInput } from '@/lib/konva/elevation/ridgeProjection';
+// R-1m-fix: 角 ○ ・辺中央 ◆ の表示は高さツールと同じ 1 箇所（outlineGuides）から作る。
+import { outlineGuides } from '@/lib/konva/heightMarkerUtils';
 import type { Point, BuildingShape } from '@/types';
 
 const RIDGE_COLOR = '#E07B39';
@@ -148,20 +150,17 @@ export default function RidgeLineLayer() {
 
       {/* R-1m: 吸着点のガイド（対象階の建物の全辺に、角 ○ と辺中点 ◇ を出す）。
           他棟と壁が重なる辺でも必ず出す＝「どこへ吸着できるか」が壁の重なりに依存しない。 */}
-      {isRidgeLineMode && scopedBuildings.flatMap((b) => {
-        if (b.points.length < 3) return [];
-        return b.points.flatMap((p1, i) => {
-          const p2 = b.points[(i + 1) % b.points.length];
-          const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-          const gr = Math.max(3, 3.5 * zoom);
-          return [
-            <Circle key={`snap-v-${b.id}-${i}`} x={sx(p1.x)} y={sy(p1.y)} radius={gr}
-              fill={SNAP_COLOR} opacity={0.5} listening={false} />,
-            <Rect key={`snap-m-${b.id}-${i}`} x={sx(mid.x)} y={sy(mid.y)}
-              width={gr * 2} height={gr * 2} offsetX={gr} offsetY={gr} rotation={45}
-              fill={SNAP_COLOR} opacity={0.5} listening={false} />,
-          ];
-        });
+      {isRidgeLineMode && outlineGuides(scopedBuildings).map((g) => {
+        const gr = Math.max(3, 3.5 * zoom);
+        const key = `snap-${g.buildingId}-${g.edgeIndex}-${g.kind}`;
+        return g.kind === 'corner' ? (
+          <Circle key={key} x={sx(g.point.x)} y={sy(g.point.y)} radius={gr}
+            fill={SNAP_COLOR} stroke="#fff" strokeWidth={1} opacity={0.7} listening={false} />
+        ) : (
+          <Rect key={key} x={sx(g.point.x)} y={sy(g.point.y)}
+            width={gr * 2} height={gr * 2} offsetX={gr} offsetY={gr} rotation={45}
+            fill={SNAP_COLOR} stroke="#fff" strokeWidth={1} opacity={0.7} listening={false} />
+        );
       })}
 
       {/* ドラフト線プレビュー＋カーソルマーカー（スナップ時は色変更） */}

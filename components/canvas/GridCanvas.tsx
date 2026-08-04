@@ -35,7 +35,7 @@ import { mmToGrid } from '@/lib/konva/gridUtils';
 import { getAllExistingVertices } from '@/lib/konva/snapUtils';
 import { getPrintAreaGrid } from '@/lib/export/pdfExport';
 import { titleBlockFrameRect, compassFrameRect } from '@/lib/export/pdfLayout';
-import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon } from '@/lib/konva/heightMarkerUtils';
+import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon, nearestOutlineGuide, outlineGuides } from '@/lib/konva/heightMarkerUtils';
 import { resolveFloorScope } from '@/lib/konva/floorScope';
 
 type Props = {
@@ -407,7 +407,12 @@ export default function GridCanvas({ width, height }: Props) {
               // R-1h-2: スナップ対象を編集中の階の建物だけに絞る（総二階では 1F/2F の壁が平面上で
               //   重なり、どちらに付いたかが数px差で決まっていた）。対象階に建物が無ければ全建物＝従来挙動。
               const scopedBuildings = resolveFloorScope(canvasData.buildings, useCanvasStore.getState().activeFloor);
-              const result = findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
+              // R-1m-fix: 見えているガイド（角 ○ ・辺中央 ◆）が最優先。表示と同じ outlineGuides から
+              //   最寄りを採るので「◆ は見えているのに吸着しない／別の建物の辺に付く」が起きない。
+              const guide = nearestOutlineGuide(clickGrid, outlineGuides(scopedBuildings), thresholdGrid);
+              const result = guide
+                ? { buildingId: guide.buildingId, edgeIndex: guide.edgeIndex, t: guide.t }
+                : findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
               if (result) {
                 const newId = uuidv4();
                 // 配置時の初期値は前回入力値 (= Issue 3、 0 の場合は従来通り)
@@ -490,7 +495,12 @@ export default function GridCanvas({ width, height }: Props) {
               // R-1h-2: スナップ対象を編集中の階の建物だけに絞る（総二階では 1F/2F の壁が平面上で
               //   重なり、どちらに付いたかが数px差で決まっていた）。対象階に建物が無ければ全建物＝従来挙動。
               const scopedBuildings = resolveFloorScope(canvasData.buildings, useCanvasStore.getState().activeFloor);
-              const result = findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
+              // R-1m-fix: 見えているガイド（角 ○ ・辺中央 ◆）が最優先。表示と同じ outlineGuides から
+              //   最寄りを採るので「◆ は見えているのに吸着しない／別の建物の辺に付く」が起きない。
+              const guide = nearestOutlineGuide(clickGrid, outlineGuides(scopedBuildings), thresholdGrid);
+              const result = guide
+                ? { buildingId: guide.buildingId, edgeIndex: guide.edgeIndex, t: guide.t }
+                : findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
               if (result) {
                 const newId = uuidv4();
                 // 配置時の初期値は前回入力値 (= Issue 3、 0 の場合は従来通り)

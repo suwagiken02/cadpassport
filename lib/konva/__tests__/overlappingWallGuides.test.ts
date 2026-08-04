@@ -16,7 +16,9 @@ import { isPointInPolygon } from '../autoLayoutUtils';
 import {
   buildingAtPointOnFloor, distanceToPolygonEdges, isPointOnOrInPolygon, resolveFloorScope,
 } from '../floorScope';
-import { findClosestOutlineEdge, snapToMidpointIfNear } from '../heightMarkerUtils';
+import {
+  findClosestOutlineEdge, nearestOutlineGuide, outlineGuides, snapToMidpointIfNear,
+} from '../heightMarkerUtils';
 import { snapRidgeInput } from '../elevation/ridgeProjection';
 
 const rect = (x0: number, y0: number, x1: number, y1: number): Point[] => [
@@ -134,5 +136,81 @@ describe('高さマーカー: 重なり辺でも狙った建物の辺に付く',
     const main = building('main', 1, rect(110, 0, 210, 100));
     const r = findClosestOutlineEdge({ x: 101, y: 50 }, [main, annex], 5)!;
     expect(r.buildingId).toBe('annex');
+  });
+});
+
+// ============================================================
+// R-1m-fix: ガイドの「表示」も「スナップ判定」も outlineGuides が唯一の出所。
+//
+// 実機症状: R-1m 後、重なり辺でも角スナップ・マーカー設置はできるようになったが、
+// 辺中央の ◆ だけが右辺（2F 壁と重なる辺）に出なかった。
+// 表示は「建物の辺ごと」、判定は「クリックで決まった 1 辺の中央だけ」と別ロジックで、
+// 重なり辺では判定側が隣（共線で長い）の辺に解決されると狙った ◆ が反応しない。
+// 両方を 1 つのリストから作り、対象階の建物の全辺に必ず出ることを固定する。
+// ============================================================
+describe('ガイドの表示リスト（outlineGuides）', () => {
+  it('対象階の建物の全辺に 角 ○ と 辺中央 ◆ が出る（重なり辺も欠けない）', () => {
+    const gs = outlineGuides([f1]);
+    expect(gs.filter((g) => g.kind === 'mid')).toHaveLength(4);
+    expect(gs.filter((g) => g.kind === 'corner')).toHaveLength(4);
+    // 2F と重なる東辺(edgeIndex=1)の中央 ◆ が必ずある
+    const east = gs.find((g) => g.kind === 'mid' && g.edgeIndex === 1);
+    expect(east?.point).toEqual(eastMid);
+    // 左（西）辺の中央も従来どおり
+    expect(gs.some((g) => g.kind === 'mid' && g.point.x === 0 && g.point.y === 50)).toBe(true);
+  });
+
+  it('他の建物の有無で内容が変わらない（重なりと無関係）', () => {
+    const only = outlineGuides([f1]);
+    const withNeighbour = outlineGuides([f1]).concat();  // 対象階に 2F は入らない
+    expect(withNeighbour).toEqual(only);
+    // 2F を対象にすれば 2F の全辺（＝別の中点）になる
+    const g2 = outlineGuides([f2]).filter((g) => g.kind === 'mid');
+    expect(g2).toHaveLength(4);
+    expect(g2.some((g) => g.point.x === 100 && g.point.y === 50)).toBe(true);
+  });
+
+  it('長さ 0 の辺（重複頂点）は中央を作らない', () => {
+    const dup = building('dup', 1, [
+      { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 },
+    ]);
+    const mids = outlineGuides([dup]).filter((g) => g.kind === 'mid');
+    expect(mids).toHaveLength(3);
+  });
+});
+
+describe('表示＝吸着（nearestOutlineGuide）', () => {
+  const gs = outlineGuides([f1]);
+
+  it('重なり辺の ◆ を狙えばその中央に吸着する', () => {
+    const g = nearestOutlineGuide({ x: 101, y: 52 }, gs, 5)!;
+    expect(g.kind).toBe('mid');
+    expect(g.edgeIndex).toBe(1);
+    expect(g.t).toBe(0.5);
+    expect(g.point).toEqual(eastMid);
+  });
+
+  it('角の近くなら角（t=0）', () => {
+    const g = nearestOutlineGuide({ x: 101, y: 21 }, gs, 5)!;
+    expect(g.kind).toBe('corner');
+    expect(g.point).toEqual({ x: 100, y: 20 });
+  });
+
+  it('どのガイドからも離れていれば null（従来の辺への射影に任せる）', () => {
+    expect(nearestOutlineGuide({ x: 100, y: 35 }, gs, 5)).toBeNull();
+  });
+
+  it('同距離なら中央 ◆ を優先（◆ を狙う操作そのものなので）', () => {
+    // 辺長 20 の正方形: 角(0,0) と 中央(10,0) から等距離の点 (5,0)
+    const sq = building('sq', 1, rect(0, 0, 20, 20));
+    const g = nearestOutlineGuide({ x: 5, y: 0 }, outlineGuides([sq]), 6)!;
+    expect(g.kind).toBe('mid');
+  });
+
+  it('隣の建物の共線な辺があっても、対象階の建物の ◆ に吸着する', () => {
+    // 対象は 1F だけ（階スコープ）。2F の西壁中点(100,50) と同座標でも 1F の辺に付く。
+    const g = nearestOutlineGuide(eastMid, outlineGuides(resolveFloorScope(buildings, 1)), 5)!;
+    expect(g.buildingId).toBe('f1');
+    expect(g.kind).toBe('mid');
   });
 });

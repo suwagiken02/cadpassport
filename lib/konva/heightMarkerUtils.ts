@@ -16,6 +16,71 @@ export function getOutlinePolygon(building: BuildingShape): Point[] {
 const EDGE_TIE_EPS = 1e-6;
 
 /**
+ * 吸着ガイド点 (= R-1m-fix)。角(t=0) と 辺中央(t=0.5)。
+ * **表示（○・◆）とスナップ判定の唯一の出所**。
+ */
+export type OutlineGuide = {
+  buildingId: string;
+  edgeIndex: number;
+  kind: 'corner' | 'mid';
+  /** 辺上の位置。角は 0、中央は 0.5。 */
+  t: number;
+  /** グリッド座標。 */
+  point: Point;
+};
+
+/**
+ * 対象建物[]の全辺から、角と辺中央のガイド点を作る (= R-1m-fix)。
+ *
+ * 経緯: 表示（◆の描画）は「建物の辺ごとに 1 個」、スナップは「クリックで決まった 1 辺の中央だけ」と
+ * **別々のロジック**だった。他棟と壁を共有する辺では、クリックが隣の建物の（共線で長い）辺に
+ * 解決されることがあり、狙っている ◆ は吸着しない＝実機では「その辺だけ中央ガイドが効かない/
+ * 出ていない」に見えた。表示も判定もこの 1 関数から作ることで、見えているガイド＝吸着できる点、
+ * を構造として保証する（重なりの有無に依らず、対象建物の全辺に必ず出る）。
+ *
+ * 長さ 0 の辺（重複頂点）は中央を作らない（角と重なって意味がないため）。
+ */
+export function outlineGuides(buildings: BuildingShape[]): OutlineGuide[] {
+  const out: OutlineGuide[] = [];
+  for (const b of buildings) {
+    const outline = getOutlinePolygon(b);
+    if (outline.length < 2) continue;
+    for (let i = 0; i < outline.length; i++) {
+      const p1 = outline[i];
+      const p2 = outline[(i + 1) % outline.length];
+      out.push({ buildingId: b.id, edgeIndex: i, kind: 'corner', t: 0, point: { x: p1.x, y: p1.y } });
+      if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 0.001) continue;
+      out.push({
+        buildingId: b.id, edgeIndex: i, kind: 'mid', t: 0.5,
+        point: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 },
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * ポインタ（グリッド座標）に最も近いガイド点 (= R-1m-fix)。tolGrid 以内に無ければ null。
+ * 同距離なら中央 ◆ を優先する（角は辺の解決でも拾えるが、中央は ◆ を狙う操作そのもの）。
+ */
+export function nearestOutlineGuide(
+  pt: Point, guides: OutlineGuide[], tolGrid: number,
+): OutlineGuide | null {
+  let best: OutlineGuide | null = null;
+  let bestD = Infinity;
+  for (const g of guides) {
+    const d = Math.hypot(g.point.x - pt.x, g.point.y - pt.y);
+    if (d > tolGrid) continue;
+    if (d < bestD - EDGE_TIE_EPS
+      || (d < bestD + EDGE_TIE_EPS && g.kind === 'mid' && best?.kind !== 'mid')) {
+      bestD = Math.min(bestD, d);
+      best = g;
+    }
+  }
+  return best;
+}
+
+/**
  * クリック点に最も近い建物 outline の辺を見つける。
  * 閾値内に辺があれば { buildingId, edgeIndex, t } を返す、 なければ null。
  *
