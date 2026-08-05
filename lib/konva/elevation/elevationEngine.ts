@@ -245,7 +245,9 @@ export function buildBuildingOutline(
     // この辺の内部マーカー t（0<t<1）を分割点にする（妻＝辺中央の高マーカー対応）。
     const innerTs = buildingMarkerCount >= 2
       ? ms
-          .filter(m => m.buildingId === building.id && m.edgeIndex === i && m.t > 1e-6 && m.t < 1 - 1e-6)
+          // R-1n: roofId 付きは屋根 polygon 基準＝壁の辺 index ではないので分割に使わない。
+          .filter(m => m.buildingId === building.id && !m.roofId
+            && m.edgeIndex === i && m.t > 1e-6 && m.t < 1 - 1e-6)
           .map(m => m.t)
           .sort((x, y) => x - y)
       : [];
@@ -818,7 +820,7 @@ function buildRoofBandsForRoofs(
     for (const s of segs) outlineMax = Math.max(outlineMax, s.heightStartMm, s.heightEndMm);
     if (!Number.isFinite(outlineMax)) continue;
 
-    const markerMax = roofMarkerMaxMm(building, coverages, markers);
+    const markerMax = roofMarkerMaxMm(building, coverages, markers, roof.id);
     const hasRidgeMarker = markerMax != null && markerMax > outlineMax + 1e-6;
     const hasOverhang = ext.xStart < wallXStart - 1e-6 || ext.xEnd > wallXEnd + 1e-6;
     const myRidgeLines = ridgeByRoof.get(roof.id) ?? [];

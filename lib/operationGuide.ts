@@ -17,6 +17,11 @@ export type GuideState = {
   hasMeasurePoint1: boolean;
   /** 高さマーカー配置モード。 */
   isHeightMarkerMode: boolean;
+  /**
+   * 高さ・棟の入力対象の階に、屋根が 1 つも無いか (= R-1n)。
+   * ガイド（角・辺中央）は屋根領域に出すので、屋根が無いと入力の的が無い＝先に屋根を作る。
+   */
+  noRoofOnFloor?: boolean;
   /** 棟ライン配置モード。ridgeDraft(1点目)の有無で始点/終点を出し分ける。 */
   isRidgeLineMode: boolean;
   hasRidgeDraft: boolean;
@@ -64,8 +69,14 @@ export function getOperationGuide(s: GuideState): string | null {
   if (s.isMeasuring) {
     return s.hasMeasurePoint1 ? '計測の終点をタップしてください' : '計測の始点をタップしてください';
   }
-  if (s.isHeightMarkerMode) return `${fp}高さを入力する壁面をタップしてください`;
+  if (s.isHeightMarkerMode) {
+    // R-1n: 高さは屋根の辺（角・中央）に入力する。屋根が無ければまず屋根を作る。
+    return s.noRoofOnFloor
+      ? `${fp}先に屋根を作成してください（高さは屋根の角・辺の中央に入力します）`
+      : `${fp}屋根の角・辺の中央（○ ◆）をタップして高さを入力してください`;
+  }
   if (s.isRidgeLineMode) {
+    if (s.noRoofOnFloor) return `${fp}先に屋根を作成してください（棟は屋根の中に引きます）`;
     return s.hasRidgeDraft ? `${fp}棟の終点をタップしてください` : `${fp}棟の始点を建物の中でタップしてください`;
   }
   if (s.isMagnetPinMode) {

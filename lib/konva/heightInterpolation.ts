@@ -40,8 +40,11 @@ export function getHeightAtPosition(
   edgeIndex: number,
   t: number,
 ): number | null {
-  // 該当建物のマーカーのみ抽出
-  const buildingMarkers = markers.filter((m) => m.buildingId === building.id);
+  // 該当建物のマーカーのみ抽出。
+  // R-1n: roofId 付き＝**壁に乗らない屋根の辺**（下屋と大屋根の境目など）に置いたマーカーで、
+  //   edgeIndex/t は屋根 polygon 基準。壁の高さプロファイルには参加しない
+  //   （その屋根の棟マーカーとして roofMarkerMaxMm が拾う）。
+  const buildingMarkers = markers.filter((m) => m.buildingId === building.id && !m.roofId);
   if (buildingMarkers.length === 0) return null;
 
   // outline 取得 + 範囲チェック

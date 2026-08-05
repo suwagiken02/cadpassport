@@ -270,6 +270,15 @@ export type HeightMarker = {
   t: number;
   /** 高さ (mm 単位、 = 壁位置の軒高) */
   heightMm: number;
+  /**
+   * 屋根領域基準のマーカー (= R-1n)。**壁に乗らない屋根の辺**（下屋と大屋根の境目など）に
+   * 置いたときだけ設定し、edgeIndex/t は building.points ではなく**この屋根の polygon の辺**を指す。
+   *
+   * 「壁＝屋根ではない」（鮎澤氏）。屋根の入力点が壁の上にあるなら従来どおり壁基準で保存し
+   * （＝互換）、壁を持たない屋根の辺に置いたものだけがこれになる。壁の高さプロファイル
+   * （getHeightAtPosition・建物外形）には参加せず、その屋根の棟マーカーとして効く。
+   */
+  roofId?: string;
   /** 階指定 (= undefined は全階共通、 既存 MagnetPin と同パターン) */
   floor?: number;
 };

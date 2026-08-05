@@ -165,11 +165,15 @@ export function markerOnRoof(coverages: WallCoverage[], m: HeightMarker, tol = 1
  *  屋根別の「棟マーカー」判定用（大屋根の棟マーカーで下屋バンドが持ち上がらないように）。 */
 export function roofMarkerMaxMm(
   building: BuildingShape, coverages: WallCoverage[], markers: HeightMarker[],
+  roofId?: string,
 ): number | null {
   let mx = -Infinity;
   for (const m of markers) {
     if (m.buildingId !== building.id) continue;
-    if (!markerOnRoof(coverages, m)) continue;
+    // R-1n: 屋根領域基準のマーカー（壁に乗らない辺＝下屋と大屋根の境目に置いた妻 TOP）は
+    //   その屋根のものとして必ず拾う。壁の上のものは従来どおり壁区間で判定する。
+    const mine = m.roofId ? (roofId != null && m.roofId === roofId) : markerOnRoof(coverages, m);
+    if (!mine) continue;
     mx = Math.max(mx, m.heightMm);
   }
   return Number.isFinite(mx) ? mx : null;

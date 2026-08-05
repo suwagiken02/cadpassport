@@ -7,9 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import {
-  getOutlinePolygon,
-  outlineGuides,
-  projectPointToOutline,
+  guidesForBuildings,
+  markerPolygon,
+  projectPointToPolygon,
   snapToCorners,
   snapToMidpointIfNear,
 } from '@/lib/konva/heightMarkerUtils';
@@ -37,8 +37,10 @@ export default function HeightMarkerLayer() {
   //   対象階に建物が無ければ全建物＝従来挙動（resolveFloorScope の安全側フォールバック）。
   const scopedBuildings = resolveFloorScope(canvasData.buildings, activeFloor);
   const scopedBuildingIds = new Set(scopedBuildings.map((b) => b.id));
-  // R-1m-fix: 角 ○ ・辺中央 ◆ の表示は outlineGuides（＝スナップ判定と同じ出所）から作る。
-  const guides = outlineGuides(scopedBuildings);
+  // R-1m-fix/R-1n: 角 ○ ・辺中央 ◆ の表示は guidesForBuildings（＝スナップ判定と同じ出所）から。
+  //   基準は建物の壁ではなく**ユーザーが作った屋根領域**（屋根が無い建物にはガイドを出さない）。
+  const roofs = canvasData.roofs ?? [];
+  const guides = guidesForBuildings(scopedBuildings, roofs);
   /** 高さツール中で、かつ対象階以外の建物に付いたマーカーか（減光＋タップ不可にする）。 */
   const isOtherFloorMarker = (buildingId: string) =>
     isHeightMarkerMode && !scopedBuildingIds.has(buildingId);
@@ -48,12 +50,14 @@ export default function HeightMarkerLayer() {
    * 「見えているガイド＝押せば必ず置ける」。壁が他棟と重なっていても、上に載っている
    * 他の図形（棟ライン等）に当たり判定を奪われても、ここが受けるので確実に置ける。
    */
-  const placeAtGuide = (g: { buildingId: string; edgeIndex: number; t: number }) => {
+  const placeAtGuide = (g: { buildingId: string; edgeIndex: number; t: number; roofId?: string }) => {
     const s = useCanvasStore.getState();
     const id = uuidv4();
     s.addHeightMarker({
       id, buildingId: g.buildingId, edgeIndex: g.edgeIndex, t: g.t,
       heightMm: s.lastHeightInputMm,
+      // R-1n: 壁に乗らない屋根の辺（下屋と大屋根の境目など）だけ屋根基準で持つ。
+      ...(g.roofId ? { roofId: g.roofId } : {}),
     });
     s.setHeightInputMarkerId(id);
   };
@@ -131,8 +135,9 @@ export default function HeightMarkerLayer() {
           x: (pointer.x - panX) / gridPx,
           y: (pointer.y - panY) / gridPx,
         };
-        const outline = getOutlinePolygon(building);
-        const projected = projectPointToOutline(pointGrid, building);
+        // R-1n: 屋根基準のマーカーは屋根 polygon 上を動く（壁基準は従来どおり壁外周）。
+        const outline = markerPolygon(building, roofs, marker);
+        const projected = projectPointToPolygon(pointGrid, outline);
         const snapToleranceGrid = SNAP_PX / gridPx;
         const snapped = snapToCorners(projected.edgeIndex, projected.t, outline, snapToleranceGrid);
         // 追い越し禁止: 建物外周全体で衝突止め (= 周長 s ベース、 edge 跨ぎ対応)
@@ -159,7 +164,9 @@ export default function HeightMarkerLayer() {
         const proposedS = tToS(snapped.edgeIndex, snapped.t);
         const MARGIN = 10;  // = 10 grid (= 100mm = 10cm)、 建物サイズ非依存の固定値
         const otherS = (canvasData.heightMarkers ?? [])
-          .filter((m) => m.id !== marker.id && m.buildingId === marker.buildingId)
+          // R-1n: 基準ポリゴンが同じマーカーどうしだけで押し合う（壁基準と屋根基準は別の線）。
+          .filter((m) => m.id !== marker.id && m.buildingId === marker.buildingId
+            && m.roofId === marker.roofId)
           .map((m) => tToS(m.edgeIndex, m.t));
         // 進行方向は周長 cyclic で最短経路判定 (= 角越え wrap でも誤判定なし)
         const forwardDist = ((proposedS - startS) % totalPerimeter + totalPerimeter) % totalPerimeter;
@@ -284,7 +291,7 @@ export default function HeightMarkerLayer() {
       {isHeightMarkerMode && guides.map((g) => {
         const screenX = g.point.x * gridPx + panX;
         const screenY = g.point.y * gridPx + panY;
-        const key = `guide-${g.buildingId}-${g.edgeIndex}-${g.kind}`;
+        const key = `guide-${g.buildingId}-${g.roofId ?? 'w'}-${g.edgeIndex}-${g.kind}`;
         if (g.kind === 'corner') {
           return (
             <React.Fragment key={key}>
@@ -323,7 +330,8 @@ export default function HeightMarkerLayer() {
       {markers.map((marker) => {
         const building = canvasData.buildings.find((b) => b.id === marker.buildingId);
         if (!building) return null;
-        const outline = getOutlinePolygon(building);
+        // R-1n: 位置の基準は marker が持つ（屋根基準なら屋根 polygon、無印なら壁外周）。
+        const outline = markerPolygon(building, roofs, marker);
         // ドラッグ中なら dragInfo の論理位置を表示、 それ以外は marker 自身
         const isThisDragging = dragInfo?.markerId === marker.id;
         const ei = isThisDragging ? dragInfo!.edgeIndex : marker.edgeIndex;

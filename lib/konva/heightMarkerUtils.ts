@@ -1,4 +1,5 @@
-import { BuildingShape, Point } from '@/types';
+import { BuildingShape, Point, Roof } from '@/types';
+import { getRoofPolygon } from './roofRegion';
 
 /**
  * 建物の outline ポリゴン (= 高さマーカーの配置基準線) を取得する。
@@ -27,6 +28,11 @@ export type OutlineGuide = {
   t: number;
   /** グリッド座標。 */
   point: Point;
+  /**
+   * 屋根領域基準のガイド (= R-1n)。壁に乗らない屋根の辺（下屋と大屋根の境目など）のとき、
+   * その屋根 id。壁に乗る辺は壁基準（edgeIndex/t は building.points）に直してあるので undefined。
+   */
+  roofId?: string;
 };
 
 /**
@@ -57,6 +63,91 @@ export function outlineGuides(buildings: BuildingShape[]): OutlineGuide[] {
     }
   }
   return out;
+}
+
+/** 屋根の辺が壁に乗っているとみなす許容差（グリッド）。roofRegion の WALL_TOL と同じ基準。 */
+const ROOF_WALL_TOL = 1.5;
+
+/** 点 pt を線分 p→q へ射影した媒介変数 t（0..1 クランプ）と距離。 */
+function projectOnSegment(pt: Point, p: Point, q: Point): { t: number; dist: number } {
+  const dx = q.x - p.x, dy = q.y - p.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return { t: 0, dist: Math.hypot(pt.x - p.x, pt.y - p.y) };
+  const t = Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / len2));
+  return { t, dist: Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy)) };
+}
+
+/**
+ * 屋根領域のガイド点（角・辺中央）(= R-1n)。
+ *
+ * 原則（鮎澤氏）: 「壁＝屋根ではない」。高さマーカー・妻 TOP の入力対象は**屋根**なので、
+ * ガイドはユーザーが作った屋根領域(Roof.polygon)の四隅と各辺の中央に出す。
+ *   ・建物全面に屋根を作った → 全周に出る（従来と同じ見た目＝互換）
+ *   ・一部にだけ屋根を作った → その領域の四隅・辺中央だけ
+ *   ・屋根が無い建物         → 何も出ない（先に屋根を作るのが正しい順序）
+ *
+ * 保存形式との整合: ガイド点が**壁の上**にあるなら、その壁の辺 index と t に直して返す
+ * （＝従来の HeightMarker と完全に同じ形で保存でき、立面の高さプロファイルにそのまま効く）。
+ * 壁に乗らない辺（下屋と大屋根の境目・2F との境界）だけ roofId 付き＝屋根 polygon 基準になる。
+ */
+export function roofOutlineGuides(building: BuildingShape, roofs: Roof[]): OutlineGuide[] {
+  const bpts = building.points;
+  const out: OutlineGuide[] = [];
+  /** 点が壁の上なら、その壁の {edgeIndex, t}。乗っていなければ null。 */
+  const onWall = (pt: Point): { edgeIndex: number; t: number } | null => {
+    let best: { edgeIndex: number; t: number } | null = null;
+    let bestD = ROOF_WALL_TOL;
+    for (let j = 0; j < bpts.length; j++) {
+      const { t, dist } = projectOnSegment(pt, bpts[j], bpts[(j + 1) % bpts.length]);
+      if (dist <= bestD) { bestD = dist; best = { edgeIndex: j, t }; }
+    }
+    return best;
+  };
+
+  for (const roof of roofs) {
+    if (roof.buildingId !== building.id) continue;
+    const poly = getRoofPolygon(building, roof);
+    if (poly.length < 3) continue;
+    for (let i = 0; i < poly.length; i++) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % poly.length];
+      const push = (kind: 'corner' | 'mid', t: number, point: Point) => {
+        const w = onWall(point);
+        out.push(w
+          ? { buildingId: building.id, edgeIndex: w.edgeIndex, kind, t: w.t, point }
+          : { buildingId: building.id, edgeIndex: i, kind, t, point, roofId: roof.id });
+      };
+      push('corner', 0, { x: p1.x, y: p1.y });
+      if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 0.001) continue;
+      push('mid', 0.5, { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 });
+    }
+  }
+  return out;
+}
+
+/**
+ * 対象建物[]のガイド点 (= R-1n)。屋根がある建物は屋根領域基準、
+ * 屋根が 1 つも無い建物はガイドを出さない（先に屋根を作る運用）。
+ */
+export function guidesForBuildings(buildings: BuildingShape[], roofs: Roof[]): OutlineGuide[] {
+  return buildings.flatMap((b) => roofOutlineGuides(b, roofs));
+}
+
+/** その建物に屋根があるか（ガイドが出るか＝案内文の出し分け）。 */
+export function hasRoofFor(building: BuildingShape, roofs: Roof[]): boolean {
+  return roofs.some((r) => r.buildingId === building.id);
+}
+
+/**
+ * マーカーの位置の基準になる polygon (= R-1n)。
+ * roofId 付き＝その屋根の polygon、無印＝従来どおり壁外周。
+ */
+export function markerPolygon(
+  building: BuildingShape, roofs: Roof[], marker: { roofId?: string },
+): Point[] {
+  if (!marker.roofId) return getOutlinePolygon(building);
+  const roof = roofs.find((r) => r.id === marker.roofId && r.buildingId === building.id);
+  return roof ? getRoofPolygon(building, roof) : getOutlinePolygon(building);
 }
 
 /**
@@ -134,7 +225,17 @@ export function projectPointToOutline(
   point: Point,
   building: BuildingShape,
 ): { edgeIndex: number; t: number } {
-  const outline = getOutlinePolygon(building);
+  return projectPointToPolygon(point, getOutlinePolygon(building));
+}
+
+/**
+ * 任意の polygon への射影 (= R-1n)。屋根領域基準のマーカーは屋根 polygon 上を動くので、
+ * 壁外周に固定していた projectPointToOutline から基準ポリゴンを外に出した版。
+ */
+export function projectPointToPolygon(
+  point: Point,
+  outline: Point[],
+): { edgeIndex: number; t: number } {
   let bestDist = Infinity;
   let best = { edgeIndex: 0, t: 0 };
   for (let i = 0; i < outline.length; i++) {

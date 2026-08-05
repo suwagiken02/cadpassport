@@ -17,7 +17,7 @@ import { isPointInPolygon } from '@/lib/konva/autoLayoutUtils';
 import { buildingAtPointOnFloor, isPointOnOrInPolygon, resolveFloorScope } from '@/lib/konva/floorScope';
 import { computeRidgeGuides, snapRidgeInput } from '@/lib/konva/elevation/ridgeProjection';
 // R-1m-fix: 角 ○ ・辺中央 ◆ の表示は高さツールと同じ 1 箇所（outlineGuides）から作る。
-import { outlineGuides } from '@/lib/konva/heightMarkerUtils';
+import { guidesForBuildings, nearestOutlineGuide } from '@/lib/konva/heightMarkerUtils';
 import type { Point, BuildingShape } from '@/types';
 
 const RIDGE_COLOR = '#E07B39';
@@ -53,7 +53,17 @@ export default function RidgeLineLayer() {
   /** ガイドを出す対象（編集中の階の建物）。 */
   const scopedBuildings = resolveFloorScope(canvasData.buildings, activeFloor);
 
-  const snapIn = (pt: Point, b: BuildingShape) => snapRidgeInput(pt, b.points, SNAP_PX / gridPx);
+  /**
+   * 棟入力の吸着 (= R-1n)。まず**見えているガイド**（屋根領域の角・辺中央）へ、
+   * 外れたら従来の中心ガイド・壁の頂点/中点へ（snapRidgeInput）。
+   * 見えている点＝吸着できる点、を高さツールと同じ 1 つのリストで担保する。
+   */
+  const snapIn = (pt: Point, b: BuildingShape) => {
+    const thr = SNAP_PX / gridPx;
+    const g = nearestOutlineGuide(pt, guidesForBuildings([b], canvasData.roofs ?? []), thr);
+    if (g) return { point: { x: Math.round(g.point.x), y: Math.round(g.point.y) }, snapped: true };
+    return snapRidgeInput(pt, b.points, thr);
+  };
 
   // モード解除 / ESC でドラフト破棄
   useEffect(() => { if (!isRidgeLineMode) { setDraft(null); setCursor(null); } }, [isRidgeLineMode]);
@@ -151,9 +161,9 @@ export default function RidgeLineLayer() {
 
       {/* R-1m: 吸着点のガイド（対象階の建物の全辺に、角 ○ と辺中点 ◇ を出す）。
           他棟と壁が重なる辺でも必ず出す＝「どこへ吸着できるか」が壁の重なりに依存しない。 */}
-      {isRidgeLineMode && outlineGuides(scopedBuildings).map((g) => {
+      {isRidgeLineMode && guidesForBuildings(scopedBuildings, canvasData.roofs ?? []).map((g) => {
         const gr = Math.max(3, 3.5 * zoom);
-        const key = `snap-${g.buildingId}-${g.edgeIndex}-${g.kind}`;
+        const key = `snap-${g.buildingId}-${g.roofId ?? 'w'}-${g.edgeIndex}-${g.kind}`;
         return g.kind === 'corner' ? (
           <Circle key={key} x={sx(g.point.x)} y={sy(g.point.y)} radius={gr}
             fill={SNAP_COLOR} stroke="#fff" strokeWidth={1} opacity={0.7} listening={false} />

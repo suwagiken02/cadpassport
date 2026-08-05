@@ -339,9 +339,9 @@ describe('描画側: ガイドが他の図形に隠されない/奪われない'
     expect(HEIGHT).toContain('radius={GUIDE_HIT_PX}');
   });
 
-  it('表示は outlineGuides から作る（辺ごとの独自ループに戻っていない）', () => {
-    expect(HEIGHT).toContain('outlineGuides(scopedBuildings)');
-    expect(RIDGE).toContain('outlineGuides(scopedBuildings)');
+  it('表示は guidesForBuildings から作る（辺ごとの独自ループに戻っていない・R-1n で屋根基準）', () => {
+    expect(HEIGHT).toContain('guidesForBuildings(scopedBuildings, roofs)');
+    expect(RIDGE).toContain('guidesForBuildings(scopedBuildings,');
     expect(CANVAS).toContain('nearestOutlineGuide');
   });
 });

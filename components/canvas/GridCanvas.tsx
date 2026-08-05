@@ -35,7 +35,7 @@ import { mmToGrid } from '@/lib/konva/gridUtils';
 import { getAllExistingVertices } from '@/lib/konva/snapUtils';
 import { getPrintAreaGrid } from '@/lib/export/pdfExport';
 import { titleBlockFrameRect, compassFrameRect } from '@/lib/export/pdfLayout';
-import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon, nearestOutlineGuide, outlineGuides } from '@/lib/konva/heightMarkerUtils';
+import { findClosestOutlineEdge, snapToMidpointIfNear, snapToCorners, getOutlinePolygon, nearestOutlineGuide, guidesForBuildings } from '@/lib/konva/heightMarkerUtils';
 import { resolveFloorScope } from '@/lib/konva/floorScope';
 
 type Props = {
@@ -409,21 +409,26 @@ export default function GridCanvas({ width, height }: Props) {
               const scopedBuildings = resolveFloorScope(canvasData.buildings, useCanvasStore.getState().activeFloor);
               // R-1m-fix: 見えているガイド（角 ○ ・辺中央 ◆）が最優先。表示と同じ outlineGuides から
               //   最寄りを採るので「◆ は見えているのに吸着しない／別の建物の辺に付く」が起きない。
-              const guide = nearestOutlineGuide(clickGrid, outlineGuides(scopedBuildings), thresholdGrid);
+              const guide = nearestOutlineGuide(
+                clickGrid,
+                guidesForBuildings(scopedBuildings, canvasData.roofs ?? []),
+                thresholdGrid,
+              );
               const result = guide
-                ? { buildingId: guide.buildingId, edgeIndex: guide.edgeIndex, t: guide.t }
-                : findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
+                ? { buildingId: guide.buildingId, edgeIndex: guide.edgeIndex, t: guide.t, roofId: guide.roofId }
+                : (findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid) as
+                    { buildingId: string; edgeIndex: number; t: number; roofId?: string } | null);
               if (result) {
                 const newId = uuidv4();
                 // 配置時の初期値は前回入力値 (= Issue 3、 0 の場合は従来通り)
                 const initialHeightMm = useCanvasStore.getState().lastHeightInputMm;
                 // 中点スナップ (= ポインタが中点 ◇ から 10px 以内なら t=0.5 補正)
                 const placementBuilding = canvasData.buildings.find((b) => b.id === result.buildingId);
-                let finalT = placementBuilding
-                  ? snapToMidpointIfNear(result.edgeIndex, result.t, pointer.x, pointer.y, placementBuilding, INITIAL_GRID_PX * zoom, panX, panY, 10)
-                  : result.t;
-                // 角スナップ (= t=0 or t=1 に吸着、 既存 snapToCorners 流用、 設置時の角への吸着強化)
-                if (placementBuilding) {
+                // R-1n: 屋根基準のガイド（壁に乗らない辺）はその点で確定。壁基準のときだけ
+                //   従来の中点・角スナップを重ねる。
+                let finalT = result.t;
+                if (!result.roofId && placementBuilding) {
+                  finalT = snapToMidpointIfNear(result.edgeIndex, result.t, pointer.x, pointer.y, placementBuilding, INITIAL_GRID_PX * zoom, panX, panY, 10);
                   const outline = getOutlinePolygon(placementBuilding);
                   finalT = snapToCorners(result.edgeIndex, finalT, outline, thresholdGrid).t;
                 }
@@ -433,6 +438,7 @@ export default function GridCanvas({ width, height }: Props) {
                   edgeIndex: result.edgeIndex,
                   t: finalT,
                   heightMm: initialHeightMm,
+                  ...(result.roofId ? { roofId: result.roofId } : {}),
                 });
                 // 配置直後に入力 modal 自動 open (= Task #8 Phase D)
                 useCanvasStore.getState().setHeightInputMarkerId(newId);
@@ -497,21 +503,26 @@ export default function GridCanvas({ width, height }: Props) {
               const scopedBuildings = resolveFloorScope(canvasData.buildings, useCanvasStore.getState().activeFloor);
               // R-1m-fix: 見えているガイド（角 ○ ・辺中央 ◆）が最優先。表示と同じ outlineGuides から
               //   最寄りを採るので「◆ は見えているのに吸着しない／別の建物の辺に付く」が起きない。
-              const guide = nearestOutlineGuide(clickGrid, outlineGuides(scopedBuildings), thresholdGrid);
+              const guide = nearestOutlineGuide(
+                clickGrid,
+                guidesForBuildings(scopedBuildings, canvasData.roofs ?? []),
+                thresholdGrid,
+              );
               const result = guide
-                ? { buildingId: guide.buildingId, edgeIndex: guide.edgeIndex, t: guide.t }
-                : findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid);
+                ? { buildingId: guide.buildingId, edgeIndex: guide.edgeIndex, t: guide.t, roofId: guide.roofId }
+                : (findClosestOutlineEdge(clickGrid, scopedBuildings, thresholdGrid) as
+                    { buildingId: string; edgeIndex: number; t: number; roofId?: string } | null);
               if (result) {
                 const newId = uuidv4();
                 // 配置時の初期値は前回入力値 (= Issue 3、 0 の場合は従来通り)
                 const initialHeightMm = useCanvasStore.getState().lastHeightInputMm;
                 // 中点スナップ (= ポインタが中点 ◇ から 10px 以内なら t=0.5 補正)
                 const placementBuilding = canvasData.buildings.find((b) => b.id === result.buildingId);
-                let finalT = placementBuilding
-                  ? snapToMidpointIfNear(result.edgeIndex, result.t, pointer.x, pointer.y, placementBuilding, INITIAL_GRID_PX * zoom, panX, panY, 10)
-                  : result.t;
-                // 角スナップ (= t=0 or t=1 に吸着、 既存 snapToCorners 流用、 設置時の角への吸着強化)
-                if (placementBuilding) {
+                // R-1n: 屋根基準のガイド（壁に乗らない辺）はその点で確定。壁基準のときだけ
+                //   従来の中点・角スナップを重ねる。
+                let finalT = result.t;
+                if (!result.roofId && placementBuilding) {
+                  finalT = snapToMidpointIfNear(result.edgeIndex, result.t, pointer.x, pointer.y, placementBuilding, INITIAL_GRID_PX * zoom, panX, panY, 10);
                   const outline = getOutlinePolygon(placementBuilding);
                   finalT = snapToCorners(result.edgeIndex, finalT, outline, thresholdGrid).t;
                 }
@@ -521,6 +532,7 @@ export default function GridCanvas({ width, height }: Props) {
                   edgeIndex: result.edgeIndex,
                   t: finalT,
                   heightMm: initialHeightMm,
+                  ...(result.roofId ? { roofId: result.roofId } : {}),
                 });
                 // 配置直後に入力 modal 自動 open (= Task #8 Phase D)
                 useCanvasStore.getState().setHeightInputMarkerId(newId);

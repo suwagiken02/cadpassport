@@ -28,7 +28,7 @@ describe('getOperationGuide: モードフラグ系（多段階）', () => {
     expect(g({ isMeasuring: true, hasMeasurePoint1: true })).toBe('計測の終点をタップしてください');
   });
   it('高さマーカー', () => {
-    expect(g({ isHeightMarkerMode: true })).toBe('高さを入力する壁面をタップしてください');
+    expect(g({ isHeightMarkerMode: true })).toBe('屋根の角・辺の中央（○ ◆）をタップして高さを入力してください');
   });
   it('棟ライン: 1点目待ち / 2点目待ち', () => {
     expect(g({ isRidgeLineMode: true, hasRidgeDraft: false })).toBe('棟の始点を建物の中でタップしてください');
@@ -96,7 +96,7 @@ describe('getOperationGuide: null（ガイド非表示）', () => {
 describe('getOperationGuide: 対象階の明示', () => {
   it('高さ・棟・屋根には (2F) が付く', () => {
     expect(g({ isHeightMarkerMode: true, targetFloor: 2 }))
-      .toBe('(2F) 高さを入力する壁面をタップしてください');
+      .toBe('(2F) 屋根の角・辺の中央（○ ◆）をタップして高さを入力してください');
     expect(g({ isRidgeLineMode: true, hasRidgeDraft: false, targetFloor: 2 }))
       .toBe('(2F) 棟の始点を建物の中でタップしてください');
     expect(g({ isRidgeLineMode: true, hasRidgeDraft: true, targetFloor: 2 }))
@@ -107,12 +107,12 @@ describe('getOperationGuide: 対象階の明示', () => {
 
   it('1F でも複数階なら (1F) を出す（どちらの階か常に分かるように）', () => {
     expect(g({ isHeightMarkerMode: true, targetFloor: 1 }))
-      .toBe('(1F) 高さを入力する壁面をタップしてください');
+      .toBe('(1F) 屋根の角・辺の中央（○ ◆）をタップして高さを入力してください');
   });
 
   it('単一階（targetFloor 未指定/null）は従来の文言のまま', () => {
-    expect(g({ isHeightMarkerMode: true })).toBe('高さを入力する壁面をタップしてください');
-    expect(g({ isHeightMarkerMode: true, targetFloor: null })).toBe('高さを入力する壁面をタップしてください');
+    expect(g({ isHeightMarkerMode: true })).toBe('屋根の角・辺の中央（○ ◆）をタップして高さを入力してください');
+    expect(g({ isHeightMarkerMode: true, targetFloor: null })).toBe('屋根の角・辺の中央（○ ◆）をタップして高さを入力してください');
   });
 
   it('階スコープが効かないツールには階を出さない', () => {
@@ -130,6 +130,6 @@ describe('getOperationGuide: 優先順位（フラグ > mode）', () => {
     expect(g({ mode: 'select', isMeasuring: true })).toBe('計測の始点をタップしてください');
   });
   it('高さマーカー中は mode=building でも高さガイド', () => {
-    expect(g({ mode: 'building', isHeightMarkerMode: true })).toBe('高さを入力する壁面をタップしてください');
+    expect(g({ mode: 'building', isHeightMarkerMode: true })).toBe('屋根の角・辺の中央（○ ◆）をタップして高さを入力してください');
   });
 });

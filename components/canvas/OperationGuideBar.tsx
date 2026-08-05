@@ -10,7 +10,8 @@
 import React from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { getOperationGuide, type GuideState } from '@/lib/operationGuide';
-import { isMultiFloor } from '@/lib/konva/floorScope';
+import { isMultiFloor, resolveFloorScope } from '@/lib/konva/floorScope';
+import { hasRoofFor } from '@/lib/konva/heightMarkerUtils';
 
 export default function OperationGuideBar() {
   const guide = useCanvasStore((s) => {
@@ -32,6 +33,9 @@ export default function OperationGuideBar() {
       selectActive: s.selectActive,
       elevationPlacing: s.elevationAddTool && s.elevationAddTool !== 'text' ? 'hover-click' as const : null,
       isRoofDraw: s.pendingTargetType === 'roof',
+      // R-1n: ガイドは屋根領域に出す。対象階に屋根が 1 つも無いなら「先に屋根を作る」案内。
+      noRoofOnFloor: resolveFloorScope(s.canvasData.buildings, s.activeFloor)
+        .every((bb) => !hasRoofFor(bb, s.canvasData.roofs ?? [])),
       // R-1h-4: 複数階の物件のときだけ「(2F)」等を文言に出す（単一階では従来どおり階を出さない）。
       targetFloor: isMultiFloor(s.canvasData.buildings) ? s.activeFloor : null,
     };
