@@ -94,8 +94,11 @@ export function faceElevationToPrimitives(
   // ---- 建物シルエット（多階は重ね） ----
   for (const o of buildingOutlines) {
     o.segments.forEach((s, k) => {
+      // E-9: 下端は既定 GL(0)。手前の建物に隠れた区間はその上端が下端になる。
+      const b0 = s.baseStartMm ? ly(s.baseStartMm) : 0;   // 0 は -0 を作らずそのまま GL
+      const b1 = s.baseEndMm ? ly(s.baseEndMm) : 0;
       poly(
-        [lx(s.xStart), 0, lx(s.xStart), ly(s.heightStartMm), lx(s.xEnd), ly(s.heightEndMm), lx(s.xEnd), 0],
+        [lx(s.xStart), b0, lx(s.xStart), ly(s.heightStartMm), lx(s.xEnd), ly(s.heightEndMm), lx(s.xEnd), b1],
         fillOf(o.buildingId), 0.22, C_OUTLINE, 1.5,
         {
           kind: 'building', id: `building:${o.buildingId}:${k}`, index: k,

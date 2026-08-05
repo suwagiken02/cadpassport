@@ -35,6 +35,7 @@ import {
   roofWallCoverages,
   variableCoord,
 } from './roofBandSource';
+import { applyBuildingOcclusion } from './occlusion';
 import type { Face, FaceSpanColumn } from './faceReconstruction';
 import {
   FIRST_KOMA_OFFSET_MM, JACK_WIND_MAX_MM, JACK_WIND_MIN_MM, KOMA_PITCH_MM,
@@ -164,6 +165,12 @@ export type BuildingOutlineSegment = {
   heightStartMm: number;
   /** 区間終了側の高さ(mm, GL 基準)。heightStart と異なれば妻/傾斜（拡張点）。 */
   heightEndMm: number;
+  /**
+   * 下端(mm, GL 基準) (= E-9)。未指定＝0＝GL から立ち上がる従来どおりのシルエット。
+   * 手前の建物に隠れた区間は、その手前の上端が下端になる（はみ出した部分だけ描く）。
+   */
+  baseStartMm?: number;
+  baseEndMm?: number;
 };
 
 export type BuildingOutline = {
@@ -737,6 +744,9 @@ export function mirrorVariableAxis(fe: FaceElevation): FaceElevation {
   const seg = (s: BuildingOutlineSegment): BuildingOutlineSegment => ({
     xStart: nz(s.xEnd), xEnd: nz(s.xStart),
     heightStartMm: s.heightEndMm, heightEndMm: s.heightStartMm,
+    // E-9: 下端も左右反転（未指定＝GL のままなら持たせない）。
+    ...(s.baseStartMm != null || s.baseEndMm != null
+      ? { baseStartMm: s.baseEndMm ?? 0, baseEndMm: s.baseStartMm ?? 0 } : {}),
   });
   const buildingOutlines = fe.buildingOutlines.map(o => ({
     ...o,
@@ -989,9 +999,16 @@ export function buildFaceElevation(
     return { column, postXs, levels, boards, rails, spanRaises };
   });
 
+  // E-9: 建物同士の遮蔽。手前の棟のシルエット（壁＋屋根）で奥の棟を切る
+  //   （完全に隠れる部分は描かず、部分的なら はみ出しだけ描く）。単棟では不変。
+  const occ = applyBuildingOcclusion(buildingOutlines, roofBands, buildings, face);
   // E-5: 入隅の前後判定で、奥列の横線を手前列の x 区間で切る。
   const cutScaffolds = applyOcclusionCut(scaffolds, face);
-  const fe: FaceElevation = { face, floor, buildingOutlines, scaffolds: cutScaffolds, roofBands, ridgeMaxMm };
+  const fe: FaceElevation = {
+    face, floor,
+    buildingOutlines: occ.buildingOutlines, scaffolds: cutScaffolds, roofBands: occ.roofBands,
+    ridgeMaxMm,
+  };
 
   // E-5-fix: 北/東立面は視点方向が逆になるため変軸を左右反転（south/west はそのままが正）。
   return (face === 'north' || face === 'east') ? mirrorVariableAxis(fe) : fe;

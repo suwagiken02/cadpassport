@@ -241,3 +241,159 @@ export function clipSpanByProfile(span: ProfileSpan, steps: StepSpan[]): Clipped
     return { x0, x1, topStartMm: t0, topEndMm: t1, baseStartMm: b0, baseEndMm: b1 };
   }
 }
+
+/** プロファイル点列を [a,b] に切り出す（端は線形補間）。 */
+function profileBetween(
+  pts: { x: number; mm: number }[], a: number, b: number,
+): { x: number; mm: number }[] {
+  const at = (x: number): number => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p = pts[i], q = pts[i + 1];
+      const lo = Math.min(p.x, q.x), hi = Math.max(p.x, q.x);
+      if (x >= lo - EPS && x <= hi + EPS) {
+        const w = q.x - p.x;
+        return Math.abs(w) <= EPS ? Math.max(p.mm, q.mm) : p.mm + ((x - p.x) / w) * (q.mm - p.mm);
+      }
+    }
+    return x <= pts[0].x ? pts[0].mm : pts[pts.length - 1].mm;
+  };
+  const out: { x: number; mm: number }[] = [{ x: a, mm: at(a) }];
+  for (const p of pts) {
+    if (p.x > a + EPS && p.x < b - EPS) out.push({ x: p.x, mm: p.mm });
+  }
+  out.push({ x: b, mm: at(b) });
+  return out;
+}
+
+/**
+ * 屋根バンドを手前プロファイルで切る (= E-9b)。塗り方の 3 形態それぞれで扱いが違う。
+ *   ・軒→棟の台形(filledToRidge && baseMm==null): 面は「プロファイル〜棟」。手前の上端まで
+ *     プロファイルを持ち上げる（下から隠れる）。棟まで隠れたらそのバンドは消える。
+ *   ・包絡線＋軒基準(baseMm あり): 面は「baseMm 〜 プロファイル」。baseMm を持ち上げる。
+ *   ・線のみ(けらば・フラット軒): 折れ線を交点で割り、上に出た部分だけ残す。
+ * 手前が無ければそのまま 1 本返す（単棟は不変）。
+ */
+export function clipRoofBand(band: RoofBand, steps: StepSpan[]): RoofBand[] {
+  if (steps.length === 0 || band.profile.length < 2) return [band];
+  const xLo = Math.min(band.xStart, band.xEnd);
+  const xHi = Math.max(band.xStart, band.xEnd);
+  if (xHi - xLo <= EPS) return [band];
+
+  // 線のみ: 折れ線の各区間を clipSpanByProfile に通し、残った部分をバンドとして出し直す。
+  if (!band.filledToRidge) {
+    const out: RoofBand[] = [];
+    for (let i = 0; i < band.profile.length - 1; i++) {
+      const p = band.profile[i], q = band.profile[i + 1];
+      if (Math.abs(q.x - p.x) <= EPS) continue;
+      const span: ProfileSpan = {
+        x0: Math.min(p.x, q.x), x1: Math.max(p.x, q.x),
+        mm0: p.x <= q.x ? p.mm : q.mm, mm1: p.x <= q.x ? q.mm : p.mm,
+      };
+      for (const c of clipSpanByProfile(span, steps)) {
+        out.push({
+          ...band,
+          xStart: c.x0, xEnd: c.x1,
+          ridgeMm: Math.max(c.topStartMm, c.topEndMm),
+          profile: [{ x: c.x0, mm: c.topStartMm }, { x: c.x1, mm: c.topEndMm }],
+        });
+      }
+    }
+    return out;
+  }
+
+  // 塗るバンド: 手前の区間境界で割り、区間ごとに 1 つのしきい値で判定する。
+  const bounds = new Set<number>([xLo, xHi]);
+  for (const s of steps) {
+    if (s.x0 > xLo + EPS && s.x0 < xHi - EPS) bounds.add(s.x0);
+    if (s.x1 > xLo + EPS && s.x1 < xHi - EPS) bounds.add(s.x1);
+  }
+  const xs = Array.from(bounds).sort((a, b) => a - b);
+  const out: RoofBand[] = [];
+  for (let i = 0; i < xs.length - 1; i++) {
+    const a = xs[i], b = xs[i + 1];
+    if (b - a <= EPS) continue;
+    const h = stepTopAt(steps, (a + b) / 2);
+    const prof = profileBetween(band.profile, a, b);
+    if (band.baseMm != null) {
+      // 面は baseMm 〜 プロファイル。プロファイルまで隠れたら消える。
+      const top = Math.max(...prof.map((p) => p.mm));
+      if (h >= top - EPS) continue;
+      out.push({ ...band, xStart: a, xEnd: b, profile: prof, baseMm: Math.max(band.baseMm, h) });
+    } else {
+      // 面はプロファイル 〜 棟。棟まで隠れたら消える。
+      if (h >= band.ridgeMm - EPS) continue;
+      out.push({
+        ...band, xStart: a, xEnd: b,
+        profile: prof.map((p) => ({ x: p.x, mm: Math.min(Math.max(p.mm, h), band.ridgeMm) })),
+      });
+    }
+  }
+  return out;
+}
+
+/** 建物 1 棟が出す遮蔽の素材（壁＋その建物の屋根バンド）。 */
+function spansOf(
+  outlines: BuildingOutline[], bands: RoofBand[], buildingId: string,
+): ProfileSpan[] {
+  const out: ProfileSpan[] = [];
+  for (const o of outlines) if (o.buildingId === buildingId) out.push(...outlineSpans(o));
+  for (const b of bands) if (b.buildingId === buildingId) out.push(...roofBandSpans(b));
+  return out;
+}
+
+/**
+ * 建物同士の遮蔽を適用する (= E-9b)。
+ *
+ * 面ごとに、各建物より**手前**にある建物のシルエット（壁＋屋根）を上端プロファイルにまとめ、
+ * その建物の外形セグメントと屋根バンドを切る。完全に隠れる部分は描かず、部分的に隠れる
+ * ところは「はみ出した部分だけ」を描く（下端を手前の上端まで持ち上げる）。
+ *
+ * 深度が同じ建物どうし（総二階の 1F/2F など壁面が揃うもの）は前後を作らない＝従来どおり。
+ * 単棟では手前が存在しないので結果は完全に不変。
+ */
+export function applyBuildingOcclusion(
+  outlines: BuildingOutline[], bands: RoofBand[], buildings: BuildingShape[], face: Face,
+): { buildingOutlines: BuildingOutline[]; roofBands: RoofBand[] } {
+  const front = new Map<string, number>();
+  for (const b of buildings) front.set(b.id, buildingFrontness(b, face));
+  const ids = Array.from(new Set([...outlines.map((o) => o.buildingId), ...bands.map((b) => b.buildingId)]));
+  if (ids.length < 2) return { buildingOutlines: outlines, roofBands: bands };
+
+  /** その建物より手前にある建物のシルエット（階段プロファイル）。 */
+  const frontStepsFor = (id: string): StepSpan[] => {
+    const my = front.get(id);
+    if (my == null) return [];
+    const spans: ProfileSpan[] = [];
+    for (const other of ids) {
+      const of_ = front.get(other);
+      if (other === id || of_ == null) continue;
+      if (of_ <= my + SAME_DEPTH_EPS) continue;   // 同深度・奥は隠さない
+      spans.push(...spansOf(outlines, bands, other));
+    }
+    return toStepProfile(spans);
+  };
+  const stepsCache = new Map<string, StepSpan[]>();
+  const stepsFor = (id: string): StepSpan[] => {
+    if (!stepsCache.has(id)) stepsCache.set(id, frontStepsFor(id));
+    return stepsCache.get(id)!;
+  };
+
+  const buildingOutlines = outlines.map((o) => {
+    const steps = stepsFor(o.buildingId);
+    if (steps.length === 0) return o;
+    const segments = outlineSpans(o).flatMap((sp) => clipSpanByProfile(sp, steps).map((c) => ({
+      xStart: c.x0, xEnd: c.x1,
+      heightStartMm: c.topStartMm, heightEndMm: c.topEndMm,
+      ...(c.baseStartMm > EPS || c.baseEndMm > EPS
+        ? { baseStartMm: c.baseStartMm, baseEndMm: c.baseEndMm } : {}),
+    })));
+    return { ...o, segments: segments.sort((a, b) => a.xStart - b.xStart) };
+  });
+
+  const roofBands = bands.flatMap((b) => {
+    const steps = stepsFor(b.buildingId);
+    return steps.length === 0 ? [b] : clipRoofBand(b, steps);
+  });
+
+  return { buildingOutlines, roofBands };
+}
