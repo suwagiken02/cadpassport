@@ -280,3 +280,69 @@ describe('E-9c: 前後の判定は「壁 1 枚・屋根 1 枚ごと」', () => {
     expect(midSegs.map((s) => [s.xStart, s.xEnd])).toEqual([[180, 360]]);
   });
 });
+
+// ============================================================
+// E-9-fix2: 平面で接している壁は、立面でも接して描かれること。
+//
+// 実機症状（鮎澤氏・平面確認済み）: 1F 棟の右辺と 2F 棟の左壁がぴったり接している
+// 物件で、北立面では 2 棟の壁の間に明確な隙間が空いた。
+//
+// 根因: 手前の棟の**屋根バンドの x 範囲は軒の出(出幅)ぶん壁より外へ広がる**。それを
+// 壁と同じ「GL から立つ塊」として遮蔽に使っていたため、隣の建物の壁が軒の出ぶん
+// 消えていた（隙間の実寸＝出幅そのもの）。軒の下は透けて見えるのが正しい。
+// ============================================================
+describe('E-9-fix2: 接している 2 棟の壁は立面でも接する', () => {
+  const roofOf = (id: string, bid: string, poly: Point[], uniformMm: number) =>
+    ({ id, buildingId: bid, polygon: poly, roofShape: 'gable', uniformMm } as unknown as
+      NonNullable<Parameters<typeof buildFaceElevation>[2]>['roofs'] extends (infer R)[] ? R : never);
+
+  // 平面: 1F 棟(左・x 0..300 / y 0..300)の右辺 x=300 に 2F 棟(右・x 300..600 / y -100..300)が接する。
+  //   2F の北壁(y=-100)は 1F の北壁(y=0)より手前（北面は y が小さいほど手前）。
+  const left = bld('left', rect(0, 0, 300, 300));
+  const right = bld('right', rect(300, -100, 600, 300));
+  const markers = [...marks(left, 3000), ...marks(right, 6000)];
+  const roofs = [
+    roofOf('rl', 'left', rect(0, 0, 300, 300), 500),
+    roofOf('rr', 'right', rect(300, -100, 600, 300), 500),   // 出幅 500mm
+  ];
+
+  const northOf = (withRoofs: boolean) => buildFaceElevation([], [left, right], {
+    face: 'north', floor: 1, markers, roofs: withRoofs ? roofs : [],
+  });
+  /** その建物の壁の x 範囲（面軸・mirror 後）。 */
+  const range = (f: ReturnType<typeof buildFaceElevation>, id: string) => {
+    const segs = f.buildingOutlines.find((o) => o.buildingId === id)!.segments;
+    return [Math.min(...segs.map((s) => s.xStart)), Math.max(...segs.map((s) => s.xEnd))];
+  };
+
+  it('屋根なし: 2 棟の壁の端が一致する（基準）', () => {
+    const f = northOf(false);
+    expect(range(f, 'right')[1]).toBe(range(f, 'left')[0]);
+  });
+
+  it('屋根あり（軒の出 500mm）でも壁の端は一致する＝隙間が空かない', () => {
+    const f = northOf(true);
+    const l = range(f, 'left'), r = range(f, 'right');
+    expect(r[1]).toBe(l[0]);
+    // 出幅ぶん(50 グリッド=500mm)削られていないこと（症状の再発防止）
+    expect(l[1] - l[0]).toBe(300);
+  });
+
+  it('軒の下は透ける: 軒の出の範囲は遮蔽に使わない', () => {
+    const f = northOf(true);
+    // 手前(右)の屋根バンドは壁より外(左)へ張り出しているが、
+    const band = f.roofBands.find((b) => b.buildingId === 'right')!;
+    expect(Math.max(band.xStart, band.xEnd)).toBeGreaterThan(range(f, 'right')[1]);
+    // 奥(左)の壁はその範囲でも消えていない
+    expect(range(f, 'left')[0]).toBe(range(f, 'right')[1]);
+  });
+
+  it('壁が重なる範囲では従来どおり遮蔽される（この修正で遮蔽が死んでいない）', () => {
+    // 右棟を左棟に完全に重ねると、手前の右棟が奥の左棟を隠す
+    const over = bld('right', rect(0, -100, 300, 300));
+    const f = buildFaceElevation([], [left, over], {
+      face: 'north', floor: 1, markers: [...marks(left, 3000), ...marks(over, 6000)],
+    });
+    expect(f.buildingOutlines.find((o) => o.buildingId === 'left')!.segments).toEqual([]);
+  });
+});

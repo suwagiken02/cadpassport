@@ -366,6 +366,30 @@ export function frontStepsForFrontness(
  * 壁は BuildingOutlineSegment.depthCoord、屋根は RoofBand.frontness を使い、
  * どちらも無い古い呼び出しでは建物の代表値へフォールバックする。
  */
+/** span[] を許可 x 区間[]の中だけに切り出す。 */
+function clipSpansToRanges(spans: ProfileSpan[], ranges: [number, number][]): ProfileSpan[] {
+  if (ranges.length === 0) return [];
+  const out: ProfileSpan[] = [];
+  for (const s of spans) {
+    for (const [a, b] of ranges) {
+      const x0 = Math.max(s.x0, a), x1 = Math.min(s.x1, b);
+      if (x1 - x0 <= EPS) continue;
+      out.push({ x0, x1, mm0: spanAt(s, x0), mm1: spanAt(s, x1) });
+    }
+  }
+  return out;
+}
+
+/** その建物がこの面に持つ壁の x 区間[]（マージ済み）。 */
+function wallRangesOf(outlines: BuildingOutline[], buildingId: string): [number, number][] {
+  return mergeIntervals(
+    outlines
+      .filter((o) => o.buildingId === buildingId)
+      .flatMap((o) => o.segments.map((s) =>
+        [Math.min(s.xStart, s.xEnd), Math.max(s.xStart, s.xEnd)] as [number, number])),
+  );
+}
+
 function occludersOf(
   outlines: BuildingOutline[], bands: RoofBand[], buildings: BuildingShape[], face: Face,
 ): Occluder[] {
@@ -382,7 +406,13 @@ function occludersOf(
   for (const b of bands) {
     const f = b.frontness ?? byId.get(b.buildingId);
     if (f == null) continue;
-    const spans = roofBandSpans(b);
+    // E-9-fix2: 屋根バンドが遮るのは「その建物が実際に建っている x 範囲」だけ。
+    //   バンドの x 範囲は軒の出(出幅)ぶん壁より外へ広がっており、そこを壁と同じ
+    //   「GL から立つ塊」として扱うと、隣に接している建物の壁が軒の出ぶん消えて
+    //   立面に隙間が空く（実機症状: 北面で接しているはずの 2 棟の間に 500mm の隙間）。
+    //   軒の下は透けて見えるのが正しい。壁の範囲内では壁自身が GL から遮るので、
+    //   バンドはその上に足りない分（屋根の三角）を足すだけでよい。
+    const spans = clipSpansToRanges(roofBandSpans(b), wallRangesOf(outlines, b.buildingId));
     if (spans.length > 0) out.push({ frontness: f, spans, buildingId: b.buildingId });
   }
   return out;
