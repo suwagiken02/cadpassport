@@ -205,13 +205,69 @@ export type ClippedSpan = {
   x0: number; x1: number;
   topStartMm: number; topEndMm: number;
   baseStartMm: number; baseEndMm: number;
+  /** 下端の折れ線 (= E-9-fix・mergeClipped が付ける)。直線なら undefined。 */
+  basePath?: { x: number; mm: number }[];
 };
 
-export function clipSpanByProfile(span: ProfileSpan, steps: StepSpan[]): ClippedSpan[] {
+/**
+ * 連続して見える範囲を 1 枚にまとめる (= E-9-fix)。
+ *
+ * 遮蔽の判定は細かい x 区間で行うが、そのまま描くと短冊の左右の縦辺が全部線になり
+ * 「シマシマ」に見える（実機症状）。隣り合う可視区間（x が接し、下端も連続）は
+ * 1 つの ClippedSpan にまとめ、下端は折れ線 basePath で表す＝内部に線が出ない。
+ */
+export function mergeClipped(pieces: ClippedSpan[]): ClippedSpan[] {
+  const out: ClippedSpan[] = [];
+  for (const p of pieces) {
+    const last = out[out.length - 1];
+    const joins = last
+      && Math.abs(last.x1 - p.x0) <= EPS
+      && Math.abs(last.baseEndMm - p.baseStartMm) <= 1e-6;
+    if (!joins) {
+      out.push({ ...p, basePath: [{ x: p.x0, mm: p.baseStartMm }, { x: p.x1, mm: p.baseEndMm }] });
+      continue;
+    }
+    last.x1 = p.x1;
+    last.topEndMm = p.topEndMm;
+    last.baseEndMm = p.baseEndMm;
+    last.basePath!.push({ x: p.x1, mm: p.baseEndMm });
+  }
+  // 下端が 1 直線なら折れ線は不要（従来どおりの台形）。
+  return out.map((c) => (c.basePath && isStraight(c.basePath) ? { ...c, basePath: undefined } : c));
+}
+
+/** 折れ線が 1 直線か（両端を結ぶ直線から外れる点が無いか）。 */
+function isStraight(path: { x: number; mm: number }[]): boolean {
+  if (path.length <= 2) return true;
+  const a = path[0], b = path[path.length - 1];
+  const w = b.x - a.x;
+  for (const p of path) {
+    const expect = Math.abs(w) <= EPS ? a.mm : a.mm + ((p.x - a.x) / w) * (b.mm - a.mm);
+    if (Math.abs(p.mm - expect) > 1e-6) return false;
+  }
+  return true;
+}
+
+/** span[] の x における上端（重なりは高い方）。どれにも掛からなければ -Infinity。 */
+export function spansTopAt(spans: ProfileSpan[], x: number): number {
+  let mm = -Infinity;
+  for (const s of spans) mm = Math.max(mm, spanAt(s, x));
+  return mm;
+}
+
+export function clipSpanByProfile(
+  span: ProfileSpan, steps: StepSpan[], exact?: ProfileSpan[],
+): ClippedSpan[] {
   const out: ClippedSpan[] = [];
   // 手前の区間境界で割ってから、区間ごとにしきい値 1 つで判定する。
   const bounds = new Set<number>([span.x0, span.x1]);
   for (const s of steps) {
+    if (s.x0 > span.x0 + EPS && s.x0 < span.x1 - EPS) bounds.add(s.x0);
+    if (s.x1 > span.x0 + EPS && s.x1 < span.x1 - EPS) bounds.add(s.x1);
+  }
+  // E-9-fix: 手前の実輪郭の折れ点も割り位置に入れる。階段はここで平らに丸められている
+  //   ことがあり（隣り合う段が同じ高さだと統合される）、棟の頂点などを取りこぼすため。
+  for (const s of exact ?? []) {
     if (s.x0 > span.x0 + EPS && s.x0 < span.x1 - EPS) bounds.add(s.x0);
     if (s.x1 > span.x0 + EPS && s.x1 < span.x1 - EPS) bounds.add(s.x1);
   }
@@ -226,12 +282,19 @@ export function clipSpanByProfile(span: ProfileSpan, steps: StepSpan[]): Clipped
     if (h <= EPS) { out.push(seg(a, b, ta, tb, 0, 0)); continue; }      // 手前に何も無い
     const upA = ta > h + EPS, upB = tb > h + EPS;
     if (!upA && !upB) continue;                                        // 完全に隠れる
-    if (upA && upB) { out.push(seg(a, b, ta, tb, h, h)); continue; }    // 全区間で上に出る
+    // 下端は「階段化した値」ではなく**手前の実際の輪郭**を使う (= E-9-fix)。
+    //   階段は見える/見えないの判定にだけ使い、線は元の勾配なりに引く（ギザギザ防止）。
+    const baseAt = (x: number, top: number) => {
+      if (!exact) return h;
+      const e = spansTopAt(exact, x);
+      return Number.isFinite(e) ? Math.min(Math.max(e, 0), top) : h;
+    };
+    if (upA && upB) { out.push(seg(a, b, ta, tb, baseAt(a, ta), baseAt(b, tb))); continue; }
     // 片側だけ出る: 交点で割る（上端は線形なので厳密に求まる）
     const t = (h - ta) / (tb - ta);
     const xc = a + t * (b - a);
     if (upA) { b = xc; tb = h; } else { a = xc; ta = h; }
-    if (b - a > EPS) out.push(seg(a, b, ta, tb, h, h));
+    if (b - a > EPS) out.push(seg(a, b, ta, tb, baseAt(a, ta), baseAt(b, tb)));
   }
   return out;
 
@@ -435,6 +498,20 @@ export function applyBuildingOcclusion(
   if (occ.length < 2) return { buildingOutlines: outlines, roofBands: bands };
   const byId = new Map(buildings.map((b) => [b.id, buildingFrontness(b, face)]));
   const cache = new Map<string, StepSpan[]>();
+  const exactCache = new Map<string, ProfileSpan[]>();
+  /** 手前の実輪郭（階段化していない素材）。下端の線を勾配なりに引くために使う。 */
+  const exactFor = (myFront: number, buildingId: string): ProfileSpan[] => {
+    const key = buildingId + '@' + myFront;
+    const hit = exactCache.get(key);
+    if (hit) return hit;
+    const spans: ProfileSpan[] = [];
+    for (const oc of occ) {
+      if (oc.buildingId === buildingId) continue;
+      if (oc.frontness > myFront + SAME_DEPTH_EPS) spans.push(...oc.spans);
+    }
+    exactCache.set(key, spans);
+    return spans;
+  };
   /** その手前度より手前にある「他の建物」の要素をまとめた階段プロファイル。 */
   const stepsFor = (myFront: number, buildingId: string): StepSpan[] => {
     const key = buildingId + '@' + myFront;
@@ -452,12 +529,15 @@ export function applyBuildingOcclusion(
       const f = s.depthCoord != null ? depthFrontness(s.depthCoord, face) : fallback;
       const steps = f == null ? [] : stepsFor(f, o.buildingId);
       if (steps.length === 0) return [s];
+      const exact = exactFor(f!, o.buildingId);
       const clipped = outlineSpans({ ...o, segments: [s] }).flatMap((sp) =>
-        clipSpanByProfile(sp, steps).map((c) => ({
+        // E-9-fix: 連続して見える範囲は 1 枚にまとめる（短冊に割ると縦線が並ぶ）。
+        mergeClipped(clipSpanByProfile(sp, steps, exact)).map((c) => ({
           xStart: c.x0, xEnd: c.x1,
           heightStartMm: c.topStartMm, heightEndMm: c.topEndMm,
           ...(c.baseStartMm > EPS || c.baseEndMm > EPS
             ? { baseStartMm: c.baseStartMm, baseEndMm: c.baseEndMm } : {}),
+          ...(c.basePath && c.basePath.length > 2 ? { basePath: c.basePath } : {}),
           ...(s.depthCoord != null ? { depthCoord: s.depthCoord } : {}),
         })));
       changed = true;

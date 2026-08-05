@@ -346,3 +346,99 @@ describe('E-9-fix2: 接している 2 棟の壁は立面でも接する', () => 
     expect(f.buildingOutlines.find((o) => o.buildingId === 'left')!.segments).toEqual([]);
   });
 });
+
+// ============================================================
+// E-9-fix: 遮蔽で見える範囲は「連続した 1 枚」で描く（縦線シマシマの解消）。
+//
+// 実機症状（鮎澤氏）: 西面（1F が手前・2F が奥で高い）で、2F の見える部分が面として
+// 描かれず細い縦線が多数並ぶシマシマ状になった。遮蔽の判定は細かい x 区間で行うため、
+// そのまま短冊として描くと短冊の左右の縦辺が全部線になる。
+// ============================================================
+describe('E-9-fix: 可視領域は連続ポリゴン（内部に縦線を作らない）', () => {
+  /** 手前の低い棟（西向きの妻＝上端が斜め）と、奥の高い棟。 */
+  const low = bld('low', rect(0, 0, 200, 300));
+  const high = bld('high', rect(200, 0, 500, 300));
+  /** 手前の西壁だけ妻（両端 3000・中央 5000）。奥は 9000 の陸屋根。 */
+  const markers: HeightMarker[] = [
+    { id: 'p', buildingId: 'low', edgeIndex: 3, t: 0, heightMm: 3000 },
+    { id: 'q', buildingId: 'low', edgeIndex: 3, t: 0.5, heightMm: 5000 },
+    { id: 'r', buildingId: 'low', edgeIndex: 3, t: 1, heightMm: 3000 },
+    { id: 's', buildingId: 'high', edgeIndex: 3, t: 0.5, heightMm: 9000 },
+  ];
+  const west = () => buildFaceElevation([], [low, high], { face: 'west', floor: 1, markers });
+
+  it('斜めの手前に隠れても、奥の可視部分は短冊に割れない', () => {
+    const segs = west().buildingOutlines.find((o) => o.buildingId === 'high')!.segments;
+    // 300mm 刻みの判定で 10 枚に割れていた（実機のシマシマ）。1 枚に統合される。
+    expect(segs).toHaveLength(1);
+    expect(segs[0].xStart).toBe(0);
+    expect(segs[0].xEnd).toBe(300);
+  });
+
+  it('下端は階段ではなく手前の輪郭（勾配）なりに引かれる', () => {
+    const seg = west().buildingOutlines.find((o) => o.buildingId === 'high')!.segments[0];
+    // 手前の妻は 3000 →(中央)5000→ 3000。下端の折れ線がその形をなぞる。
+    expect(seg.baseStartMm).toBe(3000);
+    expect(seg.baseEndMm).toBe(3000);
+    const path = seg.basePath!;
+    expect(path[0]).toEqual({ x: 0, mm: 3000 });
+    expect(path[path.length - 1]).toEqual({ x: 300, mm: 3000 });
+    expect(Math.max(...path.map((p) => p.mm))).toBe(5000);       // 頂点は手前の棟の頂点
+    // 階段の段（同じ高さの点が続く）になっていない＝すべて勾配上の点
+    expect(path.every((p) => Math.abs(p.mm - (p.x <= 150 ? 3000 + (p.x / 150) * 2000
+      : 5000 - ((p.x - 150) / 150) * 2000)) < 1e-6)).toBe(true);
+  });
+
+  it('下端が一直線なら折れ線は付けない（従来どおりの台形）', () => {
+    const flat = bld('flat', rect(0, 0, 200, 300));
+    const back = bld('back2', rect(200, 0, 500, 300));
+    const f = buildFaceElevation([], [flat, back], {
+      face: 'west', floor: 1, markers: [...marks(flat, 3000), ...marks(back, 9000)],
+    });
+    const seg = f.buildingOutlines.find((o) => o.buildingId === 'back2')!.segments[0];
+    expect(seg.basePath).toBeUndefined();
+    expect(seg.baseStartMm).toBe(3000);
+  });
+});
+
+// ============================================================
+// E-9-fix3: 東面で 1F の軒の出（はみ出し分）は残る。
+//
+// 1F 本体が 2F に隠れるのは正しいが、1F の屋根は 2F の壁より外へ張り出しており、
+// そのはみ出し分は 2F の脇に見えるはず。屋根バンドは建物単位でまとめて落とさず、
+// バンドごとに独立してクリップする。
+// ============================================================
+describe('E-9-fix3: 隠れた建物でも屋根のはみ出し分は描く', () => {
+  const backB = bld('back', rect(0, 0, 300, 300));       // 奥・低い（2F と同じ y 範囲）
+  const frontB2 = bld('front', rect(300, 0, 600, 300));  // 手前・高い
+  const markers = [...marks(backB, 3000), ...marks(frontB2, 6000)];
+  const roofOf = (id: string, bid: string, poly: Point[], uniformMm: number) =>
+    ({ id, buildingId: bid, polygon: poly, roofShape: 'gable', uniformMm } as unknown as
+      NonNullable<Parameters<typeof buildFaceElevation>[2]>['roofs'] extends (infer R)[] ? R : never);
+  const east = () => buildFaceElevation([], [backB, frontB2], {
+    face: 'east', floor: 1, markers,
+    roofs: [
+      roofOf('rb', 'back', rect(0, 0, 300, 300), 500),     // 出幅 500mm
+      roofOf('rf', 'front', rect(300, 0, 600, 300), 500),
+    ],
+  });
+
+  it('1F 本体（壁）は完全に隠れる', () => {
+    expect(east().buildingOutlines.find((o) => o.buildingId === 'back')!.segments).toEqual([]);
+  });
+
+  it('1F の軒の出は 2F の両脇に残る（座標固定）', () => {
+    const bands = east().roofBands.filter((b) => b.buildingId === 'back')
+      .map((b) => [Math.min(b.xStart, b.xEnd), Math.max(b.xStart, b.xEnd)])
+      .sort((a, b) => a[0] - b[0]);
+    // 2F の壁は [-300, 0]。1F のバンドは壁 ±出幅(50 グリッド=500mm) なので
+    // その外側 [-350,-300] と [0,50] が「2F の脇に覗くけらば端」として残る。
+    expect(bands).toEqual([[-350, -300], [0, 50]]);
+  });
+
+  it('2F に重なる範囲のバンドは消える（隠れるものは隠れる）', () => {
+    const bands = east().roofBands.filter((b) => b.buildingId === 'back');
+    expect(bands.every((b) => Math.min(b.xStart, b.xEnd) >= 0 || Math.max(b.xStart, b.xEnd) <= -300))
+      .toBe(true);
+  });
+});

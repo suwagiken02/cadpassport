@@ -95,10 +95,17 @@ export function faceElevationToPrimitives(
   for (const o of buildingOutlines) {
     o.segments.forEach((s, k) => {
       // E-9: 下端は既定 GL(0)。手前の建物に隠れた区間はその上端が下端になる。
-      const b0 = s.baseStartMm ? ly(s.baseStartMm) : 0;   // 0 は -0 を作らずそのまま GL
-      const b1 = s.baseEndMm ? ly(s.baseEndMm) : 0;
+      const yb = (mm: number) => (mm ? ly(mm) : 0);       // 0 は -0 を作らずそのまま GL
+      // E-9-fix: 下端が上下する（手前の屋根なりに削られる）ときは折れ線で 1 枚に描く。
+      //   短冊に分けて描くと短冊の縦辺が全部線になり「シマシマ」に見える。
+      const base = s.basePath && s.basePath.length >= 2
+        ? s.basePath
+        : [{ x: s.xStart, mm: s.baseStartMm ?? 0 }, { x: s.xEnd, mm: s.baseEndMm ?? 0 }];
+      const pts: number[] = [lx(base[0].x), yb(base[0].mm)];
+      pts.push(lx(s.xStart), ly(s.heightStartMm), lx(s.xEnd), ly(s.heightEndMm));
+      for (let i = base.length - 1; i >= 1; i--) pts.push(lx(base[i].x), yb(base[i].mm));
       poly(
-        [lx(s.xStart), b0, lx(s.xStart), ly(s.heightStartMm), lx(s.xEnd), ly(s.heightEndMm), lx(s.xEnd), b1],
+        pts,
         fillOf(o.buildingId), 0.22, C_OUTLINE, 1.5,
         {
           kind: 'building', id: `building:${o.buildingId}:${k}`, index: k,

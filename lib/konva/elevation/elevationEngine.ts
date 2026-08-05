@@ -175,6 +175,15 @@ export type BuildingOutlineSegment = {
   baseStartMm?: number;
   baseEndMm?: number;
   /**
+   * 下端の折れ線 (= E-9-fix)。手前の建物の輪郭に沿って下端が上下するとき、
+   * xStart→xEnd の下端をこの点列で表す（未指定＝baseStart/baseEnd の直線）。
+   *
+   * 遮蔽で見える範囲を細かい短冊に割って別々の四角形として描くと、短冊の左右の縦辺が
+   * すべて線として出て「シマシマ」になる（実機症状）。**連続して見える範囲は 1 枚の
+   * ポリゴン**にし、下端だけをこの折れ線で表す＝内部に線が出ない。
+   */
+  basePath?: { x: number; mm: number }[];
+  /**
    * この壁の奥行き座標 (= E-9)。面に垂直な軸（N/S は y、E/W は x）。
    * 建物同士・同一建物の前後（L 字の手前の翼が奥の翼を隠す）の判定に使う。
    */
@@ -771,6 +780,9 @@ export function mirrorVariableAxis(fe: FaceElevation): FaceElevation {
     // E-9: 下端も左右反転（未指定＝GL のままなら持たせない）。
     ...(s.baseStartMm != null || s.baseEndMm != null
       ? { baseStartMm: s.baseEndMm ?? 0, baseEndMm: s.baseStartMm ?? 0 } : {}),
+    // E-9-fix: 下端の折れ線も反転（x を反転して左→右の順に戻す）。
+    ...(s.basePath
+      ? { basePath: s.basePath.map((p) => ({ x: nz(p.x), mm: p.mm })).reverse() } : {}),
     ...(s.depthCoord != null ? { depthCoord: s.depthCoord } : {}),   // 奥行きは左右反転で不変
   });
   const buildingOutlines = fe.buildingOutlines.map(o => ({
