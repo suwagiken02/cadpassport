@@ -35,7 +35,10 @@ import {
   roofWallCoverages,
   variableCoord,
 } from './roofBandSource';
-import { applyBuildingOcclusion } from './occlusion';
+import {
+  applyBuildingOcclusion, buildingOccluders, frontStepsForFrontness, hiddenIntervalsAt,
+  type Occluder,
+} from './occlusion';
 import type { Face, FaceSpanColumn } from './faceReconstruction';
 import {
   FIRST_KOMA_OFFSET_MM, JACK_WIND_MAX_MM, JACK_WIND_MIN_MM, KOMA_PITCH_MM,
@@ -171,6 +174,11 @@ export type BuildingOutlineSegment = {
    */
   baseStartMm?: number;
   baseEndMm?: number;
+  /**
+   * この壁の奥行き座標 (= E-9)。面に垂直な軸（N/S は y、E/W は x）。
+   * 建物同士・同一建物の前後（L 字の手前の翼が奥の翼を隠す）の判定に使う。
+   */
+  depthCoord?: number;
 };
 
 export type BuildingOutline = {
@@ -286,6 +294,8 @@ export function buildBuildingOutline(
         xEnd: Math.max(c0, c1),
         heightStartMm: startIs0 ? heights[k] : heights[k + 1],
         heightEndMm: startIs0 ? heights[k + 1] : heights[k],
+        // E-9: この壁の奥行き（面に垂直な軸）。軸並行前提なので辺内で一定。
+        depthCoord: isHorizontal ? p1.y : p1.x,
       });
     }
   }
@@ -365,6 +375,11 @@ export type RoofBand = {
   filledToRidge: boolean;
   /** 棟ライン方式のとき、包絡線(profile=上端)を塗り下げる軒基準高(mm)。マーカー方式は undefined。 */
   baseMm?: number;
+  /**
+   * 視点への近さ (= E-9)。大きいほど手前（roofFrontness と同じ規約）。
+   * 建物同士の遮蔽で「どちらが手前か」を屋根ごとに判定するために持つ。
+   */
+  frontness?: number;
 };
 
 export type FaceElevation = {
@@ -708,9 +723,14 @@ function occlusionGapGrid(scaffolds: ElevationScaffold[]): number {
  * E-5-fix4: gapGrid 未指定時は面の変軸全幅の比率で算出し、物件サイズに依らず切れ目が視認できる
  *   px 幅になるようにする（固定 50mm は大物件で潰れて見えないのが実機の症状だった）。
  * 支柱・ジャッキ・spanRaises は現状維持（v1）。dims 基準（column.rails/postXs）は不変。
+ *
+ * E-9c: 建物による遮蔽も同じ機構で行う。occluders（自分より手前の建物のシルエット）を
+ *   渡すと、横線の高さごとに「手前の上端がその高さ以上の x 区間」を穴として足す
+ *   （＝ x 区間 × 高さしきい値）。手前の建物に隠れる足場は描かれない。
+ *   建物の穴は gap で広げない（建物の絵がそこにあるので切れ目を作る必要がない）。
  */
 export function applyOcclusionCut(
-  scaffolds: ElevationScaffold[], face: Face, gapGrid?: number,
+  scaffolds: ElevationScaffold[], face: Face, gapGrid?: number, occluders?: Occluder[],
 ): ElevationScaffold[] {
   const gap = gapGrid ?? occlusionGapGrid(scaffolds);
   // 「手前度」= 大きいほど手前。north/west は depthCoord 小が手前なので符号反転。
@@ -723,9 +743,13 @@ export function applyOcclusionCut(
         Math.min(o.column.xStart, o.column.xEnd) - gap,
         Math.max(o.column.xStart, o.column.xEnd) + gap,
       ]);
-    if (holes.length === 0) return sc;
-    const rails = sc.rails.flatMap((r) => subtractIntervals(r.x0, r.x1, holes).map(([a, b]) => ({ ...r, x0: a, x1: b })));
-    const boards = sc.boards.flatMap((b) => subtractIntervals(b.x0, b.x1, holes).map(([a, c]) => ({ ...b, x0: a, x1: c })));
+    // E-9c: この列より手前の建物のシルエット（高さで効く穴）。
+    const steps = frontStepsForFrontness(occluders, myFront);
+    if (holes.length === 0 && steps.length === 0) return sc;
+    const at = (hMm: number): [number, number][] =>
+      steps.length === 0 ? holes : [...holes, ...hiddenIntervalsAt(steps, hMm)];
+    const rails = sc.rails.flatMap((r) => subtractIntervals(r.x0, r.x1, at(r.heightMm)).map(([a, b]) => ({ ...r, x0: a, x1: b })));
+    const boards = sc.boards.flatMap((b) => subtractIntervals(b.x0, b.x1, at(b.levelMm)).map(([a, c]) => ({ ...b, x0: a, x1: c })));
     return { ...sc, rails, boards };
   });
 }
@@ -747,6 +771,7 @@ export function mirrorVariableAxis(fe: FaceElevation): FaceElevation {
     // E-9: 下端も左右反転（未指定＝GL のままなら持たせない）。
     ...(s.baseStartMm != null || s.baseEndMm != null
       ? { baseStartMm: s.baseEndMm ?? 0, baseEndMm: s.baseStartMm ?? 0 } : {}),
+    ...(s.depthCoord != null ? { depthCoord: s.depthCoord } : {}),   // 奥行きは左右反転で不変
   });
   const buildingOutlines = fe.buildingOutlines.map(o => ({
     ...o,
@@ -855,16 +880,19 @@ function buildRoofBandsForRoofs(
       const baseMm = Math.min(profile[0].mm, profile[profile.length - 1].mm);
       bands.push({
         buildingId: building.id, roofId: roof.id, xStart: ext.xStart, xEnd: ext.xEnd,
+        frontness: roofFrontness(building, roof, face),
         ridgeMm: Math.round(envMax), profile, filledToRidge: true, baseMm,
       });
     } else if (hasRidgeMarker) {
       bands.push({
         buildingId: building.id, roofId: roof.id, xStart: ext.xStart, xEnd: ext.xEnd,
+        frontness: roofFrontness(building, roof, face),
         ridgeMm: Math.round(markerMax!), profile: eaveProfile, filledToRidge: true,
       });
     } else if (hasOverhang) {
       bands.push({
         buildingId: building.id, roofId: roof.id, xStart: ext.xStart, xEnd: ext.xEnd,
+        frontness: roofFrontness(building, roof, face),
         ridgeMm: Math.round(outlineMax), profile: eaveProfile, filledToRidge: false,
       });
     }
@@ -1003,7 +1031,10 @@ export function buildFaceElevation(
   //   （完全に隠れる部分は描かず、部分的なら はみ出しだけ描く）。単棟では不変。
   const occ = applyBuildingOcclusion(buildingOutlines, roofBands, buildings, face);
   // E-5: 入隅の前後判定で、奥列の横線を手前列の x 区間で切る。
-  const cutScaffolds = applyOcclusionCut(scaffolds, face);
+  //   E-9c: 建物の遮蔽も同じ機構で（自分より手前の建物のシルエットで横線を切る）。
+  const cutScaffolds = applyOcclusionCut(
+    scaffolds, face, undefined, buildingOccluders(buildingOutlines, roofBands, buildings, face),
+  );
   const fe: FaceElevation = {
     face, floor,
     buildingOutlines: occ.buildingOutlines, scaffolds: cutScaffolds, roofBands: occ.roofBands,

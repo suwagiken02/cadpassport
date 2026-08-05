@@ -331,13 +331,60 @@ export function clipRoofBand(band: RoofBand, steps: StepSpan[]): RoofBand[] {
   return out;
 }
 
-/** 建物 1 棟が出す遮蔽の素材（壁＋その建物の屋根バンド）。 */
-function spansOf(
-  outlines: BuildingOutline[], bands: RoofBand[], buildingId: string,
-): ProfileSpan[] {
-  const out: ProfileSpan[] = [];
-  for (const o of outlines) if (o.buildingId === buildingId) out.push(...outlineSpans(o));
-  for (const b of bands) if (b.buildingId === buildingId) out.push(...roofBandSpans(b));
+/**
+ * 遮蔽する側（建物 1 棟）(= E-9c)。足場の切断は建物 id を知らなくてよく、
+ * 「自分より手前か」だけで決まるので frontness と上端素材だけを渡す。
+ */
+export type Occluder = { frontness: number; spans: ProfileSpan[]; buildingId?: string };
+
+/** 建物ごとの遮蔽素材[]（足場の遮蔽に渡す）。 */
+export function buildingOccluders(
+  outlines: BuildingOutline[], bands: RoofBand[], buildings: BuildingShape[], face: Face,
+): Occluder[] {
+  return occludersOf(outlines, bands, buildings, face);
+}
+
+/** その手前度より手前にある遮蔽物をまとめた階段プロファイル。 */
+export function frontStepsForFrontness(
+  occluders: Occluder[] | undefined, myFrontness: number, exceptBuildingId?: string,
+): StepSpan[] {
+  if (!occluders || occluders.length === 0) return [];
+  const spans: ProfileSpan[] = [];
+  for (const o of occluders) {
+    // E-9: 同じ建物どうしは遮蔽しない（大屋根と下屋の重ね順は R-1f の描画順が担当）。
+    if (exceptBuildingId != null && o.buildingId === exceptBuildingId) continue;
+    if (o.frontness > myFrontness + SAME_DEPTH_EPS) spans.push(...o.spans);
+  }
+  return spans.length > 0 ? toStepProfile(spans) : [];
+}
+
+/**
+ * 遮蔽の素材を「要素ごとの手前度つき」で集める (= E-9b)。
+ *
+ * 手前度は**壁 1 枚・屋根 1 枚ごと**に持つ（建物単位ではない）。L 字の建物では手前の翼と
+ * 奥の翼で深さが違い、建物単位で代表させると「奥の翼が自分の前にある」と誤判定するため。
+ * 壁は BuildingOutlineSegment.depthCoord、屋根は RoofBand.frontness を使い、
+ * どちらも無い古い呼び出しでは建物の代表値へフォールバックする。
+ */
+function occludersOf(
+  outlines: BuildingOutline[], bands: RoofBand[], buildings: BuildingShape[], face: Face,
+): Occluder[] {
+  const byId = new Map(buildings.map((b) => [b.id, buildingFrontness(b, face)]));
+  const out: Occluder[] = [];
+  for (const o of outlines) {
+    for (const s of o.segments) {
+      if (Math.abs(s.xEnd - s.xStart) <= EPS) continue;
+      const f = s.depthCoord != null ? depthFrontness(s.depthCoord, face) : byId.get(o.buildingId);
+      if (f == null) continue;
+      out.push({ frontness: f, spans: outlineSpans({ ...o, segments: [s] }), buildingId: o.buildingId });
+    }
+  }
+  for (const b of bands) {
+    const f = b.frontness ?? byId.get(b.buildingId);
+    if (f == null) continue;
+    const spans = roofBandSpans(b);
+    if (spans.length > 0) out.push({ frontness: f, spans, buildingId: b.buildingId });
+  }
   return out;
 }
 
@@ -354,44 +401,44 @@ function spansOf(
 export function applyBuildingOcclusion(
   outlines: BuildingOutline[], bands: RoofBand[], buildings: BuildingShape[], face: Face,
 ): { buildingOutlines: BuildingOutline[]; roofBands: RoofBand[] } {
-  const front = new Map<string, number>();
-  for (const b of buildings) front.set(b.id, buildingFrontness(b, face));
-  const ids = Array.from(new Set([...outlines.map((o) => o.buildingId), ...bands.map((b) => b.buildingId)]));
-  if (ids.length < 2) return { buildingOutlines: outlines, roofBands: bands };
-
-  /** その建物より手前にある建物のシルエット（階段プロファイル）。 */
-  const frontStepsFor = (id: string): StepSpan[] => {
-    const my = front.get(id);
-    if (my == null) return [];
-    const spans: ProfileSpan[] = [];
-    for (const other of ids) {
-      const of_ = front.get(other);
-      if (other === id || of_ == null) continue;
-      if (of_ <= my + SAME_DEPTH_EPS) continue;   // 同深度・奥は隠さない
-      spans.push(...spansOf(outlines, bands, other));
-    }
-    return toStepProfile(spans);
-  };
-  const stepsCache = new Map<string, StepSpan[]>();
-  const stepsFor = (id: string): StepSpan[] => {
-    if (!stepsCache.has(id)) stepsCache.set(id, frontStepsFor(id));
-    return stepsCache.get(id)!;
+  const occ = occludersOf(outlines, bands, buildings, face);
+  if (occ.length < 2) return { buildingOutlines: outlines, roofBands: bands };
+  const byId = new Map(buildings.map((b) => [b.id, buildingFrontness(b, face)]));
+  const cache = new Map<string, StepSpan[]>();
+  /** その手前度より手前にある「他の建物」の要素をまとめた階段プロファイル。 */
+  const stepsFor = (myFront: number, buildingId: string): StepSpan[] => {
+    const key = buildingId + '@' + myFront;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const steps = frontStepsForFrontness(occ, myFront, buildingId);
+    cache.set(key, steps);
+    return steps;
   };
 
   const buildingOutlines = outlines.map((o) => {
-    const steps = stepsFor(o.buildingId);
-    if (steps.length === 0) return o;
-    const segments = outlineSpans(o).flatMap((sp) => clipSpanByProfile(sp, steps).map((c) => ({
-      xStart: c.x0, xEnd: c.x1,
-      heightStartMm: c.topStartMm, heightEndMm: c.topEndMm,
-      ...(c.baseStartMm > EPS || c.baseEndMm > EPS
-        ? { baseStartMm: c.baseStartMm, baseEndMm: c.baseEndMm } : {}),
-    })));
-    return { ...o, segments: segments.sort((a, b) => a.xStart - b.xStart) };
+    const fallback = byId.get(o.buildingId);
+    let changed = false;
+    const segments = o.segments.flatMap((s) => {
+      const f = s.depthCoord != null ? depthFrontness(s.depthCoord, face) : fallback;
+      const steps = f == null ? [] : stepsFor(f, o.buildingId);
+      if (steps.length === 0) return [s];
+      const clipped = outlineSpans({ ...o, segments: [s] }).flatMap((sp) =>
+        clipSpanByProfile(sp, steps).map((c) => ({
+          xStart: c.x0, xEnd: c.x1,
+          heightStartMm: c.topStartMm, heightEndMm: c.topEndMm,
+          ...(c.baseStartMm > EPS || c.baseEndMm > EPS
+            ? { baseStartMm: c.baseStartMm, baseEndMm: c.baseEndMm } : {}),
+          ...(s.depthCoord != null ? { depthCoord: s.depthCoord } : {}),
+        })));
+      changed = true;
+      return clipped;
+    });
+    return changed ? { ...o, segments: segments.sort((a, b) => a.xStart - b.xStart) } : o;
   });
 
   const roofBands = bands.flatMap((b) => {
-    const steps = stepsFor(b.buildingId);
+    const f = b.frontness ?? byId.get(b.buildingId);
+    const steps = f == null ? [] : stepsFor(f, b.buildingId);
     return steps.length === 0 ? [b] : clipRoofBand(b, steps);
   });
 

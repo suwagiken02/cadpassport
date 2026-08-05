@@ -12,9 +12,9 @@
 import { describe, it, expect } from 'vitest';
 import type { BuildingShape, HeightMarker, Point } from '@/types';
 import {
-  buildFaceElevation, type BuildingOutline, type RoofBand,
+  applyOcclusionCut, buildFaceElevation, type BuildingOutline, type RoofBand,
 } from '../elevationEngine';
-import { applyBuildingOcclusion } from '../occlusion';
+import { applyBuildingOcclusion, type Occluder } from '../occlusion';
 
 const rect = (x0: number, y0: number, x1: number, y1: number): Point[] => [
   { x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 },
@@ -181,5 +181,102 @@ describe('end-to-end: buildFaceElevation（実機と同じ経路）', () => {
       .toBeGreaterThan(0);
     expect(f.buildingOutlines.find((o) => o.buildingId === 'front')!.segments.length)
       .toBeGreaterThan(0);
+  });
+});
+
+// ============================================================
+// E-9c: 足場部材への遮蔽拡張（E-5 の切断機構に建物遮蔽を追加）。
+//
+// 奥の棟に付く足場も、手前の棟に隠れる部分は描かない。列どうしの遮蔽（E-5）と
+// 同じ穴の仕組みに、高さごとの「建物の穴」を足すだけ（x 区間 × 高さしきい値）。
+// ============================================================
+describe('E-9c: 奥の建物に付く足場が手前の建物に隠れる', () => {
+  /** 最小の足場列（rails/boards だけ本物）。 */
+  const sc = (depthCoord: number, rails: { heightMm: number }[], boards: { levelMm: number }[]) => ({
+    column: { depthCoord, xStart: 0, xEnd: 300, rails: [], handrailIds: [] },
+    postXs: [0, 300],
+    levels: {} as never,
+    rails: rails.map((r) => ({ ...r, x0: 0, x1: 300 })),
+    boards: boards.map((b) => ({ ...b, x0: 0, x1: 300 })),
+    spanRaises: [],
+  }) as unknown as Parameters<typeof applyOcclusionCut>[0][number];
+
+  /** 手前の建物: x 0..200 で高さ 6000（東面）。 */
+  const occ: Occluder[] = [{
+    frontness: 400,
+    spans: [{ x0: 0, x1: 200, mm0: 6000, mm1: 6000 }],
+  }];
+
+  it('手前の建物より低い横線は、その x 区間で切れる', () => {
+    const [cut] = applyOcclusionCut(
+      [sc(100, [{ heightMm: 3000 }], [{ levelMm: 3000 }])], 'east', 0, occ);
+    expect(cut.rails.map((r) => [r.x0, r.x1])).toEqual([[200, 300]]);
+    expect(cut.boards.map((b) => [b.x0, b.x1])).toEqual([[200, 300]]);
+  });
+
+  it('手前の建物より高い横線は切れない（上に出ているので見える）', () => {
+    const [cut] = applyOcclusionCut(
+      [sc(100, [{ heightMm: 9000 }], [])], 'east', 0, occ);
+    expect(cut.rails.map((r) => [r.x0, r.x1])).toEqual([[0, 300]]);
+  });
+
+  it('高さごとに穴が変わる（低い段だけ消えて高い段は残る）', () => {
+    const [cut] = applyOcclusionCut(
+      [sc(100, [{ heightMm: 3000 }, { heightMm: 9000 }], [])], 'east', 0, occ);
+    expect(cut.rails.map((r) => [r.heightMm, r.x0, r.x1]))
+      .toEqual([[3000, 200, 300], [9000, 0, 300]]);
+  });
+
+  it('その建物より手前に立つ足場（自分の建物の外側の列）は切られない', () => {
+    const [cut] = applyOcclusionCut(
+      [sc(500, [{ heightMm: 3000 }], [])], 'east', 0, occ);   // frontness 500 > 400
+    expect(cut.rails.map((r) => [r.x0, r.x1])).toEqual([[0, 300]]);
+  });
+
+  it('建物の遮蔽が無ければ従来どおり（E-5 の列どうしだけ）', () => {
+    const [cut] = applyOcclusionCut([sc(100, [{ heightMm: 3000 }], [])], 'east', 0);
+    expect(cut.rails.map((r) => [r.x0, r.x1])).toEqual([[0, 300]]);
+  });
+});
+
+describe('E-9c: 前後の判定は「壁 1 枚・屋根 1 枚ごと」', () => {
+  /** L 字の 1 棟: 手前の翼(depth 360)と奥の翼(depth 180)。 */
+  const lShape = bld('L', [
+    { x: 0, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 180 },
+    { x: 180, y: 180 }, { x: 180, y: 360 }, { x: 0, y: 360 },
+  ]);
+  /** 別棟（L 字の 2 つの翼の**間**の深さ・depth 280）。手前の翼より奥、奥の翼より手前。 */
+  const mid = bld('mid', rect(0, 250, 360, 280));
+
+  it('同じ建物どうしは遮蔽しない（大屋根/下屋の重ね順は R-1f の描画順が担当）', () => {
+    const outlines = [{
+      buildingId: 'L', floor: 1, face: 'south' as const,
+      segments: [
+        { xStart: 0, xEnd: 180, heightStartMm: 4800, heightEndMm: 4800, depthCoord: 360 },
+        { xStart: 0, xEnd: 360, heightStartMm: 3000, heightEndMm: 3000, depthCoord: 180 },
+      ],
+    }];
+    const r = applyBuildingOcclusion(outlines, [], [lShape], 'south');
+    expect(r.buildingOutlines).toEqual(outlines);
+  });
+
+  it('別棟に対しては「手前の翼」だけが遮る（奥の翼は遮らない）', () => {
+    const outlines = [
+      {
+        buildingId: 'L', floor: 1, face: 'south' as const,
+        segments: [
+          { xStart: 0, xEnd: 180, heightStartMm: 4800, heightEndMm: 4800, depthCoord: 360 },
+          { xStart: 180, xEnd: 360, heightStartMm: 4800, heightEndMm: 4800, depthCoord: 180 },
+        ],
+      },
+      {
+        buildingId: 'mid', floor: 1, face: 'south' as const,
+        segments: [{ xStart: 0, xEnd: 360, heightStartMm: 3000, heightEndMm: 3000, depthCoord: 280 }],
+      },
+    ];
+    const r = applyBuildingOcclusion(outlines, [], [lShape, mid], 'south');
+    const midSegs = r.buildingOutlines.find((o) => o.buildingId === 'mid')!.segments;
+    // 手前の翼(x 0..180) の裏だけが消え、奥の翼の裏(x 180..360)は残る
+    expect(midSegs.map((s) => [s.xStart, s.xEnd])).toEqual([[180, 360]]);
   });
 });

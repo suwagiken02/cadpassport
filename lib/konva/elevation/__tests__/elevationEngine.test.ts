@@ -143,7 +143,8 @@ describe('buildBuildingOutline: 高さマーカーあり/なしフォールバ�
     ];
     const o = buildBuildingOutline(building, 'north', markers);
     expect(o.segments.length).toBe(1);
-    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 360, heightStartMm: 5000, heightEndMm: 5000 });
+    // E-9: depthCoord（その壁の奥行き）が付く。北辺は y=0。
+    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 360, heightStartMm: 5000, heightEndMm: 5000, depthCoord: 0 });
     expect(o.floor).toBe(1);
   });
 
@@ -171,8 +172,8 @@ describe('buildBuildingOutline: 辺内部マーカーで妻(折れ線)化', () =
     const o = buildBuildingOutline(building, 'north', markers);
     expect(o.segments.length).toBe(2);
     // 左: x[0,180] 3000→5000、右: x[180,360] 5000→3000（頂点は中央 x=180・5000）
-    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 180, heightStartMm: 3000, heightEndMm: 5000 });
-    expect(o.segments[1]).toEqual({ xStart: 180, xEnd: 360, heightStartMm: 5000, heightEndMm: 3000 });
+    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 180, heightStartMm: 3000, heightEndMm: 5000, depthCoord: 0 });
+    expect(o.segments[1]).toEqual({ xStart: 180, xEnd: 360, heightStartMm: 5000, heightEndMm: 3000, depthCoord: 0 });
   });
 
   it('マーカー1個(全周一定) → 従来どおり1辺1セグメント不変', () => {
@@ -181,7 +182,7 @@ describe('buildBuildingOutline: 辺内部マーカーで妻(折れ線)化', () =
     ];
     const o = buildBuildingOutline(building, 'north', markers);
     expect(o.segments.length).toBe(1);
-    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 360, heightStartMm: 4000, heightEndMm: 4000 });
+    expect(o.segments[0]).toEqual({ xStart: 0, xEnd: 360, heightStartMm: 4000, heightEndMm: 4000, depthCoord: 0 });
   });
 });
 
