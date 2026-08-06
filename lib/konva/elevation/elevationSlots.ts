@@ -1,7 +1,13 @@
 // ============================================================
-// 立面の吸着スロット (E-8-v2c・pure・node 安全)
+// 立面の位置候補 (E-8-v2c・pure・node 安全)
 //
-// 「はまる場所にしかはまらない」を担保する有効位置の集合。
+// E-8-v3 で編集は自由座標＋接合点スナップ (= elevationJoints) に変わったため、
+// ここは「置ける場所しか置けない」許可制ではなくなった。今の役目は 2 つだけ:
+//   ・再生成時の再マッチ (= elevationPartsRematch) が「その位置がまだ有るか」を見る
+//   ・パレットの種類一覧 (= PALETTE_KINDS) と手動部材の id 採番 (= nextPartId)
+// 吸着・占有判定・隣への移動といった許可制の仕組みは E-8-v3d で撤去した。
+//
+// 位置の集合:
 //   横 = 支柱位置（postXs）と支柱間（スパン）
 //   縦 = 作業床の高さ（levelsMm）と 450 刻みのコマ位置（komaGridMm）
 // 部材ごとに使うスロットが違う:
@@ -12,7 +18,7 @@
 // 幅はスパン幅から自動で決まる（部材側で長さを指定しない）。
 // ============================================================
 import {
-  postMemberKomaCount, postMemberTopMm, postStackTopMm, postXAt,
+  postMemberTopMm, postStackTopMm, postXAt,
   type ElevationPart, type ElevationPartGeometry, type ElevationPartKind,
 } from './elevationParts';
 import { KOMA_PITCH_MM } from './komaGrid';
@@ -226,132 +232,11 @@ export function buildElevationSlots(
   return out;
 }
 
-/** スロットの同一判定キー (= E-8-v2g、 ドラッグ中の吸着先が変わったかの比較用)。 */
-export function slotKey(slot: ElevationSlot): string {
-  const pos = slot.postIndex != null ? `p${slot.postIndex}` : `s${slot.spanIndex ?? '-'}`;
-  return `${slot.kind}@${slot.scaffoldIndex}:${pos}:${slot.levelMm ?? '-'}`;
-}
 
-/** スロットの代表点（吸着距離の基準）。横はスパン中央、縦は高さ。 */
-export function slotAnchor(slot: ElevationSlot, geom: ElevationPartGeometry): { x: number; y: number } {
-  const sg = geom.scaffolds[slot.scaffoldIndex];
-  const midMm = slot.levelMm ?? ((sg?.jackTopMm ?? 0) + (sg?.topRailMm ?? 0)) / 2;
-  return { x: (slot.x0 + slot.x1) / 2, y: midMm };
-}
 
-/**
- * ローカル座標（横=グリッド・生座標、縦=mm）に最も近い有効スロットを返す。
- * 縦横のスケールが違うので、縦は mm→グリッド（1grid=10mm）に換算して比較する。
- * 候補が無ければ null。
- */
-export function snapToSlot(
-  point: { x: number; yMm: number }, geom: ElevationPartGeometry, kind: ElevationPartKind,
-  opts?: SlotGridOptions,
-): ElevationSlot | null {
-  const slots = buildElevationSlots(geom, kind, opts);
-  let best: { slot: ElevationSlot; d: number } | null = null;
-  for (const s of slots) {
-    const a = slotAnchor(s, geom);
-    const dx = a.x - point.x;
-    const dy = (a.y - point.yMm) / 10; // mm → グリッド
-    const d = dx * dx + dy * dy;
-    if (!best || d < best.d) best = { slot: s, d };
-  }
-  return best ? best.slot : null;
-}
 
-/**
- * 支柱部材のドラッグ移動先 (= E-8-v2s)。
- *
- * 実機症状: 天端の上へ継ぎ足そうとすると、頭に載らず隙間を空けて宙に浮いた。
- * 原因は吸着の基準点で、汎用の snapToSlot は「指の位置」を寄せていた。支柱は 1 本が
- * 長い（1800〜3600mm）ので、部材の真ん中あたりを掴むと指は下端よりずっと上にあり、
- * 450 刻みの継ぎ足し候補のうち「掴んだ位置ぶん上」のものに吸着していた。
- *
- * ここでは掴んだ部材の「下端」を寄せる:
- *   ・横 = 最寄りの支柱位置（実在＋仮想）
- *   ・縦 = 「今の高さのまま」と「継ぎ足し先」のうち、動かした下端が近い方
- *          （横へ動かしただけなら高さは変わらない ＝ v2q の挙動をそのまま保つ）
- */
-export function snapPostSlot(
-  geom: ElevationPartGeometry,
-  part: ElevationPart,
-  moved: { x: number; bottomMm: number },
-  currentBottomMm: number,
-  opts?: SlotGridOptions,
-): ElevationSlot | null {
-  const slots = buildElevationSlots(geom, part.kind, opts);
-  if (slots.length === 0) return null;
-  // 横: 最寄りの支柱位置（縦は見ない）
-  let nearest: ElevationSlot | null = null;
-  let bestDx = Infinity;
-  for (const s of slots) {
-    const dx = Math.abs(s.x0 - moved.x);
-    if (dx < bestDx - 1e-9) { bestDx = dx; nearest = s; }
-  }
-  if (!nearest) return null;
-  const here = slots.filter(
-    (s) => s.scaffoldIndex === nearest!.scaffoldIndex && s.postIndex === nearest!.postIndex);
-  const base = here.find((s) => s.levelMm == null) ?? nearest;
-  const stack = here.filter((s) => s.levelMm != null).sort((a, b) => a.levelMm! - b.levelMm!);
-  if (stack.length === 0) return base;
 
-  // 置く高さは常に「離した部材の下端にいちばん近い継ぎ目」＝見た目どおりの位置 (= E-8-v2u-fix2)。
-  //   指の高さから決めていたため、部材の長い支柱ほど（掴んだ位置ぶん）上にズレて置かれていた。
-  let nearestStack = stack[0];
-  let bestDy = Infinity;
-  for (const s of stack) {
-    const dy = Math.abs(moved.bottomMm - s.levelMm!);
-    if (dy < bestDy - 1e-9) { bestDy = dy; nearestStack = s; }
-  }
 
-  // 載せるかどうかの判定（どこへ載せるかは上で決まっている）。
-  //   ・下端が継ぎ目の高さまで来ている → 狙って置いた
-  //   ・上へ運んでいて、部材が頭まで届いている → 既存支柱に重なる位置なので頭へ座らせる
-  //   どちらでもなければ高さは変えない（横へ動かしただけ）。
-  const head = stack[0].levelMm!;
-  const memberLenMm = KOMA_PITCH_MM * postMemberKomaCount(part, geom.scaffolds[part.scaffoldIndex]);
-  const movedUp = moved.bottomMm - currentBottomMm;
-  const nearJoint = moved.bottomMm >= head - STACK_SNAP_TOL_MM;
-  const reachesHead = moved.bottomMm + memberLenMm >= head - STACK_SNAP_TOL_MM;
-  return (nearJoint || (movedUp >= STACK_SNAP_TOL_MM && reachesHead)) ? nearestStack : base;
-}
-
-/** スロット → 手動追加の部材。id は呼び出し側が採番する。 */
-export function slotToPart(slot: ElevationSlot, id: string): ElevationPart {
-  return {
-    id,
-    kind: slot.kind,
-    scaffoldIndex: slot.scaffoldIndex,
-    origin: 'manual',
-    postIndex: slot.postIndex,
-    spanIndex: slot.spanIndex,
-    levelMm: slot.levelMm,
-    // 支柱系は postXs から座標を引くのでレンジは持たせない。
-    ...(slot.kind === 'post' || slot.kind === 'jack' ? {} : { x0: slot.x0, x1: slot.x1 }),
-  };
-}
-
-/**
- * 同じ位置に同種の部材が既にあるか（二重置きの防止）。
- *
- * E-8-v2q: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ねで、1 本の支柱位置に
- * segmentIndex 違いの ElevationPart が複数ある。段を 1 つ掴んで隣の支柱位置へ動かすとき、
- * 「その位置に支柱が 1 つでもあれば埋まり」と見ると実在の支柱位置へは絶対に動かせない
- * （実機の「支柱がスナップせず置けない」の正体）。段を指定されたときは同じ段だけを見る。
- * 段を指定しない（パレットから 1 本ぶん置く）ときは従来どおり位置ごとで見る。
- */
-export function slotOccupied(
-  parts: ElevationPart[], slot: ElevationSlot, forSegmentIndex?: number,
-): boolean {
-  return parts.some((p) =>
-    p.kind === slot.kind
-    && p.scaffoldIndex === slot.scaffoldIndex
-    && (slot.postIndex == null || p.postIndex === slot.postIndex)
-    && (slot.spanIndex == null || p.spanIndex === slot.spanIndex)
-    && (slot.levelMm == null || p.levelMm === slot.levelMm)
-    && (forSegmentIndex === undefined || p.segmentIndex === forSegmentIndex));
-}
 
 /** 手動追加部材の id を採番する（既存と衝突しない連番）。 */
 export function nextPartId(parts: ElevationPart[], kind: ElevationPartKind): string {
@@ -361,33 +246,3 @@ export function nextPartId(parts: ElevationPart[], kind: ElevationPartKind): str
   return `manual:${kind}:${n}`;
 }
 
-/**
- * 隣の有効位置（v2d の移動用）。
- * dir: 'left'|'right' はスパン/支柱番号を、'up'|'down' は縦位置を 1 つずらす。
- * ずらせない（端）場合は null。
- */
-export function neighborSlot(
-  part: ElevationPart, geom: ElevationPartGeometry, dir: 'left' | 'right' | 'up' | 'down',
-): ElevationSlot | null {
-  const sg = geom.scaffolds[part.scaffoldIndex];
-  if (!sg) return null;
-  const slots = buildElevationSlots(geom, part.kind).filter((s) => s.scaffoldIndex === part.scaffoldIndex);
-  if (dir === 'left' || dir === 'right') {
-    const step = dir === 'left' ? -1 : 1;
-    if (part.kind === 'post' || part.kind === 'jack') {
-      const next = (part.postIndex ?? 0) + step;
-      return slots.find((s) => s.postIndex === next) ?? null;
-    }
-    const next = (part.spanIndex ?? 0) + step;
-    return slots.find((s) => s.spanIndex === next && s.levelMm === part.levelMm) ?? null;
-  }
-  // 縦移動（支柱・ジャッキは縦位置を持たないので不可）
-  if (part.kind === 'post' || part.kind === 'jack') return null;
-  const levels = Array.from(new Set(slots.map((s) => s.levelMm).filter((v): v is number => v != null)))
-    .sort((a, b) => a - b);
-  const cur = levels.indexOf(part.levelMm ?? -1);
-  if (cur < 0) return null;
-  const next = levels[cur + (dir === 'up' ? 1 : -1)];
-  if (next == null) return null;
-  return slots.find((s) => s.spanIndex === part.spanIndex && s.levelMm === next) ?? null;
-}

@@ -3,10 +3,9 @@ import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
 import { partsToPrimitives } from '../elevationParts';
 import { ELEV_PART_COLORS, ELEV_PART_STYLE } from '../elevationPartStyle';
 import {
-  PALETTE_KINDS, buildElevationSlots, neighborSlot, nextPartId, slotAnchor, slotKey,
-  slotOccupied, slotToPart, snapPostSlot, snapToSlot,
+  PALETTE_KINDS, buildElevationSlots, nextPartId,
 } from '../elevationSlots';
-import { postMemberBottomMm, postSlotBandMm, postStackTopMm } from '../elevationParts';
+import { postStackTopMm } from '../elevationParts';
 
 // ============================================================
 // E-8-v2c: 吸着スロット。「はまる場所にしかはまらない」を担保する有効位置。
@@ -115,29 +114,6 @@ describe('buildElevationSlots', () => {
       expect(buildElevationSlots(geom, 'rail')).toHaveLength(3 * 7);
       expect(buildElevationSlots(geom, 'rail').every((s) => !s.virtual)).toBe(true);
     });
-
-    it('外側へドラッグすると仮想スパンへ吸着する', () => {
-      // 右端(540)の外 700 付近・コマ 1500 のあたりへ落とす
-      const snapped = snapToSlot({ x: 700, yMm: 1500 }, geom, 'rail', ext)!;
-      expect(snapped.spanIndex).toBe(lastPost);
-      expect(snapped.levelMm).toBe(1500);
-      expect(snapped.virtual).toBe(true);
-      // 拡張しなければ既存の端スパンに留まる（従来の挙動）
-      expect(snapToSlot({ x: 700, yMm: 1500 }, geom, 'rail')!.spanIndex).toBe(2);
-    });
-
-    it('仮想位置へ置いた部材は通常の ElevationPart として保存できる', () => {
-      const slot = buildElevationSlots(geom, 'rail', ext)
-        .find((s) => s.spanIndex === lastPost && s.levelMm === 1500)!;
-      const part = slotToPart(slot, 'manual:rail:1');
-      expect(part).toMatchObject({
-        id: 'manual:rail:1', kind: 'rail', scaffoldIndex: 0, origin: 'manual',
-        spanIndex: lastPost, levelMm: 1500, x0: 540, x1: 720,
-      });
-      // 二重置きの判定も仮想位置で効く
-      expect(slotOccupied([part], slot)).toBe(true);
-      expect(slotOccupied([part], { ...slot, spanIndex: lastPost + 1 })).toBe(false);
-    });
   });
 
   it('幅はスパン幅から自動（部材側で長さを指定しない）', () => {
@@ -146,129 +122,7 @@ describe('buildElevationSlots', () => {
   });
 });
 
-describe('snapToSlot', () => {
-  it('最寄りの有効位置に吸着する（中途半端な位置でも必ずどこかにはまる）', () => {
-    // スパン1(180..360)の中央あたり・高さ 2800mm → 最寄りはコマ 2850
-    const s = snapToSlot({ x: 270, yMm: 2800 }, geom, 'board')!;
-    expect(s.spanIndex).toBe(1);
-    expect(s.levelMm).toBe(2850);
-  });
-
-  it('手摺はコマ列にだけ吸着する（450 刻み以外へは行かない）', () => {
-    const koma = geom.scaffolds[0].komaGridMm;
-    for (const yMm of [140, 700, 1900, 2600, 9999]) {
-      const s = snapToSlot({ x: 270, yMm }, geom, 'rail')!;
-      expect(koma).toContain(s.levelMm);
-    }
-    expect(snapToSlot({ x: 270, yMm: 1900 }, geom, 'rail')!.levelMm).toBe(1950);
-    expect(snapToSlot({ x: 270, yMm: 700 }, geom, 'rail')!.levelMm).toBe(600);
-  });
-
-  it('踏板もコマ列へ吸着できる（作業床の高さだけに縛られない）', () => {
-    // 1900mm は作業床(1100/2900)より コマ 1950 の方が近い
-    expect(snapToSlot({ x: 90, yMm: 1900 }, geom, 'board')!.levelMm).toBe(1950);
-    // 作業床ちょうどならその高さのまま
-    expect(snapToSlot({ x: 90, yMm: 1100 }, geom, 'board')!.levelMm).toBe(1100);
-  });
-
-  it('支柱は横位置だけで決まる', () => {
-    const s = snapToSlot({ x: 350, yMm: 3000 }, geom, 'post')!;
-    expect(s.postIndex).toBe(2); // x=360 が最寄り
-  });
-
-  it('スロットが無い幾何では null', () => {
-    expect(snapToSlot({ x: 0, yMm: 0 }, { minXg: 0, scaffolds: [] }, 'board')).toBeNull();
-  });
-
-  it('slotAnchor はスパン中央と高さ', () => {
-    expect(slotAnchor(boardSlot(0, 1100), geom)).toEqual({ x: 90, y: 1100 });
-  });
-
-  it('slotKey は場所が同じなら同じ・違えば違う', () => {
-    expect(slotKey(boardSlot(0, 1100))).toBe(slotKey(boardSlot(0, 1100)));
-    expect(slotKey(boardSlot(0, 1100))).not.toBe(slotKey(boardSlot(1, 1100)));
-    expect(slotKey(boardSlot(0, 1100))).not.toBe(slotKey(boardSlot(0, 1500)));
-  });
-});
-
-describe('slotToPart / 二重置き防止 / id 採番', () => {
-  it('スロットから手動部材を作る（支柱系はレンジを持たない）', () => {
-    const board = slotToPart(boardSlot(0, 1100), 'manual:board:1');
-    expect(board).toMatchObject({ kind: 'board', origin: 'manual', spanIndex: 0, levelMm: 1100, x0: 0, x1: 180 });
-    const post = slotToPart(buildElevationSlots(geom, 'post')[1], 'manual:post:1');
-    expect(post).toMatchObject({ kind: 'post', origin: 'manual', postIndex: 1 });
-    expect(post.x0).toBeUndefined();
-  });
-
-  it('同じ位置に同種があれば occupied', () => {
-    const slot = boardSlot(0, 1100);
-    const parts: ElevationPart[] = [slotToPart(slot, 'a')];
-    expect(slotOccupied(parts, slot)).toBe(true);
-    expect(slotOccupied(parts, boardSlot(1, 1100))).toBe(false);
-    // 種類が違えば別枠
-    expect(slotOccupied(parts, buildElevationSlots(geom, 'rail')[0])).toBe(false);
-  });
-
-  // ============================================================
-  // E-8-v2q: 支柱は規格部材（8/6/4/2/1 コマ品）の積み重ねで、1 本の支柱位置に
-  // segmentIndex 違いの部材が複数ある。段を掴んで隣の支柱位置へ動かせること。
-  // ============================================================
-  describe('支柱の段（segmentIndex）を掴んだときの埋まり判定', () => {
-    /** 支柱位置 2 に 2 段（0,1）が積まれている状態。 */
-    const postAt = (postIndex: number, segmentIndex: number): ElevationPart => ({
-      id: `post:0:${postIndex}:${segmentIndex}`, kind: 'post', scaffoldIndex: 0,
-      origin: 'auto', postIndex, segmentIndex,
-    });
-    const stacked = [postAt(2, 0), postAt(2, 1)];
-    const slotAt = (postIndex: number) =>
-      buildElevationSlots(geom, 'post', { extend: true }).find((s) => s.postIndex === postIndex)!;
-
-    it('同じ段が埋まっていれば occupied', () => {
-      expect(slotOccupied(stacked, slotAt(2), 0)).toBe(true);
-      expect(slotOccupied(stacked, slotAt(2), 1)).toBe(true);
-    });
-
-    it('別の段しか無ければ置ける（＝実在の支柱位置へも動かせる）', () => {
-      expect(slotOccupied([postAt(2, 1)], slotAt(2), 0)).toBe(false);
-      expect(slotOccupied([postAt(2, 0)], slotAt(2), 1)).toBe(false);
-    });
-
-    it('仮想の支柱位置は空き', () => {
-      expect(slotOccupied(stacked, slotAt(4), 0)).toBe(false);
-      expect(slotOccupied(stacked, slotAt(-1), 0)).toBe(false);
-      expect(slotAt(4).x0).toBe(540 + 180);     // 右外 1 本目
-      expect(slotAt(4).virtual).toBe(true);
-    });
-
-    it('段を指定しなければ従来どおり位置ごと（パレットから 1 本置くとき）', () => {
-      expect(slotOccupied(stacked, slotAt(2))).toBe(true);
-      expect(slotOccupied(stacked, slotAt(3))).toBe(false);
-    });
-
-    it('段を保ったまま移動先の部材を作れる（全高 1 本に化けない）', () => {
-      const src = postAt(2, 1);
-      const moved: ElevationPart = {
-        ...slotToPart(slotAt(4), src.id),
-        ...(src.segmentIndex != null ? { segmentIndex: src.segmentIndex } : {}),
-        origin: 'manual',
-      };
-      expect(moved).toMatchObject({
-        id: 'post:0:2:1', kind: 'post', origin: 'manual', postIndex: 4, segmentIndex: 1,
-      });
-      expect(moved.x0).toBeUndefined();   // 支柱は postXAt から座標を引く
-
-      // 描画は「高さはそのまま・x だけ移動」。段を落とすと全高 1 本に化けていた。
-      const bar = (p: ElevationPart) => {
-        const line = partsToPrimitives({ geom, parts: [p] }).find((q) => q.kind === 'line' && q.x1 === q.x2);
-        if (!line || line.kind !== 'line') throw new Error('支柱の棒が無い');
-        return { x: line.x1, y0: line.y1, y1: line.y2 };
-      };
-      const before = bar(src), after = bar(moved);
-      expect([after.y0, after.y1]).toEqual([before.y0, before.y1]);
-      expect(after.x).toBe(720);
-      expect(before.x).toBe(360);
-    });
-  });
+describe('継ぎ足しの候補 / id 採番', () => {
 
   // ============================================================
   // E-8-v2r: 支柱を既存支柱の天端に継ぎ足す（ジョイント継ぎ）。
@@ -298,126 +152,6 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       expect(buildElevationSlots(geom, 'post').every((s) => s.levelMm == null)).toBe(true);
     });
 
-    // ------------------------------------------------------------
-    // 吸着の基準点。指の位置で寄せると、部材が長いぶん上の候補に付いて宙に浮いた。
-    // ------------------------------------------------------------
-    /** 掴んだ部材（上段・6 コマ品）。下端は seg1 の底。 */
-    const grabbed: ElevationPart = {
-      id: 'post:0:1:1', kind: 'post', scaffoldIndex: 0, origin: 'auto', postIndex: 1, segmentIndex: 1,
-    };
-    const curBottom = postMemberBottomMm(grabbed, sg);
-    const px1 = sg.postXs[1];
-
-    it('部材の下端を頭に合わせると、ぴったり頭に吸着する（宙に浮かない）', () => {
-      const s = snapPostSlot(geom, grabbed, { x: px1, bottomMm: head }, curBottom, ext)!;
-      expect(s.postIndex).toBe(1);
-      expect(s.levelMm).toBe(head);
-    });
-
-    it('下端が頭の少し上でも頭へ吸着する（1 コマ上には飛ばない）', () => {
-      const s = snapPostSlot(geom, grabbed, { x: px1, bottomMm: head + 100 }, curBottom, ext)!;
-      expect(s.levelMm).toBe(head);
-      // ちょうど 1 コマ上まで持っていけば 1 つ上の候補
-      const up = snapPostSlot(geom, grabbed, { x: px1, bottomMm: head + 450 }, curBottom, ext)!;
-      expect(up.levelMm).toBe(head + 450);
-    });
-
-    // ------------------------------------------------------------
-    // E-8-v2u-fix2: 確定位置が部材の長さでズレてはいけない。
-    // 実機「長い支柱を離すと、離した位置の上の方に置かれる」。指の高さから置き場所を
-    // 決めていたため、掴んだ位置（＝部材長に比例）ぶん上へズレていた。
-    //   8 コマ品・狙い 300mm ずれ → 1350mm 浮く / 1 コマ品 → 0mm
-    // 置く高さは常に「離した部材の下端にいちばん近い継ぎ目」にする。
-    // ------------------------------------------------------------
-    describe('確定位置が部材長でズレない', () => {
-      /** 下端 900mm に置いた手動支柱（長さ違い）。 */
-      const member = (komaCount: number): ElevationPart => ({
-        id: `manual:post:${komaCount}`, kind: 'post', scaffoldIndex: 0, origin: 'manual',
-        postIndex: 1, levelMm: 900, komaCount,
-      });
-      const drop = (komaCount: number, bottomMm: number) => snapPostSlot(
-        geom, member(komaCount), { x: sg.postXs[1], bottomMm }, member(komaCount).levelMm!, ext);
-
-      it('狙いどおり下端を頭に置けば、全長ぴったり頭に載る', () => {
-        for (const koma of [1, 2, 4, 6, 8]) {
-          expect(drop(koma, head)?.levelMm, `${koma}コマ品`).toBe(head);
-        }
-      });
-
-      it('狙いが多少ずれても、部材長に関わらず頭へ載る（浮かない）', () => {
-        for (const koma of [1, 2, 4, 6, 8]) {
-          for (const e of [-300, -700, +200]) {
-            expect(drop(koma, head + e)?.levelMm, `${koma}コマ品 e=${e}`).toBe(head);
-          }
-        }
-      });
-
-      it('部材が頭に重なる位置で離しても、頭へ座る（上へ飛ばない）', () => {
-        // 長い部材を上へ運ぶと、下端が頭より下でも部材は頭にかぶる
-        for (const koma of [4, 6, 8]) {
-          const s = drop(koma, head - koma * 450 / 2);
-          expect(s?.levelMm, `${koma}コマ品`).toBe(head);
-        }
-      });
-
-      it('1 コマ上を狙えば 1 コマ上へ（候補は 450 刻みで選べる）', () => {
-        for (const koma of [1, 8]) {
-          expect(drop(koma, head + 450)?.levelMm, `${koma}コマ品`).toBe(head + 450);
-          expect(drop(koma, head + 900)?.levelMm, `${koma}コマ品`).toBe(head + 900);
-        }
-      });
-
-      it('横へ動かしただけなら高さは変わらない（部材長によらず）', () => {
-        for (const koma of [1, 8]) {
-          const p = member(koma);
-          const s = snapPostSlot(
-            geom, p, { x: sg.postXs[2], bottomMm: p.levelMm! }, p.levelMm!, ext);
-          expect(s?.levelMm, `${koma}コマ品`).toBeUndefined();
-          expect(s?.postIndex, `${koma}コマ品`).toBe(2);
-        }
-      });
-    });
-
-    // ------------------------------------------------------------
-    // 三位一体: スナップ候補（slot）＝ゴースト＝確定後の描画。
-    // 3 つが別々の式で位置を出していたため「ゴーストと違う場所に置かれる」が起きた。
-    // postSlotBandMm を唯一の定義にして、構造的に一致させる。
-    // ------------------------------------------------------------
-    describe('候補・ゴースト・確定描画が一致する', () => {
-      for (const koma of [1, 4, 8]) {
-        it(`${koma}コマ品: slot.levelMm = ゴーストの下端 = 描かれた支柱の下端`, () => {
-          const part: ElevationPart = {
-            id: 'm', kind: 'post', scaffoldIndex: 0, origin: 'manual',
-            postIndex: 1, levelMm: 900, komaCount: koma,
-          };
-          // ① スナップ候補
-          const slot = snapPostSlot(
-            geom, part, { x: sg.postXs[1], bottomMm: head - 200 }, part.levelMm!, ext)!;
-          expect(slot.levelMm).toBe(head);
-
-          // ② ゴースト（ドラッグ中の帯）＝ postSlotBandMm
-          const band = postSlotBandMm(slot.levelMm!, koma);
-          expect(band.bottomMm).toBe(slot.levelMm);
-          expect(band.topMm).toBe(slot.levelMm! + koma * 450);
-
-          // ③ 確定 → 描画
-          const placed: ElevationPart = { ...slotToPart(slot, part.id), komaCount: koma };
-          expect(placed.levelMm).toBe(slot.levelMm);
-          const bar = partsToPrimitives({ geom, parts: [placed] })
-            .find((p) => p.kind === 'line' && p.x1 === p.x2 && p.stroke === ELEV_PART_COLORS.post);
-          if (!bar || bar.kind !== 'line') throw new Error('支柱の棒が無い');
-          expect(bar.y1).toBeCloseTo(-band.bottomMm / 10);   // 描画の下端＝ゴーストの下端
-          expect(bar.y2).toBeCloseTo(-band.topMm / 10);      // 描画の上端＝ゴーストの上端
-        });
-      }
-    });
-
-    it('横へ動かしただけなら高さは変わらない（v2q の挙動を保つ）', () => {
-      const s = snapPostSlot(geom, grabbed, { x: sg.postXs[2], bottomMm: curBottom }, curBottom, ext)!;
-      expect(s.postIndex).toBe(2);
-      expect(s.levelMm).toBeUndefined();
-    });
-
     it('継ぎ足した部材の天も候補なので、その上へさらに継げる', () => {
       const levels = stackSlots.map((s) => s.levelMm);
       expect(levels).toContain(head + 450 * 4);   // 4 コマ品を載せた天
@@ -438,7 +172,8 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       const slot = buildElevationSlots(g5000, 'post', ext)
         .find((s) => s.postIndex === 1 && s.levelMm === 5000)!;
       const moved: ElevationPart = {
-        ...slotToPart(slot, 'post:0:1:1'), komaCount: 6, origin: 'manual',
+        id: 'post:0:1:1', kind: 'post', scaffoldIndex: 0, origin: 'manual',
+        postIndex: slot.postIndex, levelMm: slot.levelMm, komaCount: 6,
       };
       expect(moved).toMatchObject({ kind: 'post', postIndex: 1, levelMm: 5000, komaCount: 6 });
 
@@ -462,18 +197,6 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
       expect(cup && cup.kind === 'line' && cup.y1).toBeCloseTo(-(5000 + 450 * 6) / 10);
       // 丸（座）は足元だけなので、継ぎ足した部材には出ない
       expect(prims.filter((p) => p.kind === 'circle')).toHaveLength(0);
-    });
-
-    it('同じ高さに既に継ぎ足していれば埋まり', () => {
-      const slot = stackSlots[0];
-      const placed: ElevationPart = { ...slotToPart(slot, 'x'), komaCount: 4 };
-      expect(slotOccupied([placed], slot)).toBe(true);
-      expect(slotOccupied([placed], stackSlots[1])).toBe(false);
-      // 足元〜天端の支柱があっても、その上は空いている
-      const column: ElevationPart = {
-        id: 'post:0:1:0', kind: 'post', scaffoldIndex: 0, origin: 'auto', postIndex: 1, segmentIndex: 0,
-      };
-      expect(slotOccupied([column], slot)).toBe(false);
     });
   });
 
@@ -539,27 +262,5 @@ describe('slotToPart / 二重置き防止 / id 採番', () => {
     const parts: ElevationPart[] = [{ id: 'manual:board:1', kind: 'board', scaffoldIndex: 0, origin: 'manual' }];
     expect(nextPartId(parts, 'board')).toBe('manual:board:2');
     expect(nextPartId(parts, 'post')).toBe('manual:post:1');
-  });
-});
-
-describe('neighborSlot（隣の有効位置・v2d の移動用）', () => {
-  const board = slotToPart(boardSlot(1, 2900), 'b');
-  it('左右はスパン番号を 1 つずらす', () => {
-    expect(neighborSlot(board, geom, 'right')).toMatchObject({ spanIndex: 2, levelMm: 2900 });
-    expect(neighborSlot(board, geom, 'left')).toMatchObject({ spanIndex: 0, levelMm: 2900 });
-  });
-  it('上下は縦位置を 1 つずらす（コマ列を含む）', () => {
-    expect(neighborSlot(board, geom, 'up')).toMatchObject({ spanIndex: 1, levelMm: 4700 });
-    expect(neighborSlot(board, geom, 'down')).toMatchObject({ spanIndex: 1, levelMm: 2850 });
-  });
-  it('端では null（はまらない場所へは動かない）', () => {
-    const left = slotToPart(boardSlot(0, 150), 'x'); // 最左・最下
-    expect(neighborSlot(left, geom, 'left')).toBeNull();
-    expect(neighborSlot(left, geom, 'down')).toBeNull();
-  });
-  it('支柱は左右のみ（縦位置を持たない）', () => {
-    const post = slotToPart(buildElevationSlots(geom, 'post')[1], 'p');
-    expect(neighborSlot(post, geom, 'right')).toMatchObject({ postIndex: 2 });
-    expect(neighborSlot(post, geom, 'up')).toBeNull();
   });
 });
