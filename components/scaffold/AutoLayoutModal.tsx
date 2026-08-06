@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { track } from '@/lib/analytics';
 import { Handrail, HandrailLengthMm, Point, ScaffoldStartConfig, getScaffoldStartByFloor } from '@/types';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import NumInput from '@/components/ui/NumInput';
@@ -1254,6 +1255,11 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
       .map(h => h.id);
     if (clearIds.length > 0) removeElements(clearIds);
     addHandrails(allHandrails);
+    // フェーズ0: 手戻りの起点。この後の manual_edit の回数が「自動配置の作り直し」の指標。
+    track('auto_layout_apply', {
+      handrails: allHandrails.length, cleared: clearIds.length,
+      floors: clearFloors.length, mode: String(targetFloor),
+    });
     onClose();
   };
 
@@ -1261,6 +1267,7 @@ export default function AutoLayoutModal({ onClose, onOpenScaffoldStart }: Props)
     useCanvasStore.getState().setHighlightIds([]);
     removeElements(conflictIds);
     addHandrails(pendingHandrails);
+    track('auto_layout_apply', { handrails: pendingHandrails.length, conflict: true });
     setShowConflictConfirm(false);
     onClose();
   };

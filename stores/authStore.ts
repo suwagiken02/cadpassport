@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
+import { identify, trackResult } from '@/lib/analytics';
 import { extractSupabaseEmail } from '@/lib/auth/supabaseUser';
 
 /**
@@ -92,8 +93,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   signIn: async (email, password) => {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+      trackResult('sign_in', !error, { method: 'email' });
       if (error) return localizeAuthError(error.message);
       await get().loadSession();
+      identify(get().user?.id ?? null);
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'ログインに失敗しました';
@@ -102,6 +105,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   signUp: async (email, password) => {
     try {
       const { error } = await supabase.auth.signUp({ email, password });
+      trackResult('sign_up', !error, { method: 'email' });
       if (error) return localizeAuthError(error.message);
       // 改善 11: サインアップ後は自動ログインせず、 サインアウトしてユーザーに手動ログインさせる。
       // UI 側で /auth?signup=success にリダイレクトして完了 banner を表示する流れ。
@@ -153,14 +157,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const email = `${username}@cadpassport.local`;
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+      trackResult('sign_in', !error, { method: 'id' });
       if (error) return localizeAuthError(error.message);
       await get().loadSession();
+      identify(get().user?.id ?? null);
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'ログインに失敗しました';
     }
   },
   signOut: async () => {
+    trackResult('sign_out', true);
+    identify(null);
     await supabase.auth.signOut();
     set({ user: ANON_USER, profile: ANON_PROFILE, currentCompanyId: null });
   },

@@ -27,6 +27,8 @@ import {
 } from '@/types';
 import { PinAnchor } from '@/lib/magnetPin/anchorPoints';
 import { DEFAULT_COLS, DEFAULT_ROWS, INITIAL_GRID_PX, ZOOM_MIN, ZOOM_MAX } from '@/lib/konva/gridUtils';
+// フェーズ0: 行動計測（非ブロッキング・本番のみ送信）。
+import { track } from '@/lib/analytics';
 import type { Point } from '@/types';
 import {
   collectSelectionSubset, instantiateSubset, mergePayloadIntoCanvas, payloadCount, payloadIds,
@@ -1139,6 +1141,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   undo: () => {
     const { canvasData, history } = get();
     if (history.past.length === 0) return;
+    track('manual_edit', { kind: 'undo' });
     const past = [...history.past];
     const prev = past.pop()!;
     set({
@@ -1216,6 +1219,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
   addHandrail: (h) => {
     const { canvasData, pushHistory } = get();
+    track('manual_edit', { kind: 'add_handrail' });
     pushHistory();
     set({
       canvasData: { ...canvasData, handrails: [...canvasData.handrails, h] },
@@ -1698,6 +1702,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   removeElement: (id) => {
     const { canvasData, pushHistory } = get();
+    track('manual_edit', { kind: 'delete', n: 1 });
     pushHistory();
     set({
       canvasData: {
@@ -1721,6 +1726,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
   removeElements: (ids) => {
     const { canvasData, pushHistory } = get();
+    track('manual_edit', { kind: 'delete', n: ids.length });
     pushHistory();
     const idSet = new Set(ids);
     set({

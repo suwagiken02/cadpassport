@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { PaperSize, ScaleOption } from '@/types';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { trackDuration, trackError, trackResult } from '@/lib/analytics';
 import { useAuthStore } from '@/stores/authStore';
 import type { ExportProgress } from '@/lib/export/multiPageExport';
 
@@ -100,6 +101,8 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
 
   // ステップ2: 出力実行
   const handleExport = async () => {
+    // フェーズ0: 出力はファネルの最終段。所要時間と成否を残す（詰まり・エラーの指標）。
+    const startedAt = Date.now();
     try {
       // capture 時に印刷範囲全体が stage canvas 内に収まることを保証
       // (= Konva stage bitmap 制約で範囲外は透明化、 スマホで画面外グリッド消失対策)
@@ -108,7 +111,11 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
       zoomToFitPrintArea(vw, vh);
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await onExport({ format, paperSize, scale, allPages, onProgress: setProgress });
+      trackResult('export_done', true, { format, paper: paperSize, scale, all_pages: allPages });
+      trackDuration('export_duration', Date.now() - startedAt, { format });
     } catch (e) {
+      trackResult('export_done', false, { format, paper: paperSize });
+      trackError('export', format);
       console.error('[Export] error:', e);
       alert(`出力エラー: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

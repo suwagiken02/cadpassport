@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { track } from '@/lib/analytics';
 import { ModeType, getScaffoldStartByFloor } from '@/types';
 import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
 import { shouldPromptFloor } from '@/lib/konva/floorScope';
@@ -290,6 +291,7 @@ export default function ModeToolbar() {
                   setShowAshibaMenu(false);
                   return;
                 }
+                track('auto_layout_open');
                 s.setShowAutoLayout(true);
                 setShowAshibaMenu(false);
               }}
@@ -338,6 +340,7 @@ export default function ModeToolbar() {
             {/* 立面図（E-3: 面ごとの立面プレビュー。E-3.15 の管理者限定は解除し全ユーザーへ公開） */}
             <button
               onClick={() => {
+                track('elevation_open');
                 useCanvasStore.getState().setShowElevation(true);
                 setShowAshibaMenu(false);
               }}

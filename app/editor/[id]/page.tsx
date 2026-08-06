@@ -14,6 +14,7 @@ import OperationGuideBar from '@/components/canvas/OperationGuideBar';
 import BuildingTemplateModal from '@/components/building/BuildingTemplateModal';
 import FloorSelector from '@/components/toolbar/FloorSelector';
 import ExportModal from '@/components/output/ExportModal';
+import { track, trackDuration, trackResult, trackScreen } from '@/lib/analytics';
 import ScaffoldStartModal from '@/components/scaffold/ScaffoldStartModal';
 import RoofObjectModal from '@/components/canvas/RoofObjectModal';
 import FloorPickerModal from '@/components/canvas/FloorPickerModal';
@@ -175,6 +176,9 @@ export default function EditorPage() {
   const [projectContractor, setProjectContractor] = useState('');
   const [showProjectEditModal, setShowProjectEditModal] = useState(false);
 
+  // フェーズ0: 画面到達（ファネルの 3 段目＝作図画面）
+  useEffect(() => { trackScreen('editor'); }, []);
+
   // 画面サイズ計測
   useEffect(() => {
     const updateSize = () => {
@@ -293,6 +297,7 @@ export default function EditorPage() {
         .eq('id', projectId);
     }
 
+    trackResult('drawing_save', res.ok);
     setSaveStatus(res.ok ? 'saved' : 'error');
     if (res.ok) useCanvasStore.setState({ isDirty: false });
     else useCanvasStore.getState().setAlertMessage(`保存できませんでした\n\n${res.message}`);
@@ -510,7 +515,7 @@ export default function EditorPage() {
             </div>
           )}
           <button
-            onClick={() => setShowExportModal(true)}
+            onClick={() => { track('export_open'); setShowExportModal(true); }}
             className="px-2 sm:px-3 py-1 bg-dark-bg border border-dark-border rounded-lg text-sm text-dimension hover:text-canvas flex-shrink-0"
             title="出力"
           >

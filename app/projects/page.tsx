@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { track, trackResult, trackScreen } from '@/lib/analytics';
 import { useRouter } from 'next/navigation';
 import { useAuthStore, DEFAULT_COMPANY_ID } from '@/stores/authStore';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
@@ -69,6 +70,9 @@ export default function ProjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // フェーズ0: 画面到達（ファネルの 2 段目）
+  useEffect(() => { trackScreen('projects'); }, []);
+
   const createProject = async () => {
     if (!newName.trim()) return;
     setCreating(true);
@@ -95,6 +99,7 @@ export default function ProjectsPage() {
         .single();
 
       if (error) {
+        trackResult('project_create', false, { step: 'project' });
         console.error('[createProject] projects insert error:', error);
         alert(`現場作成エラー: ${error.message}`);
         setCreating(false);
@@ -118,6 +123,7 @@ export default function ProjectsPage() {
         .single();
 
       if (drawingError) {
+        trackResult('project_create', false, { step: 'drawing' });
         console.error('[createProject] drawings insert error:', drawingError);
         alert(`図面作成エラー: ${drawingError.message}`);
         setCreating(false);
@@ -127,6 +133,7 @@ export default function ProjectsPage() {
       if (drawing) {
         setProjects(prev => [data, ...prev]);
       }
+      trackResult('project_create', true);
     } catch (e) {
       console.error('[createProject] unexpected error:', e);
       alert(`予期しないエラー: ${e instanceof Error ? e.message : String(e)}`);
