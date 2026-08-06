@@ -1753,8 +1753,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  // 注意: moveElement はドラッグ中に連続で呼ばれる（1 回の移動で数十回）。
+  //   計測はここではなく「ドラッグが終わった時」に 1 件だけ記録する。
+  //   ここに track を置くと手戻り回数が実際の 30 倍に膨らみ、
+  //   「自動配置の精度が低い」という誤った結論を生む（実測 134 件 / 実操作 4 回）。
   moveElement: (id, dx, dy) => {
-    track('manual_edit', { kind: 'move' });
     const { canvasData } = get();
     set({
       canvasData: {

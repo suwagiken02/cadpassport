@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
-import { flush, identify, trackResult } from '@/lib/analytics';
+import { flush } from '@/lib/analytics';
 import { extractSupabaseEmail } from '@/lib/auth/supabaseUser';
 
 /**
@@ -93,7 +93,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   signIn: async (email, password) => {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      trackResult('sign_in', !error, { method: 'email' });
       if (error) return localizeAuthError(error.message);
       await get().loadSession();
       return null;
@@ -104,7 +103,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   signUp: async (email, password) => {
     try {
       const { error } = await supabase.auth.signUp({ email, password });
-      trackResult('sign_up', !error, { method: 'email' });
       if (error) return localizeAuthError(error.message);
       // 改善 11: サインアップ後は自動ログインせず、 サインアウトしてユーザーに手動ログインさせる。
       // UI 側で /auth?signup=success にリダイレクトして完了 banner を表示する流れ。
@@ -156,7 +154,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const email = `${username}@cadpassport.local`;
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      trackResult('sign_in', !error, { method: 'id' });
       if (error) return localizeAuthError(error.message);
       await get().loadSession();
       return null;
@@ -165,11 +162,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
   signOut: async () => {
-    trackResult('sign_out', true);
-    // ログアウトすると events へ書けなくなる（RLS は authenticated のみ）。
-    //   紐づけを外す前に、溜まっているぶんを送り切る。
-    flush(true);
-    identify(null);
+    // 計測: sign_out の記録は onAuthStateChange(SIGNED_OUT) が行う（方式に依らず 1 箇所）。
+    //   ここでは「ログアウトで events へ書けなくなる前に、溜まっているぶんを送り切る」だけ。
+    //   送信は失敗しても握りつぶされるので、待ってもログアウトは止まらない。
+    await flush();
     await supabase.auth.signOut();
     set({ user: ANON_USER, profile: ANON_PROFILE, currentCompanyId: null });
   },
@@ -179,8 +175,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        // フェーズ0: 再読み込みでセッションが復帰したときも計測を紐づける（ハッシュのみ）。
-        identify(session.user.id);
         set({ user: { id: session.user.id, email: extractSupabaseEmail(session.user) } });
         try {
           const { data } = await supabase

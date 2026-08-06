@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { track } from '@/lib/analytics';
 import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from './gridUtils';
 import { snapToHandrail, snapHandrailPlacement, getHandrailEndpoints, snapToGridIntersection, getAllExistingVertices, getAllExistingEdges, snapToVertex, snapToEdge, snapObstacleToWall } from './snapUtils';
 import { getHandrailColor } from './handrailColors';
@@ -307,6 +308,9 @@ export function useCanvasInteraction() {
       const s = useCanvasStore.getState();
 
       if (isDragging.current) {
+        // 計測: 1 回のドラッグ移動＝1 件（moveElement はドラッグ中に連続で呼ばれるため、
+        //   store 側ではなくここで数える）。パレットへ落とした場合は削除として数える。
+        if (!isDropOnPalette(clientX, clientY)) track('manual_edit', { kind: 'move' });
         if (isDropOnPalette(clientX, clientY)) {
           // パレット上にドロップ → 削除
           s.removeElement(movingElementId.current!);

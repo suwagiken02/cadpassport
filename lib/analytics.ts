@@ -69,6 +69,8 @@ let screenEnteredAt = 0;
 let listenersBound = false;
 /** sessionStorage からの復帰を 1 回だけ行うための印。 */
 let queueRestored = false;
+/** 認証イベントの購読を 1 回だけ始めるための印。 */
+let authWatchStarted = false;
 /** このセッションで送った件数（レート制限用）。 */
 let sentThisSession = 0;
 /** ログイン済みか（events の insert は authenticated のみ許可）。 */
@@ -85,17 +87,64 @@ const isBrowser = () => typeof window !== 'undefined';
 /** 本番のみ送る。dev/test では組み立てるだけで送信しない。 */
 const isEnabled = () => isBrowser() && process.env.NODE_ENV === 'production';
 
-/** 1 回の利用（タブを開いてから閉じるまで）を表す id。 */
+/**
+ * 1 回の利用（タブを開いてから閉じるまで）を表す id。
+ *
+ * OAuth（Google ログイン）は外部サイトへ飛んで戻ってくるので、その間に
+ * sessionStorage が失われる端末がある。失われると 1 回の作業が 2 セッションに
+ * 割れ、ファネルの到達率が嘘になる（実測で「一覧 2 / 作図 1 = 50%」になった）。
+ * そこで localStorage に「最後に使った session_id と時刻」も置き、
+ * 30 分以内なら同じセッションの続きとして扱う。
+ *   ・localStorage に置くのは **id と時刻だけ**（イベントの中身は置かない）。
+ *   ・30 分空いたら別のセッション（一般的なセッションの区切り方に合わせる）。
+ */
+const SID_KEY = 'ashiba-plan:analytics:sid';
+const SID_FALLBACK_KEY = 'ashiba-plan:analytics:sid-last';
+/** これだけ間が空いたら別セッションとみなす(ms)。 */
+const SESSION_GAP_MS = 30 * 60 * 1000;
+
+function newSessionId(): string {
+  try {
+    return window.crypto?.randomUUID?.() ?? `s${Date.now()}${Math.random()}`;
+  } catch {
+    return `s${Date.now()}`;
+  }
+}
+
+/** 使うたびに「最後に使った時刻」を更新する（次の復帰の判断材料）。 */
+function touchSession(id: string): void {
+  try {
+    window.localStorage.setItem(SID_FALLBACK_KEY, JSON.stringify({ id, at: Date.now() }));
+  } catch {
+    /* 使えない環境では諦める（sessionStorage だけで動く） */
+  }
+}
+
 function getSessionId(): string {
-  if (sessionId) return sessionId;
+  if (sessionId) { touchSession(sessionId); return sessionId; }
   if (!isBrowser()) return 'server';
   try {
-    const KEY = 'ashiba-plan:analytics:sid';
-    const saved = window.sessionStorage.getItem(KEY);
-    if (saved) { sessionId = saved; return saved; }
-    const id = (window.crypto?.randomUUID?.() ?? `s${Date.now()}${Math.random()}`).slice(0, 36);
-    window.sessionStorage.setItem(KEY, id);
+    const saved = window.sessionStorage.getItem(SID_KEY);
+    if (saved) { sessionId = saved; touchSession(saved); return saved; }
+    // sessionStorage が消えている（OAuth のリダイレクト等）。直前の続きなら引き継ぐ。
+    try {
+      const raw = window.localStorage.getItem(SID_FALLBACK_KEY);
+      if (raw) {
+        const { id, at } = JSON.parse(raw) as { id: string; at: number };
+        if (id && typeof at === 'number' && Date.now() - at < SESSION_GAP_MS) {
+          sessionId = id;
+          window.sessionStorage.setItem(SID_KEY, id);
+          touchSession(id);
+          return id;
+        }
+      }
+    } catch {
+      /* 壊れていたら新規に切る */
+    }
+    const id = newSessionId();
+    window.sessionStorage.setItem(SID_KEY, id);
     sessionId = id;
+    touchSession(id);
     return id;
   } catch {
     sessionId = `s${Date.now()}`;
@@ -175,11 +224,11 @@ function bindLifecycle(): void {
           screen: currentScreen, durationMs: Date.now() - screenEnteredAt,
         });
       }
-      flush(true);
+      void flush();
     };
     window.addEventListener('pagehide', onHide);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') flush(true);
+      if (document.visibilityState === 'hidden') void flush();
     });
   } catch (e) {
     console.warn('[analytics] bindLifecycle failed', e);
@@ -267,40 +316,51 @@ function scheduleFlush(): void {
 }
 
 /**
- * 溜まったイベントを送る。失敗しても握りつぶす（本体には一切影響させない）。
- * immediate=true はページ離脱時。keepalive で最後の 1 回を届ける。
+ * 溜まったイベントを送る。失敗しても本体には一切影響させない。
+ *
+ * 送信に失敗したぶんは**キューへ戻して保存する**（次の機会に送り直す）。
+ * 以前は送る前にキューから外していたため、失敗＝そのまま消失だった。
+ * ログアウト時の sign_out が 1 件も残らなかったのはこれが原因。
+ *
+ * sendBeacon は使わない。ヘッダを付けられず、ログイン中の資格情報
+ * （Authorization: Bearer）を載せられないため、RLS(authenticated のみ)に
+ * 弾かれて黙って消える。代わりに「保存して次のページで送り直す」で担保する。
  */
-export function flush(immediate = false): void {
+export function flush(): Promise<void> {
   restoreQueue();
-  if (queue.length === 0) return;
-  if (!isEnabled()) { queue = []; persistQueue(); return; }
+  if (queue.length === 0) return Promise.resolve();
+  if (!isEnabled()) { queue = []; persistQueue(); return Promise.resolve(); }
   // events の insert はログイン済みのみ許可（0010 の RLS）。ログインが確定するまでは
   //   溜めて待つ（直後に identify が呼ばれる）。溜まりすぎたら古いものから捨てる。
   if (!signedIn) {
     if (queue.length > MAX_QUEUE) queue = queue.slice(-MAX_QUEUE);
-    return;
+    persistQueue();
+    return Promise.resolve();
   }
-  if (sentThisSession >= MAX_EVENTS_PER_SESSION) { queue = []; persistQueue(); return; }
+  if (sentThisSession >= MAX_EVENTS_PER_SESSION) { queue = []; persistQueue(); return Promise.resolve(); }
   const batch = queue.slice(0, MAX_BATCH);
   queue = queue.slice(batch.length);
   persistQueue();
   const rows = batch.map((e) => ({ ...e, user_hash: userHash }));
-  sentThisSession += rows.length;
   try {
-    if (immediate && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      // 離脱時は fetch が中断されるので sendBeacon（Supabase の REST へ直接）。
-      const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/events`;
-      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-      const blob = new Blob([JSON.stringify(rows)], { type: 'application/json' });
-      // sendBeacon はヘッダを付けられないので apikey をクエリに載せる。
-      const ok = navigator.sendBeacon(`${url}?apikey=${encodeURIComponent(key)}`, blob);
-      if (ok) return;
-    }
-    void supabase.from('events').insert(rows).then(({ error }) => {
-      if (error) console.warn('[analytics] insert failed', error.message);
-    });
+    return Promise.resolve(supabase.from('events').insert(rows))
+      .then(({ error }) => {
+        if (!error) { sentThisSession += rows.length; return; }
+        console.warn('[analytics] insert failed', error.message);
+        // 失敗したぶんは戻す（次のページ・次の flush で送り直す）。
+        queue = [...batch, ...queue].slice(-MAX_QUEUE);
+        persistQueue();
+      })
+      .catch((e) => {
+        console.warn('[analytics] insert threw', e);
+        queue = [...batch, ...queue].slice(-MAX_QUEUE);
+        persistQueue();
+      });
   } catch (e) {
     console.warn('[analytics] flush failed', e);
+    queue = [...batch, ...queue].slice(-MAX_QUEUE);
+    persistQueue();
+    return Promise.resolve();
   }
 }
 
@@ -384,6 +444,75 @@ export function trackDuration(eventName: string, ms: number, properties?: EventP
   }
 }
 
+// ============================================================
+// ログインの検知は「1 箇所」に集約する (= OAuth 対応)
+//
+// Google ログインは外部サイトへ飛んでから戻るので、authStore.signIn を通らない。
+// 方式ごとに track を書くと必ず取りこぼす（実測で sign_in が 0 件だった）。
+// Supabase の onAuthStateChange なら、Google / メール / ID のどれでも
+// 「セッションが確立した瞬間」を 1 箇所で拾える。
+// ============================================================
+
+/** 同じセッションで sign_in を二重に記録しないための印。 */
+const SIGNED_IN_KEY = 'ashiba-plan:analytics:signed-in';
+/** 新規登録とみなす、アカウント作成からの猶予(ms)。 */
+const NEW_USER_WINDOW_MS = 5 * 60 * 1000;
+
+/** 認証方式を判別する（個人情報は取り出さない）。 */
+function authMethodOf(user: {
+  app_metadata?: { provider?: string };
+  email?: string | null;
+}): string {
+  const provider = user.app_metadata?.provider;
+  if (provider && provider !== 'email') return provider;              // google 等
+  if (user.email?.endsWith('@cadpassport.local')) return 'id';        // ID ログイン
+  return 'email';
+}
+
+/**
+ * 認証イベントの購読を始める（アプリ起動時に 1 回）。
+ * ここだけが sign_in / sign_out の記録場所。
+ */
+export function startAuthTracking(): void {
+  if (!isBrowser() || authWatchStarted) return;
+  authWatchStarted = true;
+  try {
+    supabase.auth.onAuthStateChange((event, session) => {
+      try {
+        const user = session?.user;
+        if (event === 'SIGNED_OUT') {
+          track('sign_out');
+          void flush().then(() => identify(null));
+          try { window.sessionStorage.removeItem(SIGNED_IN_KEY); } catch { /* noop */ }
+          return;
+        }
+        if (!user) return;
+        identify(user.id);
+        // SIGNED_IN はタブ復帰やトークン更新でも飛ぶので、セッション内で 1 回だけ記録する。
+        let already = false;
+        try { already = window.sessionStorage.getItem(SIGNED_IN_KEY) === user.id; } catch { /* noop */ }
+        if (already) return;
+        try { window.sessionStorage.setItem(SIGNED_IN_KEY, user.id); } catch { /* noop */ }
+        if (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') return;
+        // 作ったばかりのアカウントなら新規登録。既存ならログイン。
+        const createdAt = user.created_at ? Date.parse(user.created_at) : NaN;
+        const isNew = Number.isFinite(createdAt) && Date.now() - createdAt < NEW_USER_WINDOW_MS;
+        const method = authMethodOf(user);
+        trackResult(isNew ? 'sign_up' : 'sign_in', true, {
+          method,
+          // 起動時の復帰（INITIAL_SESSION）か、その場でのログインか
+          resumed: event === 'INITIAL_SESSION',
+        });
+        void flush();
+      } catch (e) {
+        console.warn('[analytics] auth event failed', e);
+      }
+    });
+  } catch (e) {
+    console.warn('[analytics] startAuthTracking failed', e);
+  }
+}
+
 /** テスト・デバッグ用（送信せずに中身を見る）。 */
 export function __getQueueForTest(): QueuedEvent[] {
   return queue;
@@ -391,6 +520,10 @@ export function __getQueueForTest(): QueuedEvent[] {
 /** テスト用: 紐づけの状態を見る（同一人物が同一ハッシュかの検証）。 */
 export function __getIdentityForTest(): { signedIn: boolean; userHash: string | null } {
   return { signedIn, userHash };
+}
+/** テスト用: 送信できる状態（ログイン済み）にする。 */
+export function __setSignedInForTest(v: boolean): void {
+  signedIn = v;
 }
 /** テスト用リセット。 */
 export function __resetForTest(): void {

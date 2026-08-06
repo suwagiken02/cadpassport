@@ -147,3 +147,90 @@ describe('匿名ハッシュは同一人物で同一値（利用者数の重複�
     expect(a.__getIdentityForTest().userHash).toBe(first);
   });
 });
+
+// ============================================================
+// OAuth（Google ログイン）・移動イベント過多・セッション分割の再発防止。
+//
+// 実測（本番・Google 認証で 1 周）:
+//   ・sign_in / sign_up / sign_out / screen_view(auth) が 0 件
+//     → Google ログインは authStore.signIn を通らない（外部サイトへ飛んで戻る）。
+//       方式ごとに仕込む限り必ず取りこぼす。
+//   ・manual_edit が 134 件（実際の手直しは 4 回）
+//     → ドラッグ中に moveElement が連続で呼ばれ、1 回の移動が数十件になっていた。
+//   ・1 回の通し操作なのにセッションが 2 つ
+//     → OAuth のリダイレクトで sessionStorage が失われ、session_id が切り替わっていた。
+// ============================================================
+describe('セッションは 1 回のタブ利用で 1 つ（OAuth のリダイレクトをまたぐ）', () => {
+  const local = makeSessionStorage();
+
+  beforeEach(() => {
+    local.clear();
+    (globalThis as Record<string, unknown>).window = {
+      sessionStorage: store,
+      localStorage: local,
+      crypto: { randomUUID: () => `sid-${Math.random().toString(16).slice(2, 10)}` },
+      addEventListener: () => {},
+    };
+  });
+
+  it('sessionStorage が消えても、直前の続きなら同じ session_id を引き継ぐ', async () => {
+    const a = await loadAnalytics();
+    a.track('screen_view');
+    const first = a.__getQueueForTest()[0].session_id;
+
+    // 外部サイト（Google）へ飛んで戻り、sessionStorage が失われた状況
+    store.clear();
+    vi.resetModules();
+    const b = await loadAnalytics();
+    b.track('screen_view');
+    expect(b.__getQueueForTest()[0].session_id).toBe(first);
+  });
+
+  it('30 分以上空いていれば別のセッションとして切り直す', async () => {
+    const a = await loadAnalytics();
+    a.track('x');
+    const first = a.__getQueueForTest()[0].session_id;
+
+    store.clear();
+    // 最後に使った時刻を 31 分前に偽装
+    local.setItem('ashiba-plan:analytics:sid-last',
+      JSON.stringify({ id: first, at: Date.now() - 31 * 60 * 1000 }));
+    vi.resetModules();
+    const b = await loadAnalytics();
+    b.track('x');
+    expect(b.__getQueueForTest()[0].session_id).not.toBe(first);
+  });
+
+  it('localStorage が使えなくても落ちない（sessionStorage だけで動く）', async () => {
+    (globalThis as Record<string, unknown>).window = {
+      sessionStorage: store,
+      localStorage: { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } },
+      crypto: { randomUUID: () => 'sid-x' },
+      addEventListener: () => {},
+    };
+    const a = await loadAnalytics();
+    expect(() => a.track('x')).not.toThrow();
+    expect(a.__getQueueForTest()[0].session_id).toBe('sid-x');
+  });
+});
+
+describe('送信に失敗したイベントは消えない（ログアウト時の取りこぼし対策）', () => {
+  it('insert が失敗したらキューへ戻して保存する', async () => {
+    // 本番扱い＋失敗する insert を仕込む
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.doMock('@/lib/supabase/client', () => ({
+      supabase: { from: () => ({ insert: () => Promise.resolve({ error: { message: 'RLS' } }) }) },
+    }));
+    const a = await loadAnalytics();
+    a.identify('user-1');
+    a.__setSignedInForTest(true);
+    a.track('sign_out');
+    await a.flush();
+    // 失われず、次の機会に送れるよう残っている
+    expect(a.__getQueueForTest().map((e) => e.event_name)).toContain('sign_out');
+    const saved = JSON.parse(store.getItem('ashiba-plan:analytics:queue') ?? '[]');
+    expect(saved.map((e: { event_name: string }) => e.event_name)).toContain('sign_out');
+    vi.unstubAllEnvs();
+    vi.doUnmock('@/lib/supabase/client');
+  });
+});
