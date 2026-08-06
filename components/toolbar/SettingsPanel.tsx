@@ -69,7 +69,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           コード本体（TutorialOverlay / tutorialStore / tutorialSteps / data-tutorial-id）は
           残してあるので、下記ボタンのコメントを外すだけで再有効化できる。
         */}
-        {/* チュートリアル開始 (= デフォルト OFF、 手動起動のみ) */}
+        {/* チュートリアル開始 (= デフォルト OFF、 手動起動のみ)
         <button
           type="button"
           onClick={() => {
@@ -84,6 +84,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           </span>
           <span className="text-[10px] text-dimension">9 ステップ</span>
         </button>
+        */}
       </div>
     </>
   );
