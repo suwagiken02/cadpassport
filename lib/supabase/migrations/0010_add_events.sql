@@ -29,7 +29,7 @@ create table if not exists events (
   occurred_at timestamptz not null default now(),
   -- 受信時刻（サーバ時計。時計ズレの検出用）
   created_at timestamptz not null default now(),
-  -- 匿名化した利用者（SHA-256 の先頭 16 文字。未ログインは null）
+  -- 匿名化した利用者（SHA-256 の先頭 16 文字。特定できないうちは null）
   user_hash text,
   -- 1 回の利用（タブを開いてから閉じるまで）。ファネルはこれで並べる
   session_id text not null,
@@ -67,18 +67,23 @@ alter table profiles add column if not exists is_admin boolean not null default 
 
 -- =========================================================================
 -- RLS: 「入れるだけ、読めない」
---   ・insert … ログイン済み/未ログインどちらも可（ログイン画面の離脱も測るため）。
---              ただし読み出しは一切できないので、他人のログを覗くことはできない。
+--   ・insert … **ログイン済み(authenticated)のみ**。CADパスポートは全機能がログイン必須で、
+--              未ログインで測れるのはログイン画面の表示だけ。そのわずかな情報のために
+--              anon へ書き込みを開けると、匿名で誰でもログを流し込める口になるため閉じる。
+--              （ログイン前の離脱は「sign_in の成否」と「ログイン後の初回イベントの有無」
+--                で十分に推し量れる。取れない情報より、開けっ放しの口の方が高くつく）
 --   ・select … 管理者(profiles.is_admin)のみ。集計スクリプトは service_role で
 --              RLS を bypass するので、通常運用ではこのポリシーに触れない。
 --   ・update/delete … 誰にも許可しない（ポリシーを作らない＝拒否）。
 -- =========================================================================
 alter table events enable row level security;
 
+-- 旧ポリシー（anon にも insert を許可していた）を明示的に落としてから作り直す。
 drop policy if exists "Anyone can insert events" on events;
-create policy "Anyone can insert events"
+drop policy if exists "Signed-in users can insert events" on events;
+create policy "Signed-in users can insert events"
   on events for insert
-  to anon, authenticated
+  to authenticated
   with check (true);
 
 drop policy if exists "Admins can read events" on events;
@@ -86,6 +91,23 @@ create policy "Admins can read events"
   on events for select
   to authenticated
   using (exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin));
+
+-- =========================================================================
+-- 過剰な insert への備え（レート制限）
+--
+-- DB 側のトリガでの回数制限は**入れない**。理由:
+--   ・書き込みのたびに count() を走らせることになり、計測のために本体の書き込みを
+--     重くする（計測は本体より軽くあるべき、という大前提に反する）。
+--   ・上限で例外を投げると、クライアントが失敗し続けて warn を吐き続ける。
+--     計測が壊れていることに気づきにくくなる。
+--   ・そもそもの入口を authenticated に絞ったので、匿名の流し込みは塞がっている。
+-- 代わりに、送る側で上限を持つ（lib/analytics.ts）:
+--   ・同じイベントの連続は count でまとめる
+--   ・1 回の送信は 50 件まで／5 秒に 1 回
+--   ・1 セッション 1000 件で打ち切り（それ以上は捨てる）
+-- 異常な量が実際に来たら、まず analyze で「どのイベントが暴れているか」を見て、
+-- 送る側を直す。DB 側で殴るのは最後の手段。
+-- =========================================================================
 
 -- =========================================================================
 -- 保持期間: 生ログは 180 日で捨てる（分析に必要な粒度は集計後に残す運用）。

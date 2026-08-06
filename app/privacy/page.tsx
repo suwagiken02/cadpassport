@@ -53,6 +53,28 @@ export default function PrivacyPage() {
             </ul>
           </div>
 
+          <div>
+            <h4 className="text-sm font-bold mt-3 mb-1">4. 利用状況の記録(統計データ)</h4>
+            <p className="text-sm leading-relaxed">
+              本サービスを使いやすくするため、どの画面がどれくらい使われているかを記録します。記録するのは次のものです。
+            </p>
+            <ul className="list-disc pl-5 text-sm leading-relaxed space-y-1">
+              <li>開いた画面と、その画面にいた時間</li>
+              <li>行った操作の種類と回数(例:自動配置、保存、出力)</li>
+              <li>操作がうまくいったかどうか、うまくいかなかった場所</li>
+              <li>利用者を数えるための記号(お名前や ID とは結び付かない形にしたもの)</li>
+              <li>アプリのバージョン</li>
+            </ul>
+            <p className="text-sm leading-relaxed mt-2">
+              次のものは記録しません。
+            </p>
+            <ul className="list-disc pl-5 text-sm leading-relaxed space-y-1">
+              <li>図面の中身(建物の形、寸法、現場の住所、プロジェクト名、元請け様名など)</li>
+              <li>お名前、メールアドレス、電話番号などの個人を特定できる情報</li>
+              <li>メモなどに入力された文章</li>
+            </ul>
+          </div>
+
           <h2 className="text-lg font-bold mt-8 mb-3">第3章 利用目的</h2>
 
           <h3 className="text-base font-bold mt-4 mb-2">第3条(利用目的)</h3>
@@ -69,6 +91,14 @@ export default function PrivacyPage() {
             <li>お問い合わせ対応のため</li>
             <li>重要なお知らせ配信のため</li>
             <li>将来の有料プラン提供・請求対応のため</li>
+          </ul>
+          <p className="text-sm leading-relaxed mt-3">
+            このうち「利用状況の記録(統計データ)」は、本サービスを使いやすくすることだけに使います。広告や、お客様ごとの分析には使いません。
+          </p>
+          <ul className="list-disc pl-5 text-sm leading-relaxed space-y-1">
+            <li>操作が止まりやすい場所を見つけて、直すため</li>
+            <li>使われていない機能を整理するため</li>
+            <li>不具合を見つけて、再び起きないようにするため</li>
           </ul>
 
           <h2 className="text-lg font-bold mt-8 mb-3">第4章 データ保存・安全管理</h2>
@@ -116,10 +146,21 @@ export default function PrivacyPage() {
             <li>業務委託先へ必要範囲で提供する場合</li>
             <li>不正利用防止・セキュリティ対応のため必要な場合</li>
           </ul>
+          <p className="text-sm leading-relaxed mt-3">
+            「利用状況の記録(統計データ)」は、第三者へ提供しません。外部の解析サービスも使っていません。記録は本サービスのデータベースの中だけに保存します。
+          </p>
 
-          <h2 className="text-lg font-bold mt-8 mb-3">第6章 退会・データ削除</h2>
+          <h2 className="text-lg font-bold mt-8 mb-3">第6章 保存期間・退会・データ削除</h2>
 
-          <h3 className="text-base font-bold mt-4 mb-2">第8条(退会時の取り扱い)</h3>
+          <h3 className="text-base font-bold mt-4 mb-2">第8条(利用状況の記録の保存期間)</h3>
+          <p className="text-sm leading-relaxed">
+            「利用状況の記録(統計データ)」は、記録した日から 180 日で削除します。
+          </p>
+          <p className="text-sm leading-relaxed">
+            記録の停止をご希望の場合は、お問い合わせ窓口までご連絡ください。
+          </p>
+
+          <h3 className="text-base font-bold mt-4 mb-2">第9条(退会時の取り扱い)</h3>
           <p className="text-sm leading-relaxed">
             ユーザーが退会した場合、当社は一定期間経過後にアカウント情報および図面データを削除します。
           </p>
@@ -134,7 +175,7 @@ export default function PrivacyPage() {
 
           <h2 className="text-lg font-bold mt-8 mb-3">第7章 Cookie 等</h2>
 
-          <h3 className="text-base font-bold mt-4 mb-2">第9条(Cookie 等の利用)</h3>
+          <h3 className="text-base font-bold mt-4 mb-2">第10条(Cookie 等の利用)</h3>
           <p className="text-sm leading-relaxed">
             本サービスでは、ログイン状態維持、利便性向上、アクセス解析等のため Cookie 等を利用する場合があります。
           </p>
@@ -144,7 +185,7 @@ export default function PrivacyPage() {
 
           <h2 className="text-lg font-bold mt-8 mb-3">第8章 ユーザーの権利</h2>
 
-          <h3 className="text-base font-bold mt-4 mb-2">第10条(開示・訂正・削除等)</h3>
+          <h3 className="text-base font-bold mt-4 mb-2">第11条(開示・訂正・削除等)</h3>
           <p className="text-sm leading-relaxed">
             ユーザーは、当社に対し、自身の個人情報について以下を請求できます。
           </p>
@@ -160,7 +201,7 @@ export default function PrivacyPage() {
 
           <h2 className="text-lg font-bold mt-8 mb-3">第9章 改訂</h2>
 
-          <h3 className="text-base font-bold mt-4 mb-2">第11条(ポリシー変更)</h3>
+          <h3 className="text-base font-bold mt-4 mb-2">第12条(ポリシー変更)</h3>
           <p className="text-sm leading-relaxed">
             当社は、法令改正やサービス内容変更等に応じて、本ポリシーを改訂する場合があります。
           </p>
@@ -170,7 +211,7 @@ export default function PrivacyPage() {
 
           <h2 className="text-lg font-bold mt-8 mb-3">第10章 お問い合わせ窓口</h2>
 
-          <h3 className="text-base font-bold mt-4 mb-2">第12条(お問い合わせ)</h3>
+          <h3 className="text-base font-bold mt-4 mb-2">第13条(お問い合わせ)</h3>
           <p className="text-sm leading-relaxed">
             個人情報の取り扱いに関するお問い合わせは、以下までご連絡ください。
           </p>
@@ -182,7 +223,7 @@ export default function PrivacyPage() {
         </div>
 
         <p className="mt-8 text-xs text-dimension">制定日:2026 年 5 月 7 日</p>
-        <p className="text-xs text-dimension">最終改訂日:2026 年 5 月 7 日</p>
+        <p className="text-xs text-dimension">最終改訂日:2026 年 8 月 6 日</p>
 
         <button
           type="button"

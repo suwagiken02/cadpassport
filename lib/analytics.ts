@@ -27,6 +27,13 @@ const MAX_BATCH = 50;
 const MAX_STR = 48;
 /** props のキー数の上限。 */
 const MAX_KEYS = 12;
+/**
+ * 1 セッションで送る最大件数（レート制限）。これを超えたら以降は捨てる。
+ * DB 側でトリガを使って殴ると本体の書き込みが重くなるので、送る側で止める。
+ */
+const MAX_EVENTS_PER_SESSION = 1000;
+/** ログイン確定待ちで溜めておける最大件数（メモリの上限）。 */
+const MAX_QUEUE = 200;
 
 /**
  * props に入れてはいけないキー（自由入力・実データの温床）。
@@ -60,6 +67,10 @@ let userHash: string | null = null;
 let currentScreen: string | null = null;
 let screenEnteredAt = 0;
 let listenersBound = false;
+/** このセッションで送った件数（レート制限用）。 */
+let sentThisSession = 0;
+/** ログイン済みか（events の insert は authenticated のみ許可）。 */
+let signedIn = false;
 
 /** 自動配置からの手戻りを測るための印（フェーズ0-B「手戻り」）。 */
 let lastAutoLayoutAt = 0;
@@ -105,8 +116,9 @@ async function hashUserId(userId: string): Promise<string | null> {
 export function identify(userId: string | null): void {
   if (!isBrowser()) return;   // Web Crypto はブラウザのみ
   try {
-    if (!userId) { userHash = null; return; }
-    void hashUserId(userId).then((h) => { userHash = h; });
+    if (!userId) { userHash = null; signedIn = false; return; }
+    signedIn = true;
+    void hashUserId(userId).then((h) => { userHash = h; flush(); });
   } catch (e) {
     console.warn('[analytics] identify failed', e);
   }
@@ -174,6 +186,8 @@ function pushEvent(
     last.count += 1;
     return;
   }
+  // レート制限: 1 セッションの上限を超えたら以降は積まない（本体には影響しない）。
+  if (sentThisSession + queue.length >= MAX_EVENTS_PER_SESSION) return;
   queue.push({
     occurred_at: new Date().toISOString(),
     session_id: getSessionId(),
@@ -201,9 +215,17 @@ function scheduleFlush(): void {
 export function flush(immediate = false): void {
   if (queue.length === 0) return;
   if (!isEnabled()) { queue = []; return; }
+  // events の insert はログイン済みのみ許可（0010 の RLS）。ログインが確定するまでは
+  //   溜めて待つ（直後に identify が呼ばれる）。溜まりすぎたら古いものから捨てる。
+  if (!signedIn) {
+    if (queue.length > MAX_QUEUE) queue = queue.slice(-MAX_QUEUE);
+    return;
+  }
+  if (sentThisSession >= MAX_EVENTS_PER_SESSION) { queue = []; return; }
   const batch = queue.slice(0, MAX_BATCH);
   queue = queue.slice(batch.length);
   const rows = batch.map((e) => ({ ...e, user_hash: userHash }));
+  sentThisSession += rows.length;
   try {
     if (immediate && typeof navigator !== 'undefined' && navigator.sendBeacon) {
       // 離脱時は fetch が中断されるので sendBeacon（Supabase の REST へ直接）。
@@ -312,4 +334,6 @@ export function __resetForTest(): void {
   currentScreen = null;
   lastAutoLayoutAt = 0;
   editsSinceAutoLayout = 0;
+  sentThisSession = 0;
+  signedIn = false;
 }

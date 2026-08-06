@@ -12,7 +12,27 @@
 // 出力は Markdown（標準出力）。そのまま docs/ に貼るか、AI への入力にする。
 // 目的は「どこで詰まって、何が使われていないか」を数字で出すこと。
 // ============================================================
+import fs from 'fs';
+import path from 'path';
 import { createClient } from '@supabase/supabase-js';
+
+/**
+ * .env.local / .env を読む（Next.js と同じ場所に置いてある鍵をそのまま使えるように）。
+ * dotenv を足すほどのことではないので最小限の実装。既に設定済みの環境変数は上書きしない。
+ */
+function loadEnvFiles(): void {
+  for (const file of ['.env.local', '.env']) {
+    const p = path.resolve(process.cwd(), file);
+    if (!fs.existsSync(p)) continue;
+    for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
+      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+      if (!m) continue;
+      const key = m[1];
+      const val = m[2].replace(/^['"]|['"]$/g, '');
+      if (process.env[key] === undefined) process.env[key] = val;
+    }
+  }
+}
 
 /** ファネルの定義（この順に到達しているかを見る）。 */
 const FUNNEL: { key: string; label: string; match: (e: EventRow) => boolean }[] = [
@@ -69,11 +89,34 @@ function summary(values: number[]): string {
 
 async function main(): Promise<void> {
   const days = Number(arg('days', '30'));
+  loadEnvFiles();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    console.error('NEXT_PUBLIC_SUPABASE_URL と SUPABASE_SERVICE_ROLE_KEY が必要です。');
-    process.exit(1);
+    // 設定漏れは「失敗」ではなく「まだ準備できていない」だけなので、
+    // 何をどこに置けばよいかを案内して静かに終わる（exit code 0）。
+    const missing = [!url && 'NEXT_PUBLIC_SUPABASE_URL', !key && 'SUPABASE_SERVICE_ROLE_KEY']
+      .filter(Boolean).join(' と ');
+    console.log([
+      '集計を実行できません（設定が足りません）。',
+      '',
+      `不足している設定: ${missing}`,
+      '',
+      '次のどちらかを行ってから、もう一度 npm run analyze を実行してください。',
+      '',
+      '  A) プロジェクト直下の .env.local に次の 2 行を書く',
+      '       NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co',
+      '       SUPABASE_SERVICE_ROLE_KEY=（Supabase の Project Settings → API → service_role）',
+      '',
+      '  B) シェルで一時的に設定する',
+      '       set NEXT_PUBLIC_SUPABASE_URL=... （Windows）',
+      '       export NEXT_PUBLIC_SUPABASE_URL=... （Mac/Linux）',
+      '',
+      '※ service_role キーは管理者用の鍵です。他人に渡さない・リポジトリに入れないこと。',
+      '※ events テーブルが未作成なら、先に',
+      '   lib/supabase/migrations/0010_add_events.sql を Supabase の SQL Editor で実行してください。',
+    ].join('\n'));
+    return;
   }
   const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
   const db = createClient(url, key, { auth: { persistSession: false } });
@@ -86,7 +129,21 @@ async function main(): Promise<void> {
       .gte('occurred_at', since)
       .order('occurred_at', { ascending: true })
       .range(from, from + PAGE - 1);
-    if (error) { console.error('events の取得に失敗:', error.message); process.exit(1); }
+    if (error) {
+      // よくある「まだテーブルを作っていない」を、次の一手が分かる形で案内する。
+      const missingTable = /schema cache|does not exist|relation .*events/i.test(error.message);
+      console.log(missingTable
+        ? [
+          'events テーブルがまだありません。',
+          '',
+          'Supabase のダッシュボード → SQL Editor で',
+          '  lib/supabase/migrations/0010_add_events.sql',
+          'の内容を実行してから、もう一度 npm run analyze を実行してください。',
+        ].join('\n')
+        : `events の取得に失敗しました: ${error.message}`);
+      if (!missingTable) process.exitCode = 1;
+      return;
+    }
     rows.push(...(data as EventRow[]));
     if (!data || data.length < PAGE) break;
   }
@@ -235,4 +292,8 @@ async function main(): Promise<void> {
   console.log(out.join('\n'));
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  // 計測の集計が落ちても他に影響は無い。原因だけ出して終わる。
+  console.error(e);
+  process.exitCode = 1;
+});

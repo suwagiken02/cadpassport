@@ -178,6 +178,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        // フェーズ0: 再読み込みでセッションが復帰したときも計測を紐づける（ハッシュのみ）。
+        identify(session.user.id);
         set({ user: { id: session.user.id, email: extractSupabaseEmail(session.user) } });
         try {
           const { data } = await supabase
