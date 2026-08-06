@@ -1236,6 +1236,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   addPost: (p) => {
+    track('manual_edit', { kind: 'add_post' });
     const { canvasData, pushHistory } = get();
     pushHistory();
     set({
@@ -1244,6 +1245,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   addAnti: (a) => {
+    track('manual_edit', { kind: 'add_anti' });
     const { canvasData, pushHistory } = get();
     pushHistory();
     set({
@@ -1262,6 +1264,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   addObstacle: (o) => {
+    track('manual_edit', { kind: 'add_obstacle' });
     const { canvasData, pushHistory } = get();
     pushHistory();
     set({
@@ -1751,6 +1754,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
   moveElement: (id, dx, dy) => {
+    track('manual_edit', { kind: 'move' });
     const { canvasData } = get();
     set({
       canvasData: {

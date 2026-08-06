@@ -168,6 +168,24 @@ async function main(): Promise<void> {
   p(`- アクティブユーザー数（匿名ハッシュ）: **${users.size}**`);
   p(`- セッション数: **${sessions.size}**`);
   p(`- イベント総数: ${total}（行数 ${rows.length}）`);
+  // 利用者がセッションより多いのは論理的におかしい（1 セッション＝1 人のはず）。
+  //   同一人物に別々のハッシュが付いている＝計測側の不具合を示す signal。
+  if (users.size > sessions.size) {
+    p();
+    p(`> ⚠ **警告: 利用者数(${users.size}) がセッション数(${sessions.size}) を上回っています。**`);
+    p('> 1 セッションに複数の匿名ハッシュが付いている可能性があります');
+    p('> （ログイン確定前の仮の id をハッシュしている等）。下の内訳を確認してください。');
+    const multi = new Map<string, Set<string>>();
+    for (const r of rows) {
+      if (!r.user_hash) continue;
+      const set = multi.get(r.session_id) ?? new Set<string>();
+      set.add(r.user_hash);
+      multi.set(r.session_id, set);
+    }
+    for (const [sid, hs] of Array.from(multi.entries())) {
+      if (hs.size > 1) p(`> - session ${sid.slice(0, 8)}… に ${hs.size} 個のハッシュ`);
+    }
+  }
   p();
 
   // ---- ファネル ----

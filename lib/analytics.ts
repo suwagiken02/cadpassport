@@ -67,6 +67,8 @@ let userHash: string | null = null;
 let currentScreen: string | null = null;
 let screenEnteredAt = 0;
 let listenersBound = false;
+/** sessionStorage からの復帰を 1 回だけ行うための印。 */
+let queueRestored = false;
 /** このセッションで送った件数（レート制限用）。 */
 let sentThisSession = 0;
 /** ログイン済みか（events の insert は authenticated のみ許可）。 */
@@ -75,6 +77,9 @@ let signedIn = false;
 /** 自動配置からの手戻りを測るための印（フェーズ0-B「手戻り」）。 */
 let lastAutoLayoutAt = 0;
 let editsSinceAutoLayout = 0;
+
+/** authStore の未ログイン時のプレースホルダ id。これはハッシュしない（別人として数えてしまう）。 */
+const ANON_ID = 'anonymous';
 
 const isBrowser = () => typeof window !== 'undefined';
 /** 本番のみ送る。dev/test では組み立てるだけで送信しない。 */
@@ -110,15 +115,27 @@ async function hashUserId(userId: string): Promise<string | null> {
 }
 
 /**
- * ログイン中の利用者を計測に紐づける（ハッシュのみ）。
- * ログイン直後に 1 回呼ぶ。ログアウト時は null を渡す。
+ * ログイン中の利用者を計測に紐づける（ハッシュのみ）(= 匿名ハッシュの重複修正)。
+ *
+ * 実測で「セッション 1 なのに利用者 2」が出た。原因は、まだセッションが確定して
+ * いない瞬間に、ストアの初期値である 'anonymous' を掴んで別のハッシュを作って
+ * いたこと。**ハッシュの元は Supabase のセッションの user.id ただ 1 つ**にする。
  */
 export function identify(userId: string | null): void {
   if (!isBrowser()) return;   // Web Crypto はブラウザのみ
   try {
-    if (!userId) { userHash = null; signedIn = false; return; }
+    if (!userId || userId === ANON_ID) {
+      // 未ログイン。ハッシュは消すが、既に積んだイベントは捨てない（再ログインで送る）。
+      userHash = null;
+      signedIn = false;
+      return;
+    }
     signedIn = true;
-    void hashUserId(userId).then((h) => { userHash = h; flush(); });
+    void hashUserId(userId).then((h) => {
+      // 同じ人は毎回同じ値。ログイン前後で値が変わらない。
+      userHash = h;
+      flush();
+    });
   } catch (e) {
     console.warn('[analytics] identify failed', e);
   }
@@ -169,12 +186,51 @@ function bindLifecycle(): void {
   }
 }
 
+/**
+ * キューの保存先（sessionStorage）(= 計測の欠落修正)。
+ *
+ * なぜ sessionStorage か:
+ *   ・ページ遷移や再読み込みでモジュールの変数は消える。実測で、ログイン画面の
+ *     イベント（screen_view/sign_in/sign_out）が /projects へ移る所で丸ごと失われていた。
+ *   ・sessionStorage は**そのタブの中だけ**で生き、タブを閉じれば消える。
+ *     session_id の寿命と一致するので、余計に長生きしない。
+ *   ・localStorage だと別タブ・翌日の起動にまで古いイベントが残り、
+ *     「いつのものか分からないログ」が混ざる。Cookie は送信量が増えるだけで利点が無い。
+ */
+const QUEUE_KEY = 'ashiba-plan:analytics:queue';
+
+/** キューを保存する（失敗しても無視。計測のために本体を止めない）。 */
+function persistQueue(): void {
+  if (!isBrowser()) return;
+  try {
+    if (queue.length === 0) window.sessionStorage.removeItem(QUEUE_KEY);
+    else window.sessionStorage.setItem(QUEUE_KEY, JSON.stringify(queue.slice(-MAX_QUEUE)));
+  } catch {
+    /* 容量超過などは無視 */
+  }
+}
+
+/** 前のページで積んだキューを引き継ぐ（1 回だけ）。 */
+function restoreQueue(): void {
+  if (queueRestored || !isBrowser()) return;
+  queueRestored = true;
+  try {
+    const raw = window.sessionStorage.getItem(QUEUE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw) as QueuedEvent[];
+    if (Array.isArray(saved) && saved.length > 0) queue = [...saved, ...queue];
+  } catch {
+    /* 壊れていたら捨てる */
+  }
+}
+
 /** キューへ積む（同じイベントが連続していたら count をまとめる）。 */
 function pushEvent(
   eventName: string,
   props?: EventProps,
   opts?: { screen?: string | null; durationMs?: number; ok?: boolean },
 ): void {
+  restoreQueue();   // 前のページのぶんを引き継いでから積む
   const safe = sanitize(props);
   const screen = opts?.screen ?? currentScreen;
   const last = queue[queue.length - 1];
@@ -184,6 +240,7 @@ function pushEvent(
     && JSON.stringify(last.props) === JSON.stringify(safe)
   ) {
     last.count += 1;
+    persistQueue();
     return;
   }
   // レート制限: 1 セッションの上限を超えたら以降は積まない（本体には影響しない）。
@@ -199,6 +256,7 @@ function pushEvent(
     props: safe,
     app_version: process.env.NEXT_PUBLIC_APP_VERSION ?? null,
   });
+  persistQueue();
   if (queue.length >= FLUSH_AT) flush();
   else scheduleFlush();
 }
@@ -213,17 +271,19 @@ function scheduleFlush(): void {
  * immediate=true はページ離脱時。keepalive で最後の 1 回を届ける。
  */
 export function flush(immediate = false): void {
+  restoreQueue();
   if (queue.length === 0) return;
-  if (!isEnabled()) { queue = []; return; }
+  if (!isEnabled()) { queue = []; persistQueue(); return; }
   // events の insert はログイン済みのみ許可（0010 の RLS）。ログインが確定するまでは
   //   溜めて待つ（直後に identify が呼ばれる）。溜まりすぎたら古いものから捨てる。
   if (!signedIn) {
     if (queue.length > MAX_QUEUE) queue = queue.slice(-MAX_QUEUE);
     return;
   }
-  if (sentThisSession >= MAX_EVENTS_PER_SESSION) { queue = []; return; }
+  if (sentThisSession >= MAX_EVENTS_PER_SESSION) { queue = []; persistQueue(); return; }
   const batch = queue.slice(0, MAX_BATCH);
   queue = queue.slice(batch.length);
+  persistQueue();
   const rows = batch.map((e) => ({ ...e, user_hash: userHash }));
   sentThisSession += rows.length;
   try {
@@ -328,6 +388,10 @@ export function trackDuration(eventName: string, ms: number, properties?: EventP
 export function __getQueueForTest(): QueuedEvent[] {
   return queue;
 }
+/** テスト用: 紐づけの状態を見る（同一人物が同一ハッシュかの検証）。 */
+export function __getIdentityForTest(): { signedIn: boolean; userHash: string | null } {
+  return { signedIn, userHash };
+}
 /** テスト用リセット。 */
 export function __resetForTest(): void {
   queue = [];
@@ -336,4 +400,7 @@ export function __resetForTest(): void {
   editsSinceAutoLayout = 0;
   sentThisSession = 0;
   signedIn = false;
+  userHash = null;
+  queueRestored = false;
+  try { if (isBrowser()) window.sessionStorage.removeItem(QUEUE_KEY); } catch { /* noop */ }
 }

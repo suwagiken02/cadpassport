@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
-import { identify, trackResult } from '@/lib/analytics';
+import { flush, identify, trackResult } from '@/lib/analytics';
 import { extractSupabaseEmail } from '@/lib/auth/supabaseUser';
 
 /**
@@ -96,7 +96,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       trackResult('sign_in', !error, { method: 'email' });
       if (error) return localizeAuthError(error.message);
       await get().loadSession();
-      identify(get().user?.id ?? null);
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'ログインに失敗しました';
@@ -160,7 +159,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       trackResult('sign_in', !error, { method: 'id' });
       if (error) return localizeAuthError(error.message);
       await get().loadSession();
-      identify(get().user?.id ?? null);
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'ログインに失敗しました';
@@ -168,6 +166,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
   signOut: async () => {
     trackResult('sign_out', true);
+    // ログアウトすると events へ書けなくなる（RLS は authenticated のみ）。
+    //   紐づけを外す前に、溜まっているぶんを送り切る。
+    flush(true);
     identify(null);
     await supabase.auth.signOut();
     set({ user: ANON_USER, profile: ANON_PROFILE, currentCompanyId: null });

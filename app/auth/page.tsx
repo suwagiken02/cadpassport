@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { trackScreen } from '@/lib/analytics';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
@@ -11,6 +11,9 @@ import { useIsAndroid } from '@/hooks/useIsAndroid';
 function AuthPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // フェーズ0: 画面到達（ファネルの 1 段目）。ログイン前のぶんは sessionStorage に
+  //   積まれ、ログインが確定した時点でまとめて送られる。
+  useEffect(() => { trackScreen('auth'); }, []);
   // 改善 11: サインアップ後のリダイレクト先 /auth?signup=success で完了 banner 表示
   const showSignupSuccess = searchParams.get('signup') === 'success';
   // PW リセット 改善: PW 更新後のリダイレクト先 /auth?reset=success で完了 banner 表示
