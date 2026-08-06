@@ -859,8 +859,20 @@ function buildRoofBandsForRoofs(
     const coverages = roofWallCoverages(building, roof);
     const clipped = clipSegmentsToIntervals(outline.segments, roofFaceWallIntervals(building, roof, face));
 
-    // この面に壁を持たない屋根は、屋根の軒高で水平プロファイル（壁範囲＝屋根 polygon の変軸 bbox）。
     let segs: BuildingOutlineSegment[] = clipped;
+    // E-9-fix6: この面に壁を持たない屋根（下屋の境目側など）は、**反対面**の壁区間で
+    //   切り出したプロファイルを使う。東西（南北）は変軸が同じなので、屋根の投影の形は
+    //   同じになる＝妻の勾配なりの線が出る。従来は軒高の水平線に潰れており、実機では
+    //   「1F の屋根が水平線に化けて全幅を貫通する」に見えていた（西面の症状）。
+    if (segs.length === 0) {
+      const opp: Face = face === 'north' ? 'south' : face === 'south' ? 'north'
+        : face === 'east' ? 'west' : 'east';
+      const oppOutline = buildBuildingOutline(building, opp, markers, { defaultHeightMm });
+      segs = clipSegmentsToIntervals(
+        oppOutline.segments, roofFaceWallIntervals(building, roof, opp),
+      );
+    }
+    // それでも無ければ従来どおり、屋根の軒高で水平プロファイル（壁範囲＝屋根 polygon の変軸 bbox）。
     if (segs.length === 0) {
       const eaveMm = roofEaveMm(building, coverages, markers) ?? defaultHeightMm;
       if (eaveMm == null) continue;

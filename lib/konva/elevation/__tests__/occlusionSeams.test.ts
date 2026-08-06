@@ -305,3 +305,97 @@ describe('北面・南面は遮蔽で壊れない（fix4 の回帰の再発防�
     });
   }
 });
+
+// ============================================================
+// E-9-fix6: 西面で 1F の軒の出が「水平線」に化ける。
+//
+// 実機（鏡像比較で確定）: 東面の左端には 2F と 1F の屋根勾配の斜線が平行に 2 本出る（正）。
+// 西面は同じ場所を反対から見るので右端に左右反転で同じ 2 本が出るのが正しいのに、
+// 1F 側が高さ 3300 の水平線になっていた。
+//
+// 根因: 1F の屋根がその面に壁を持たない（屋根領域が 2F との境まで届かない）とき、
+// エンジンが「屋根の軒高で水平プロファイル」に潰していた。反対面（同じ変軸）の
+// 壁区間から切り出せば、屋根の投影の形はそのまま得られる。
+// ============================================================
+describe('E-9-fix6: 壁を持たない面の屋根は水平線に潰さない', () => {
+  /** 1F の屋根が西端（2F との境）まで届かない＝西面に壁を持たない屋根。 */
+  const roofsGap = [
+    roof('r2', 'f2', b2f.points),
+    { ...roof('r1', 'f1', rect(320, 0, 500, 400)) },
+  ];
+  const feOf = (f: 'east' | 'west') => buildFaceElevation([], [b1f, b2f], {
+    face: f, floor: 1, markers: MARKERS, roofs: roofsGap,
+  });
+  const linesOf = (f: 'east' | 'west') =>
+    buildingAndRoofPrimitives(feOf(f), () => '#888')
+      .filter((p): p is Extract<typeof p, { kind: 'line' }> =>
+        p.kind === 'line' && p.meta?.buildingId === 'f1' && p.meta?.kind === 'roof');
+  /** 2F の壁は局所 x 50..450。その外＝軒の出のはみ出し。 */
+  const outside = (p: { x1: number; x2: number }) =>
+    Math.max(p.x1, p.x2) <= 50 + 1e-6 || Math.min(p.x1, p.x2) >= 450 - 1e-6;
+
+  it('西面の 1F の線は水平ではなく勾配なり（軒先へ向かって下がる）', () => {
+    const ls = linesOf('west');
+    expect(ls.length).toBeGreaterThan(0);
+    for (const l of ls) expect(Math.abs(l.y1 - l.y2)).toBeGreaterThan(1e-6);
+  });
+
+  it('西面の 1F の線は 2F の壁の外だけ（妻の内部を貫通しない）', () => {
+    for (const l of linesOf('west')) expect(outside(l)).toBe(true);
+  });
+
+  it('東面の対応する線（壁の外の区間）と左右反転で一致する', () => {
+    const norm = (ls: ReturnType<typeof linesOf>) => ls
+      .filter(outside)
+      .map((l) => {
+        // 変軸の全幅は 0..500（局所）。左右反転して端点を昇順に正規化する。
+        const a = [Math.round((500 - l.x1) * 1000) / 1000, Math.round(l.y1 * 1000) / 1000];
+        const b = [Math.round((500 - l.x2) * 1000) / 1000, Math.round(l.y2 * 1000) / 1000];
+        return JSON.stringify([a, b].sort());
+      })
+      .sort();
+    const plain = (ls: ReturnType<typeof linesOf>) => ls
+      .filter(outside)
+      .map((l) => JSON.stringify([
+        [Math.round(l.x1 * 1000) / 1000, Math.round(l.y1 * 1000) / 1000],
+        [Math.round(l.x2 * 1000) / 1000, Math.round(l.y2 * 1000) / 1000],
+      ].sort()))
+      .sort();
+    expect(norm(linesOf('west'))).toEqual(plain(linesOf('east')));
+  });
+
+  it('東面の 1F の屋根線は従来どおり（勾配なりのけらば・棟まで上がる）', () => {
+    const ls = linesOf('east');
+    const ys = ls.flatMap((l) => [l.y1, l.y2]);
+    expect(Math.min(...ys)).toBe(-510);      // 棟 5100
+    expect(Math.max(...ys)).toBe(-360);      // 軒先 3600
+  });
+});
+
+describe('E-9-fix6: 2 棟物件でも「壁の外にはみ出す線」は東西で鏡像一致', () => {
+  const facePrims = (f: 'east' | 'west') =>
+    buildingAndRoofPrimitives(face(f, MARKERS), () => '#888');
+  /** 2F の壁(局所 50..450)の**外側にはみ出した屋根の線**だけを、左右反転して正規化。
+   *  壁の角の縦線は「どちらの棟が手前か」で変わるので鏡像の対象にしない。 */
+  const outerNorm = (f: 'east' | 'west', mirror: boolean) => facePrims(f)
+    .filter((p): p is Extract<typeof p, { kind: 'line' }> => p.kind === 'line'
+      && p.meta?.kind === 'roof'
+      && ((p.x1 + p.x2) / 2 < 50 - 1e-6 || (p.x1 + p.x2) / 2 > 450 + 1e-6))
+    .map((l) => {
+      const fx = (x: number) => Math.round((mirror ? 500 - x : x) * 1000) / 1000;
+      return JSON.stringify([[fx(l.x1), l.y1], [fx(l.x2), l.y2]].sort());
+    })
+    .sort();
+
+  it('東面と西面で、壁の外の線分が左右反転で一致する', () => {
+    expect(outerNorm('west', true)).toEqual(outerNorm('east', false));
+  });
+
+  it('その線分は 2F と 1F の 2 本ずつ（両端に平行な斜線）', () => {
+    const ls = facePrims('east').filter((p) => p.kind === 'line'
+      && (Math.max(p.x1, p.x2) <= 50 + 1e-6 || Math.min(p.x1, p.x2) >= 450 - 1e-6)
+      && p.meta?.kind === 'roof');
+    expect(ls.filter((p) => p.meta?.buildingId === 'f1')).toHaveLength(2);
+    expect(ls.filter((p) => p.meta?.buildingId === 'f2')).toHaveLength(2);
+  });
+});
