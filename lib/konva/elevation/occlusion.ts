@@ -364,7 +364,9 @@ export function clipRoofBand(
         });
       }
     }
-    return out;
+    // E-9-fix5: 判定で細切れになった断片は繋ぎ直す（けらばが何本もの短い線に割れるのを防ぐ）。
+    out.sort((p, q) => Math.min(p.xStart, p.xEnd) - Math.min(q.xStart, q.xEnd));
+    return mergeBands(out, band);
   }
 
   // 塗るバンド: 手前の区間境界で割り、区間ごとに 1 つのしきい値で判定する。
@@ -385,32 +387,84 @@ export function clipRoofBand(
     || wallRanges.some(([wa, wb]) => a2 >= wa - EPS && b2 <= wb + EPS);
   const xs = Array.from(bounds).sort((a, b) => a - b);
   const out: RoofBand[] = [];
+  /** 壁の外（軒の出）の断片。塗るか線にするかはループ後に決める。 */
+  const offWall: RoofBand[] = [];
+  let onWallKept = false;
   for (let i = 0; i < xs.length - 1; i++) {
     const a = xs[i], b = xs[i + 1];
     if (b - a <= EPS) continue;
     const h = stepTopAt(steps, (a + b) / 2);
     const prof = profileBetween(band.profile, a, b);
     if (!onWall(a, b)) {
-      // 壁の外＝軒の出。屋根の面ではなく「けらば/軒の線」だけを描く（塗り・棟線・棟ラベル無し）。
+      // 壁の外＝軒の出。ここを面として塗ってよいかは「壁の上が残っているか」で決まる
+      //   (E-9-fix5)。壁の上が全部隠れたなら、見えているのは板の小口だけなので線にする。
+      //   壁の上が見えているなら屋根面は続いているので従来どおり塗る（北・南面の見え方を保つ）。
       const top = Math.max(...prof.map((p) => p.mm));
       if (h >= top - EPS) continue;
-      out.push({ ...band, xStart: a, xEnd: b, profile: prof, ridgeMm: top,
-        filledToRidge: false, baseMm: undefined });
+      offWall.push({ ...band, xStart: a, xEnd: b, profile: prof });
       continue;
     }
     if (band.baseMm != null) {
       // 面は baseMm 〜 プロファイル。プロファイルまで隠れたら消える。
       const top = Math.max(...prof.map((p) => p.mm));
       if (h >= top - EPS) continue;
+      onWallKept = true;   // 壁の上の屋根面が残った（軒の出も面として続く）
       out.push({ ...band, xStart: a, xEnd: b, profile: prof, baseMm: Math.max(band.baseMm, h) });
     } else {
       // 面はプロファイル 〜 棟。棟まで隠れたら消える。
       if (h >= band.ridgeMm - EPS) continue;
+      onWallKept = true;
       out.push({
         ...band, xStart: a, xEnd: b,
         profile: prof.map((p) => ({ x: p.x, mm: Math.min(Math.max(p.mm, h), band.ridgeMm) })),
       });
     }
+  }
+  for (const p of offWall) {
+    out.push(onWallKept ? p : {
+      ...p, filledToRidge: false, baseMm: undefined,
+      ridgeMm: Math.max(...p.profile.map((q) => q.mm)),
+    });
+  }
+  out.sort((p, q) => Math.min(p.xStart, p.xEnd) - Math.min(q.xStart, q.xEnd));
+  return mergeBands(out, band);
+}
+
+/**
+ * 切った屋根バンドを繋ぎ直す (= E-9-fix5)。
+ *
+ * 判定は細かい x 区間で行うので、そのままだと 1 枚の屋根が何枚もの独立した閉じた形に
+ * 割れ、実機では「屋根バンドが壁とズレた矩形として重なる／二重線になる」に見える。
+ * 形（塗り方・軒基準・棟高）が同じで x が連続する断片は 1 枚に戻し、
+ * 結果が元と同じなら**元のバンドをそのまま返す**（＝遮蔽が実際に効いていない面は不変）。
+ */
+function mergeBands(pieces: RoofBand[], original: RoofBand): RoofBand[] {
+  const out: RoofBand[] = [];
+  for (const p of pieces) {
+    const last = out[out.length - 1];
+    const joins = last
+      && Math.abs(last.xEnd - p.xStart) <= EPS
+      && last.filledToRidge === p.filledToRidge
+      && (last.baseMm ?? null) === (p.baseMm ?? null)
+      && (!last.filledToRidge || Math.abs(last.ridgeMm - p.ridgeMm) <= EPS)
+      && Math.abs(last.profile[last.profile.length - 1].mm - p.profile[0].mm) <= EPS
+      && Math.abs(last.profile[last.profile.length - 1].x - p.profile[0].x) <= EPS;
+    if (!joins) { out.push({ ...p, profile: [...p.profile] }); continue; }
+    last.xEnd = p.xEnd;
+    for (const q of p.profile.slice(1)) last.profile.push(q);
+    if (!last.filledToRidge) last.ridgeMm = Math.max(last.ridgeMm, p.ridgeMm);
+  }
+  // 元と同じ形に戻ったなら、元のバンドをそのまま使う（プロファイルの点まで完全に同一）。
+  if (out.length === 1) {
+    const o = out[0];
+    const same = Math.abs(o.xStart - original.xStart) <= EPS
+      && Math.abs(o.xEnd - original.xEnd) <= EPS
+      && o.filledToRidge === original.filledToRidge
+      && (o.baseMm ?? null) === (original.baseMm ?? null)
+      && o.profile.length === original.profile.length
+      && o.profile.every((q, i) => Math.abs(q.x - original.profile[i].x) <= EPS
+        && Math.abs(q.mm - original.profile[i].mm) <= EPS);
+    if (same) return [original];
   }
   return out;
 }

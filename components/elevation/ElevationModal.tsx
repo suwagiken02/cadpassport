@@ -21,6 +21,7 @@ import { partWidthPx } from '@/lib/konva/elevation/elevationPartStyle';
 //   ここに独自の SVG 描画（railLine / postLine 等）を置いていたため、部材の見た目が
 //   二重実装になり、プレビューと配置後で食い違う余地が残っていた。
 import { faceElevationToParts, partsToPrimitives } from '@/lib/konva/elevation/elevationParts';
+import { buildingAndRoofPrimitives } from '@/lib/konva/elevation/elevationToObjects';
 import type { PillarType } from '@/lib/konva/calculator';
 import type { ElevationPrimitive } from '@/types';
 
@@ -273,7 +274,19 @@ function ElevationSVG({
         />
       );
     }
-    return null;   // 部材に rect / text は出ない
+    if (p.kind === 'text') {
+      // E-9-fix5: 棟ラベル等（建物・屋根の経路を共通化したので text も写す）。
+      return (
+        <text
+          key={key} x={lpx(p.x)} y={lpy(p.y)} fill={p.fill} fontSize={p.size}
+          fontFamily="monospace"
+          textAnchor={p.anchor === 'start' ? 'start' : p.anchor === 'end' ? 'end' : 'middle'}
+        >
+          {p.text}
+        </text>
+      );
+    }
+    return null;   // rect は出ない
   };
 
   // 奥→手前で重ね描き（depthCoord 昇順のまま。E-5 で前後判定・切断）。
@@ -284,72 +297,11 @@ function ElevationSVG({
       style={{ maxWidth: VBW, display: 'block', margin: '0 auto' }}
       preserveAspectRatio="xMidYMid meet"
     >
-      {/* 建物シルエット（多階は重ね） */}
-      {buildingOutlines.map((o) =>
-        o.segments.map((s, i) => {
-          const pts = [
-            `${sxg(s.xStart).toFixed(1)},${glY.toFixed(1)}`,
-            `${sxg(s.xStart).toFixed(1)},${sy(s.heightStartMm).toFixed(1)}`,
-            `${sxg(s.xEnd).toFixed(1)},${sy(s.heightEndMm).toFixed(1)}`,
-            `${sxg(s.xEnd).toFixed(1)},${glY.toFixed(1)}`,
-          ].join(' ');
-          return (
-            <polygon
-              key={`bo-${o.buildingId}-${i}`}
-              points={pts}
-              fill={fillOf(o.buildingId)}
-              fillOpacity={0.22}
-              stroke="#8a8a86"
-              strokeWidth={1.5}
-            />
-          );
-        }),
-      )}
-
-      {/* 屋根投影バンド（延長込み上辺プロファイル。樋面=水平/妻面=けらば斜辺、壁より張り出す） */}
-      {roofBands.map((band, bi) => {
-        // R-1f: 1 建物に複数屋根（大屋根＋下屋）＝複数バンドがあるので key は屋根単位で作る。
-        // 配列は奥→手前の順（エンジン側でソート済み）なので、後の要素が手前に重なる。
-        const key = `rb-${band.roofId ?? band.buildingId}-${bi}`;
-        const profPts = band.profile.map((p) => `${sxg(p.x).toFixed(1)},${sy(p.mm).toFixed(1)}`);
-        if (band.filledToRidge) {
-          if (band.baseMm != null) {
-            // 棟ライン方式: 上側包絡線(上端) を軒基準(baseMm)まで塗る。棟の水平線は出さない(包絡線が棟を示す)。
-            const pts = [
-              ...profPts,
-              `${sxg(band.xEnd).toFixed(1)},${sy(band.baseMm).toFixed(1)}`,
-              `${sxg(band.xStart).toFixed(1)},${sy(band.baseMm).toFixed(1)}`,
-            ].join(' ');
-            return (
-              <polygon key={key} points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
-            );
-          }
-          // マーカー方式(樋面切妻投影): 延長込み軒プロファイル(下端) + 棟の水平線(上端) の台形を塗る。
-          const pts = [
-            ...profPts,
-            `${sxg(band.xEnd).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
-            `${sxg(band.xStart).toFixed(1)},${sy(band.ridgeMm).toFixed(1)}`,
-          ].join(' ');
-          return (
-            <g key={key}>
-              <polygon points={pts} fill={fillOf(band.buildingId)} fillOpacity={0.42} stroke="#8a8a86" strokeWidth={1.2} />
-              <line x1={sxg(band.xStart)} y1={sy(band.ridgeMm)} x2={sxg(band.xEnd)} y2={sy(band.ridgeMm)} stroke="#6b6b67" strokeWidth={1.4} />
-              <text x={sxg(band.xEnd)} y={sy(band.ridgeMm) - 3} textAnchor="end" fill="#c9c9c6" fontSize={9} fontFamily="monospace">棟 {band.ridgeMm}</text>
-            </g>
-          );
-        }
-        // 妻面のけらば / 棟マーカー無しのフラット軒: 延長込みプロファイルを線で描く（壁より張り出す）。
-        return (
-          <polyline key={key} points={profPts.join(' ')} fill="none" stroke="#8a8a86" strokeWidth={1.3} />
-        );
-      })}
-
-      {/* 足場（部材）: 踏板・手摺・支柱・ジャッキ・嵩上げ・支柱延長まで、
-          キャンバス配置版とまったく同じ partsToPrimitives の出力を描く (= E-8-v2l)。
-          ここに独自の描画を足すと二重実装に戻るので足さないこと。 */}
-      <g opacity={0.95}>
-        {partPrimitives.map((p, i) => partToSvg(p, `pp-${i}`))}
-      </g>
+      {/* 建物シルエット・屋根投影バンド */}
+      {/* E-9-fix5: キャンバス配置版と同一経路。ここに独自の SVG を持つと、遮蔽の下端や
+          継ぎ目の印を無視した絵になり「テストは通るのに実機が直らない」が起きる。 */}
+      {buildingAndRoofPrimitives(faceElevation, fillOf, partMinXg)
+        .map((p, i) => partToSvg(p, `bg-${i}`))}
 
       {/* GL 線 */}
       <line x1={PAD * 0.5} y1={glY} x2={VBW - PAD * 0.5} y2={glY} stroke="#6b6b67" strokeWidth={1} strokeDasharray="4 3" />

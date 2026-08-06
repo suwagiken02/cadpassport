@@ -14,9 +14,12 @@
 //   そこに棟までの面を描いてはいけない（R-1n の「壁≠屋根」と同じ考え方）。
 // ============================================================
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import type { BuildingShape, HeightMarker, Point, Roof } from '@/types';
 import { buildFaceElevation } from '../elevationEngine';
-import { faceElevationToPrimitives, outlineRuns } from '../elevationToObjects';
+// E-9-fix5: プレビュー(ElevationModal)が実際に呼ぶ入口。ここを検証する。
+import { buildingAndRoofPrimitives, outlineRuns } from '../elevationToObjects';
 
 const rect = (x0: number, y0: number, x1: number, y1: number): Point[] => [
   { x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 },
@@ -31,6 +34,7 @@ const gableMarks = (id: string, eave: number, ridge: number): HeightMarker[] => 
   { id: `${id}s`, buildingId: id, edgeIndex: 2, t: 0.5, heightMm: eave },
   { id: `${id}w`, buildingId: id, edgeIndex: 3, t: 0.5, heightMm: ridge },
 ];
+const bld2 = (id: string, pts: Point[]): BuildingShape => ({ id, points: pts } as BuildingShape);
 const roof = (id: string, bid: string, poly: Point[]): Roof =>
   ({ id, buildingId: bid, polygon: poly, roofShape: 'gable', uniformMm: 500 } as Roof);
 const roofs = [roof('r2', 'f2', b2f.points), roof('r1', 'f1', b1f.points)];
@@ -38,7 +42,7 @@ const roofs = [roof('r2', 'f2', b2f.points), roof('r1', 'f1', b1f.points)];
 const face = (f: 'east' | 'west', markers: HeightMarker[]) =>
   buildFaceElevation([], [b1f, b2f], { face: f, floor: 1, markers, roofs });
 const prims = (f: 'east' | 'west', markers: HeightMarker[]) =>
-  faceElevationToPrimitives(face(f, markers), () => '#888');
+  buildingAndRoofPrimitives(face(f, markers), () => '#888');
 
 /** 両棟とも妻 TOP が東西両側にある（正しい入力）。 */
 const MARKERS = [...gableMarks('f2', 6100, 8000), ...gableMarks('f1', 3300, 5100)];
@@ -95,7 +99,7 @@ describe('症状A: 特徴点の X に継ぎ目の縦線を描かない', () => {
         { id: 'b', buildingId: 'solo', edgeIndex: 2, t: 0.5, heightMm: 3000 },
       ],
     });
-    const ps = faceElevationToPrimitives(fe, () => '#888');
+    const ps = buildingAndRoofPrimitives(fe, () => '#888');
     expect(ps.filter((p) => p.kind === 'polygon' && p.meta?.kind === 'building')).toHaveLength(1);
     expect(verticalWallLines(ps)).toHaveLength(2);
   });
@@ -200,4 +204,104 @@ describe('東面の骨格（確認済みの表示）を壊さない', () => {
     expect(Math.max(...bases)).toBe(5100);
     expect(Math.min(...bases)).toBe(3900);
   });
+});
+
+// ============================================================
+// E-9-fix5: 「検証した層」と「プレビューが描く層」を一致させる。
+//
+// fix4 まではプレビュー(ElevationModal)が独自の SVG を持ち、遮蔽の下端(baseStartMm/
+// basePath)も継ぎ目の印(clippedStart/End)も無視して「セグメントごとに GL から立つ
+// 閉じた矩形」を描いていた。だからテストが通っても実機の縦線は消えなかった。
+// 建物・屋根の絵は buildingAndRoofPrimitives が唯一の出所（部材は E-8-v2l で先に統一済み）。
+// ============================================================
+describe('プレビューとキャンバスが同じ経路を使う', () => {
+  const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '../../../../', p), 'utf8');
+
+  it('ElevationModal は共有の入口を呼ぶ', () => {
+    const modal = read('components/elevation/ElevationModal.tsx');
+    expect(modal).toContain('buildingAndRoofPrimitives(faceElevation, fillOf, partMinXg)');
+  });
+
+  it('ElevationModal は建物・屋根の SVG を自前で組み立てない', () => {
+    const modal = read('components/elevation/ElevationModal.tsx');
+    // 独自実装の痕跡（建物セグメントを直接 polygon 化する / バンドの 3 形態を分岐する）
+    expect(modal.includes('o.segments.map')).toBe(false);
+    expect(modal.includes('band.filledToRidge')).toBe(false);
+    expect(modal.includes('棟 {band.ridgeMm}')).toBe(false);
+  });
+
+  it('キャンバス配置版も同じ関数から作る', () => {
+    const src = read('lib/konva/elevation/elevationToObjects.ts');
+    expect(src).toContain('prims.push(...buildingAndRoofPrimitives(fe, fillOf, minXg));');
+  });
+});
+
+describe('東面と西面は左右反転で一致する（同一建物の鏡像）', () => {
+  /** 単棟（東西妻の切妻）。前後関係が無いので東西は完全な鏡像になるはず。 */
+  const solo = { id: 'solo', points: rect(0, 0, 300, 400) } as BuildingShape;
+  const soloMarks = gableMarks('solo', 6100, 8000);
+  const soloRoof = [roof('rs', 'solo', solo.points)];
+  const facePrims = (f: 'east' | 'west') => buildingAndRoofPrimitives(
+    buildFaceElevation([], [solo], { face: f, floor: 1, markers: soloMarks, roofs: soloRoof }),
+    () => '#888',
+  );
+  /** 変軸を反転して正規化（左端 0 基準に戻す）。 */
+  const mirrorNorm = (ps: ReturnType<typeof facePrims>) => {
+    const xs = ps.flatMap((p) => (
+      p.kind === 'line' ? [p.x1, p.x2] : p.kind === 'polygon' ? p.points.filter((_, i) => i % 2 === 0) : [p.x]
+    ));
+    const max = Math.max(...xs);
+    const fx = (x: number) => Math.round((max - x) * 1000) / 1000;
+    const fy = (y: number) => Math.round(y * 1000) / 1000;
+    return ps.map((p) => (
+      p.kind === 'line' ? { k: 'line', a: [fx(p.x2), fy(p.y2)], b: [fx(p.x1), fy(p.y1)], id: p.meta?.kind }
+        : p.kind === 'polygon'
+          ? { k: 'poly', pts: p.points.map((v, i) => (i % 2 === 0 ? fx(v) : fy(v))).sort(), id: p.meta?.kind }
+          : { k: p.kind, id: p.meta?.kind }
+    )).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  };
+
+  it('建物輪郭のプリミティブが左右反転で一致する', () => {
+    expect(mirrorNorm(facePrims('east').filter((p) => p.meta?.kind === 'building')))
+      .toEqual(mirrorNorm(facePrims('west').filter((p) => p.meta?.kind === 'building')));
+  });
+
+  it('屋根バンドも左右反転で一致する', () => {
+    expect(mirrorNorm(facePrims('east').filter((p) => p.meta?.kind === 'roof')))
+      .toEqual(mirrorNorm(facePrims('west').filter((p) => p.meta?.kind === 'roof')));
+  });
+
+  it('どちらの面にも継ぎ目の縦線が無い（妻の頂点で割れない）', () => {
+    for (const f of ['east', 'west'] as const) {
+      const ps = facePrims(f);
+      expect(ps.filter((p) => p.kind === 'polygon' && p.meta?.kind === 'building')).toHaveLength(1);
+      expect(verticalWallLines(ps)).toHaveLength(2);   // 左右の壁の角だけ
+    }
+  });
+});
+
+describe('北面・南面は遮蔽で壊れない（fix4 の回帰の再発防止）', () => {
+  /** 1F 下屋が北へ張り出す配置＝北面で 1F が手前（2F の屋根バンドの軒先に掛かる）。 */
+  const back = bld2('f2', rect(0, 0, 300, 400));
+  const front = bld2('f1', rect(300, -100, 500, 400));
+  const ms = [...gableMarks('f2', 6100, 8000), ...gableMarks('f1', 3300, 5100)];
+  const rs = [roof('r2', 'f2', back.points), roof('r1', 'f1', front.points)];
+  const feOf = (f: 'north' | 'south', buildings: BuildingShape[]) =>
+    buildFaceElevation([], buildings, { face: f, floor: 1, markers: ms, roofs: rs });
+
+  for (const f of ['north', 'south'] as const) {
+    it(`${f}面: 2F の屋根バンドは 1 枚のまま（矩形に割れない）`, () => {
+      const bands = feOf(f, [front, back]).roofBands.filter((b) => b.buildingId === 'f2');
+      expect(bands).toHaveLength(1);
+      expect(bands[0].filledToRidge).toBe(true);
+    });
+
+    it(`${f}面: 隣の棟が無いときと同じバンドになる（＝遮蔽で形が変わらない）`, () => {
+      const withNeighbour = feOf(f, [front, back]).roofBands.filter((b) => b.buildingId === 'f2');
+      const alone = buildFaceElevation([], [back], {
+        face: f, floor: 1, markers: ms, roofs: rs,
+      }).roofBands.filter((b) => b.buildingId === 'f2');
+      expect(withNeighbour).toEqual(alone);
+    });
+  }
 });

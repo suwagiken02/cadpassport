@@ -118,21 +118,25 @@ export function outlineRuns(segments: BuildingOutlineSegment[]): OutlineRun[] {
   return runs;
 }
 
-/** FaceElevation を、グループローカル座標のプリミティブ列へ変換する。
- *  fillOf: 建物 id → 塗り色（未指定は既定色）。高さ情報が無ければ空配列。 */
-export function faceElevationToPrimitives(
+/**
+ * 建物シルエットと屋根投影バンドのプリミティブ (= E-9-fix5)。
+ *
+ * キャンバス配置版(faceElevationToPrimitives)とプレビュー(ElevationModal)の**唯一の出所**。
+ * 以前はプレビューが独自の SVG を描いており、遮蔽の下端(baseStartMm/basePath)も
+ * 継ぎ目の印(clippedStart/End)も無視していたため、修正が実機に届かなかった。
+ *
+ * 座標は部材プリミティブ(partsToPrimitives)と同じローカル系（横=グリッド−minXg・縦=−mm/10）。
+ */
+export function buildingAndRoofPrimitives(
   fe: FaceElevation,
   fillOf: (buildingId: string) => string = () => '#3d3d3a',
+  minXgIn?: number,
 ): ElevationPrimitive[] {
-  const { buildingOutlines, scaffolds, roofBands } = fe;
-
-  // ---- 変軸範囲・最高高さ（部材ブロック側と共有・E-8-v2a）----
-  const ext = faceElevationExtent(fe);
-  if (!ext) return [];
-  const { minXg, maxXg, buildingTopMm } = ext;
-
-  const lx = (gx: number) => gx - minXg;      // 左端 0
-  const ly = (mm: number) => -(mm / 10);       // GL=0、上は負
+  const { buildingOutlines, roofBands } = fe;
+  const minXg = minXgIn ?? faceElevationExtent(fe)?.minXg;
+  if (minXg == null || !Number.isFinite(minXg)) return [];
+  const lx = (gx: number) => gx - minXg;
+  const ly = (mm: number) => -(mm / 10);
   const prims: ElevationPrimitive[] = [];
   const line = (
     x1: number, y1: number, x2: number, y2: number, stroke: string, width: number,
@@ -146,7 +150,6 @@ export function faceElevationToPrimitives(
     x: number, y: number, t: string, size: number, fill: string,
     anchor?: 'start' | 'middle' | 'end', meta?: ElevationPrimitiveMeta,
   ) => prims.push({ kind: 'text', x, y, text: t, size, fill, anchor, meta });
-
   // ---- 建物シルエット（多階は重ね） ----
   // E-9-fix4: 面は「連続して見える範囲ごとに 1 枚」（outlineRuns）で塗り、輪郭線は
   //   **元の建物の輪郭だけ**を引く。セグメントの継ぎ目（妻の頂点で分かれた辺・遮蔽で
@@ -220,6 +223,43 @@ export function faceElevationToPrimitives(
       }
     }
   });
+
+  return prims;
+}
+
+/** FaceElevation を、グループローカル座標のプリミティブ列へ変換する。
+ *  fillOf: 建物 id → 塗り色（未指定は既定色）。高さ情報が無ければ空配列。 */
+export function faceElevationToPrimitives(
+  fe: FaceElevation,
+  fillOf: (buildingId: string) => string = () => '#3d3d3a',
+): ElevationPrimitive[] {
+  const { buildingOutlines, scaffolds, roofBands } = fe;
+
+  // ---- 変軸範囲・最高高さ（部材ブロック側と共有・E-8-v2a）----
+  const ext = faceElevationExtent(fe);
+  if (!ext) return [];
+  const { minXg, maxXg, buildingTopMm } = ext;
+
+  const lx = (gx: number) => gx - minXg;      // 左端 0
+  const ly = (mm: number) => -(mm / 10);       // GL=0、上は負
+  const prims: ElevationPrimitive[] = [];
+  const line = (
+    x1: number, y1: number, x2: number, y2: number, stroke: string, width: number,
+    dash?: number[], opacity?: number, meta?: ElevationPrimitiveMeta,
+  ) => prims.push({ kind: 'line', x1, y1, x2, y2, stroke, width, dash, opacity, meta });
+  const poly = (
+    points: number[], fill?: string, fillOpacity?: number, stroke?: string, width?: number,
+    meta?: ElevationPrimitiveMeta,
+  ) => prims.push({ kind: 'polygon', points, fill, fillOpacity, stroke, width, meta });
+  const text = (
+    x: number, y: number, t: string, size: number, fill: string,
+    anchor?: 'start' | 'middle' | 'end', meta?: ElevationPrimitiveMeta,
+  ) => prims.push({ kind: 'text', x, y, text: t, size, fill, anchor, meta });
+
+  // ---- 建物シルエット・屋根投影バンド ----
+  // E-9-fix5: プレビュー(ElevationModal)と同じ 1 本の経路。ここに独自の描画を置くと
+  //   「テストは通るのに実機の絵が直らない」が起きる（部材で E-8-v2l が通った道）。
+  prims.push(...buildingAndRoofPrimitives(fe, fillOf, minXg));
 
   // 段違い作業床 1 セット（床帯＋手摺 +450/+900）。
   // E-8-v2f: 見た目は elevationPartStyle が single source（部材ブロック経路と共通）。
