@@ -181,3 +181,73 @@ describe('ドラッグ移動は 1 件（手戻り指標を壊さない）', () =
     expect(body.slice(0, 400).includes("track('manual_edit'")).toBe(false);
   });
 });
+
+// ============================================================
+// 実測（本番の生ログ）で分かったこと:
+//   session 109ebc47 … sign_in が 3 件（すべて user_hash=null）、move は 1 件
+//   session f8d53d00 … move 19 件（＝古いバンドルが動いていたセッション）
+// つまり移動の修正は効いていたが、
+//   (a) sign_in の重複防止が OAuth のリダイレクトで失われる
+//   (b) ハッシュが出る前に送るので user_hash が null になる
+// の 2 つが残っていた。ここはその 2 つを、実機と同じ「リダイレクトで
+// sessionStorage だけが消える」状況で再現して固定する。
+// ============================================================
+describe('OAuth のリダイレクトをまたいでも sign_in は 1 件', () => {
+  it('sessionStorage が消えても二重に記録しない（印は localStorage）', async () => {
+    const a = await setupAuth();
+    handler!('SIGNED_IN', { user: user() });
+    await settle();
+    expect(inserted.filter((x) => x.event_name === 'sign_in')).toHaveLength(1);
+
+    // ← Google から戻ってくる。sessionStorage は失われ、localStorage は残る。
+    session.clear();
+    vi.resetModules();
+    const b = await import('../analytics');
+    b.startAuthTracking();
+    handler!('SIGNED_IN', { user: user() });
+    await settle();
+    await b.flush();
+    expect(inserted.filter((x) => x.event_name === 'sign_in')).toHaveLength(1);
+  });
+
+  it('ログアウトすれば次のログインは記録される（印が消える）', async () => {
+    const a = await setupAuth();
+    handler!('SIGNED_IN', { user: user() });
+    await settle();
+    handler!('SIGNED_OUT', null);
+    await settle();
+    handler!('SIGNED_IN', { user: user() });
+    await settle();
+    await a.flush();
+    expect(inserted.filter((x) => x.event_name === 'sign_in')).toHaveLength(2);
+  });
+});
+
+describe('利用者を数えられる形で送る（user_hash が null にならない）', () => {
+  it('ハッシュが出るまで送らない → 送られた行にはハッシュが付く', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    // 実機と同じく、ハッシュ計算は非同期（Web Crypto）。
+    const digest = (_alg: string, data: ArrayBufferView) => new Promise<ArrayBuffer>((resolve) => {
+      setTimeout(() => {
+        const bytes = new Uint8Array(data.buffer as ArrayBuffer);
+        const out = new Uint8Array(32);
+        for (let i = 0; i < 32; i++) out[i] = (bytes[i % bytes.length] + i) & 0xff;
+        resolve(out.buffer);
+      }, 5);
+    });
+    (globalThis as Record<string, unknown>).window = {
+      sessionStorage: session,
+      localStorage: makeStorage(),
+      crypto: { subtle: { digest } },
+      addEventListener: () => {},
+    };
+    const a = await import('../analytics');
+    a.startAuthTracking();
+    handler!('SIGNED_IN', { user: user() });
+    await a.flush();                       // ハッシュ確定前の送信は見送られる
+    expect(inserted).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 20));   // ハッシュ確定 → 自動で送られる
+    expect(inserted.length).toBeGreaterThan(0);
+    expect(inserted.every((r) => (r as unknown as { user_hash: string | null }).user_hash)).toBe(true);
+  });
+});

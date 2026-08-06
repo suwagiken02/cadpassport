@@ -67,6 +67,7 @@ type EventRow = {
   duration_ms: number | null;
   ok: boolean | null;
   props: Record<string, unknown> | null;
+  app_version: string | null;
 };
 
 function arg(name: string, fallback: string): string {
@@ -188,6 +189,39 @@ async function main(): Promise<void> {
   }
   p();
 
+  // ---- セッション別の内訳 ----
+  // 実機で 1 周だけ操作して確かめるとき、他の人のセッションが混ざると数が合わない
+  //   （実測で「移動 1 回のはずが 25 件」に見えたのは、別セッションの undo と
+  //     手摺追加が同じ期間に入っていたため）。1 回の利用を切り出して読めるようにする。
+  p('## セッション別の内訳（新しい順・最大 5 件）');
+  p();
+  const sessionRows = new Map<string, EventRow[]>();
+  for (const r of rows) {
+    const list = sessionRows.get(r.session_id) ?? [];
+    list.push(r);
+    sessionRows.set(r.session_id, list);
+  }
+  const recent = Array.from(sessionRows.entries())
+    .sort((a, b) => Date.parse(b[1][0].occurred_at) - Date.parse(a[1][0].occurred_at))
+    .slice(0, 5);
+  for (const [sid, list] of recent) {
+    const hashes = Array.from(new Set(list.map((r) => r.user_hash ?? '(未確定)')));
+    const byName = new Map<string, number>();
+    for (const r of list) {
+      const key = r.event_name === 'manual_edit'
+        ? `manual_edit(${String(r.props?.kind ?? '?')})`
+        : r.event_name;
+      byName.set(key, (byName.get(key) ?? 0) + (r.count ?? 1));
+    }
+    const detail = Array.from(byName.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k} ${v}`)
+      .join(' / ');
+    const versions = Array.from(new Set(list.map((r) => r.app_version ?? '(不明)')));
+    p(`- **${sid.slice(0, 8)}…** ${list[0].occurred_at.slice(11, 19)}〜 利用者 ${hashes.map((h) => h.slice(0, 8)).join(',')} / 版 ${versions.join(',')}`);
+    p(`  - ${detail}`);
+  }
+  p();
   // ---- ファネル ----
   p('## ファネル（セッション単位の到達率）');
   p();

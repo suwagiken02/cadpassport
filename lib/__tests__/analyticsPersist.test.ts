@@ -226,6 +226,8 @@ describe('送信に失敗したイベントは消えない（ログアウト時�
     a.__setSignedInForTest(true);
     a.track('sign_out');
     await a.flush();
+    // ハッシュ確定の後に自動で走る再送も終わらせてから確かめる（実機と同じ非同期）。
+    await new Promise((r) => setTimeout(r, 5));
     // 失われず、次の機会に送れるよう残っている
     expect(a.__getQueueForTest().map((e) => e.event_name)).toContain('sign_out');
     const saved = JSON.parse(store.getItem('ashiba-plan:analytics:queue') ?? '[]');

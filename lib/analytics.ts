@@ -75,6 +75,8 @@ let authWatchStarted = false;
 let sentThisSession = 0;
 /** ログイン済みか（events の insert は authenticated のみ許可）。 */
 let signedIn = false;
+/** ハッシュ計算が終わったか（null のまま送ると利用者を数えられない）。 */
+let hashResolved = false;
 
 /** 自動配置からの手戻りを測るための印（フェーズ0-B「手戻り」）。 */
 let lastAutoLayoutAt = 0;
@@ -177,13 +179,16 @@ export function identify(userId: string | null): void {
       // 未ログイン。ハッシュは消すが、既に積んだイベントは捨てない（再ログインで送る）。
       userHash = null;
       signedIn = false;
+      hashResolved = true;   // 未ログインは「ハッシュ無し」で確定
       return;
     }
     signedIn = true;
+    hashResolved = false;
     void hashUserId(userId).then((h) => {
       // 同じ人は毎回同じ値。ログイン前後で値が変わらない。
       userHash = h;
-      flush();
+      hashResolved = true;
+      void flush();
     });
   } catch (e) {
     console.warn('[analytics] identify failed', e);
@@ -338,6 +343,9 @@ export function flush(): Promise<void> {
     return Promise.resolve();
   }
   if (sentThisSession >= MAX_EVENTS_PER_SESSION) { queue = []; persistQueue(); return Promise.resolve(); }
+  // ハッシュが出る前に送ると user_hash が null の行ができ、利用者数を数えられない
+  //   （実測で sign_in の行が全部 null だった）。数十 ms 待てば必ず出る。
+  if (!hashResolved) { persistQueue(); return Promise.resolve(); }
   const batch = queue.slice(0, MAX_BATCH);
   queue = queue.slice(batch.length);
   persistQueue();
@@ -453,8 +461,40 @@ export function trackDuration(eventName: string, ms: number, properties?: EventP
 // 「セッションが確立した瞬間」を 1 箇所で拾える。
 // ============================================================
 
-/** 同じセッションで sign_in を二重に記録しないための印。 */
+/**
+ * 同じログインを二重に記録しないための印 (= sign_in が 3 件になった件)。
+ *
+ * sessionStorage に置いていたが、OAuth のリダイレクトで失われるため
+ * 戻ってくるたびに「初めてのログイン」に見えていた（実測: 1 回のログインで
+ * SIGNED_IN が 22 秒間に 2 回、いずれも記録されていた）。
+ * session_id と同じく localStorage に置き、リダイレクトをまたいでも残す。
+ */
 const SIGNED_IN_KEY = 'ashiba-plan:analytics:signed-in';
+
+/** この計測セッションで、その利用者のログインを既に記録したか。 */
+function alreadyRecordedSignIn(userId: string): boolean {
+  try {
+    return window.localStorage.getItem(SIGNED_IN_KEY) === `${getSessionId()}:${userId}`;
+  } catch {
+    return false;
+  }
+}
+
+function markSignInRecorded(userId: string): void {
+  try {
+    window.localStorage.setItem(SIGNED_IN_KEY, `${getSessionId()}:${userId}`);
+  } catch {
+    /* 使えない環境では二重記録を許容する（本体は止めない） */
+  }
+}
+
+function clearSignInMark(): void {
+  try {
+    window.localStorage.removeItem(SIGNED_IN_KEY);
+  } catch {
+    /* noop */
+  }
+}
 /** 新規登録とみなす、アカウント作成からの猶予(ms)。 */
 const NEW_USER_WINDOW_MS = 5 * 60 * 1000;
 
@@ -483,17 +523,17 @@ export function startAuthTracking(): void {
         if (event === 'SIGNED_OUT') {
           track('sign_out');
           void flush().then(() => identify(null));
-          try { window.sessionStorage.removeItem(SIGNED_IN_KEY); } catch { /* noop */ }
+          clearSignInMark();
           return;
         }
         if (!user) return;
         identify(user.id);
         // SIGNED_IN はタブ復帰やトークン更新でも飛ぶので、セッション内で 1 回だけ記録する。
-        let already = false;
-        try { already = window.sessionStorage.getItem(SIGNED_IN_KEY) === user.id; } catch { /* noop */ }
-        if (already) return;
-        try { window.sessionStorage.setItem(SIGNED_IN_KEY, user.id); } catch { /* noop */ }
         if (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') return;
+        // SIGNED_IN はタブ復帰・OAuth の戻り・トークン更新でも飛ぶ。
+        //   この計測セッションで 1 回だけ記録する（印は localStorage＝リダイレクトで消えない）。
+        if (alreadyRecordedSignIn(user.id)) return;
+        markSignInRecorded(user.id);
         // 作ったばかりのアカウントなら新規登録。既存ならログイン。
         const createdAt = user.created_at ? Date.parse(user.created_at) : NaN;
         const isNew = Number.isFinite(createdAt) && Date.now() - createdAt < NEW_USER_WINDOW_MS;
@@ -533,6 +573,7 @@ export function __resetForTest(): void {
   editsSinceAutoLayout = 0;
   sentThisSession = 0;
   signedIn = false;
+  hashResolved = true;
   userHash = null;
   queueRestored = false;
   try { if (isBrowser()) window.sessionStorage.removeItem(QUEUE_KEY); } catch { /* noop */ }
