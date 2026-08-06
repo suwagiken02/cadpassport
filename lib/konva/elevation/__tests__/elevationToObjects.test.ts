@@ -24,7 +24,8 @@ describe('faceElevationToPrimitives: FaceElevation → プリミティブ(E-4a)'
     // minXg=-90(支柱), 建物北辺 x[0,360] → lx=90..450、天端6500 → ly=-650。
     const bo = prims.find((p) => p.kind === 'polygon' && p.fillOpacity === 0.22);
     expect(bo).toBeDefined();
-    expect(bo && bo.kind === 'polygon' && bo.points).toEqual([90, 0, 90, -650, 450, -650, 450, 0]);
+    // E-9-fix4: 面は「下端の折れ線 → 上端の折れ線」の順で 1 枚に組む（形は同じ）。
+    expect(bo && bo.kind === 'polygon' && bo.points).toEqual([90, 0, 450, 0, 450, -650, 90, -650]);
   });
 
   // E-8-v2f: 部材は「太い色線＋丸ハンドル」になった（平面と同じ視覚言語）。
@@ -75,12 +76,19 @@ describe('E-5-fix2: 配置版プリミティブ(切断・セグメント縦線)'
   const fe = buildFaceElevation([inner, outer], [lbld], { defaultHeightMm: 5000 });
   const prims = faceElevationToPrimitives(fe);
 
-  it('建物シルエットはセグメントごとに polygon(段差の縦線を保持・stroke あり)', () => {
+  it('建物シルエットは奥行きの違う壁ごとに polygon(段差の縦線を保持)', () => {
     const bpolys = prims.filter((p) => p.kind === 'polygon' && p.fillOpacity === 0.22);
-    // 南面外形は x=180 で2セグメントに分割 → 2 polygon。各 polygon は縦辺(段差線)を持つ。
+    // 南面外形は x=180 で2セグメントに分割 → 2 polygon（奥行きが違う＝別の壁）。
     expect(bpolys.length).toBe(fe.buildingOutlines[0].segments.length);
     expect(bpolys.length).toBeGreaterThanOrEqual(2);
-    expect(bpolys.every((p) => p.kind === 'polygon' && p.stroke === '#8a8a86' && p.width === 1.5)).toBe(true);
+    // E-9-fix4: 塗りは線を持たず（継ぎ目に線を出さないため）、輪郭は別の line で描く。
+    expect(bpolys.every((p) => p.kind === 'polygon' && !p.stroke)).toBe(true);
+    // 段差の縦線は残る（局所 x=270・GL から天端まで）。
+    const steps = prims.filter((p) =>
+      p.kind === 'line' && p.meta?.kind === 'building'
+      && Math.abs(p.x1 - p.x2) < 1e-6 && Math.abs(p.x1 - 270) < 1e-6);
+    expect(steps.length).toBeGreaterThanOrEqual(1);
+    expect(steps.every((p) => p.kind === 'line' && p.stroke === '#8a8a86' && p.width === 1.5)).toBe(true);
   });
 
   it('奥列の手摺が手前区間で切断され、幅の異なる rail 線として現れる', () => {

@@ -15,7 +15,7 @@
 import type {
   BuildingShape, ElevationPrimitive, ElevationPrimitiveMeta, Point,
 } from '@/types';
-import type { FaceElevation } from './elevationEngine';
+import type { BuildingOutlineSegment, FaceElevation } from './elevationEngine';
 import {
   komaLevelsFromJackMm, postSegmentsMm, pushBoard, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
@@ -62,6 +62,62 @@ export function faceElevationExtent(fe: FaceElevation): {
   return { minXg, maxXg, maxMm, buildingTopMm };
 }
 
+/**
+ * 建物シルエットの「連続して見える範囲」(= E-9-fix4)。
+ * top は上端の折れ線（＝建物の実際の輪郭）、base は下端の折れ線（GL or 手前の建物の上端）。
+ * clippedStart/End は、その端が遮蔽で切れた境目（＝縦の輪郭線を引いてはいけない側）か。
+ */
+export type OutlineRun = {
+  top: { x: number; mm: number }[];
+  base: { x: number; mm: number }[];
+  clippedStart: boolean;
+  clippedEnd: boolean;
+  /** この面の壁の奥行き。違う壁（L 字の段差）は別 run＝境目に縦線を描く。 */
+  depthCoord?: number;
+};
+
+/**
+ * 連続するセグメントを 1 つの run にまとめる (= E-9-fix4)。
+ *
+ * 妻（辺内部の高さマーカーで分割された 2 辺）や、遮蔽クリップで分かれた区間を
+ * 1 枚の面として扱うためのもの。x が接し、上端・下端が連続していれば同じ run。
+ * これをしないと継ぎ目に縦線が描かれる（実機: 棟頂点の真下から GL までの縦線）。
+ */
+export function outlineRuns(segments: BuildingOutlineSegment[]): OutlineRun[] {
+  const eq = (a: number, b: number) => Math.abs(a - b) <= 1e-6;
+  const baseOf = (s: BuildingOutlineSegment) => (
+    s.basePath && s.basePath.length >= 2
+      ? s.basePath
+      : [{ x: s.xStart, mm: s.baseStartMm ?? 0 }, { x: s.xEnd, mm: s.baseEndMm ?? 0 }]
+  );
+  const runs: OutlineRun[] = [];
+  for (const s of [...segments].sort((a, b) => a.xStart - b.xStart)) {
+    const base = baseOf(s);
+    const last = runs[runs.length - 1];
+    const joins = last
+      && eq(last.top[last.top.length - 1].x, s.xStart)
+      && eq(last.top[last.top.length - 1].mm, s.heightStartMm)
+      && eq(last.base[last.base.length - 1].mm, base[0].mm)
+      && !last.clippedEnd && !s.clippedStart
+      // E-5-fix2: 奥行きが違う壁の境目（L 字の段差）は本物の角なので分けたまま＝縦線を残す。
+      && last.depthCoord === s.depthCoord;
+    if (joins) {
+      last.top.push({ x: s.xEnd, mm: s.heightEndMm });
+      for (const p of base.slice(1)) last.base.push(p);
+      last.clippedEnd = !!s.clippedEnd;
+      continue;
+    }
+    runs.push({
+      top: [{ x: s.xStart, mm: s.heightStartMm }, { x: s.xEnd, mm: s.heightEndMm }],
+      base: base.map((p) => ({ ...p })),
+      clippedStart: !!s.clippedStart,
+      clippedEnd: !!s.clippedEnd,
+      depthCoord: s.depthCoord,
+    });
+  }
+  return runs;
+}
+
 /** FaceElevation を、グループローカル座標のプリミティブ列へ変換する。
  *  fillOf: 建物 id → 塗り色（未指定は既定色）。高さ情報が無ければ空配列。 */
 export function faceElevationToPrimitives(
@@ -92,26 +148,36 @@ export function faceElevationToPrimitives(
   ) => prims.push({ kind: 'text', x, y, text: t, size, fill, anchor, meta });
 
   // ---- 建物シルエット（多階は重ね） ----
+  // E-9-fix4: 面は「連続して見える範囲ごとに 1 枚」（outlineRuns）で塗り、輪郭線は
+  //   **元の建物の輪郭だけ**を引く。セグメントの継ぎ目（妻の頂点で分かれた辺・遮蔽で
+  //   切れた境目）に線を引くと、実機では「棟の真下から GL まで走る縦線」になる。
+  const yb = (mm: number) => (mm ? ly(mm) : 0);          // 0 は -0 を作らずそのまま GL
   for (const o of buildingOutlines) {
-    o.segments.forEach((s, k) => {
-      // E-9: 下端は既定 GL(0)。手前の建物に隠れた区間はその上端が下端になる。
-      const yb = (mm: number) => (mm ? ly(mm) : 0);       // 0 は -0 を作らずそのまま GL
-      // E-9-fix: 下端が上下する（手前の屋根なりに削られる）ときは折れ線で 1 枚に描く。
-      //   短冊に分けて描くと短冊の縦辺が全部線になり「シマシマ」に見える。
-      const base = s.basePath && s.basePath.length >= 2
-        ? s.basePath
-        : [{ x: s.xStart, mm: s.baseStartMm ?? 0 }, { x: s.xEnd, mm: s.baseEndMm ?? 0 }];
-      const pts: number[] = [lx(base[0].x), yb(base[0].mm)];
-      pts.push(lx(s.xStart), ly(s.heightStartMm), lx(s.xEnd), ly(s.heightEndMm));
-      for (let i = base.length - 1; i >= 1; i--) pts.push(lx(base[i].x), yb(base[i].mm));
-      poly(
-        pts,
-        fillOf(o.buildingId), 0.22, C_OUTLINE, 1.5,
-        {
-          kind: 'building', id: `building:${o.buildingId}:${k}`, index: k,
-          buildingId: o.buildingId, heightMm: Math.max(s.heightStartMm, s.heightEndMm), x: q(lx(s.xStart)),
-        },
-      );
+    outlineRuns(o.segments).forEach((run, k) => {
+      const meta = (suffix?: string): ElevationPrimitiveMeta => ({
+        kind: 'building', id: `building:${o.buildingId}:${k}${suffix ?? ''}`, index: k,
+        buildingId: o.buildingId,
+        heightMm: Math.max(...run.top.map((p) => p.mm)), x: q(lx(run.top[0].x)),
+      });
+      // 塗り: 下端の折れ線 → 上端の折れ線 → 下端を戻る（内部に線を作らないよう線幅 0）。
+      const pts: number[] = [];
+      for (const p of run.base) pts.push(lx(p.x), yb(p.mm));
+      for (let i = run.top.length - 1; i >= 0; i--) pts.push(lx(run.top[i].x), ly(run.top[i].mm));
+      poly(pts, fillOf(o.buildingId), 0.22, undefined, 0, meta());
+      // 輪郭: 上端（建物の実際の輪郭）。
+      for (let i = 0; i < run.top.length - 1; i++) {
+        const p = run.top[i], nx = run.top[i + 1];
+        line(lx(p.x), ly(p.mm), lx(nx.x), ly(nx.mm), C_OUTLINE, 1.5, undefined, undefined, meta(`:t${i}`));
+      }
+      // 輪郭: 左右の縦辺は「元の壁の端」だけ（遮蔽で切れた側は引かない）。
+      const first = run.top[0], last = run.top[run.top.length - 1];
+      const b0 = run.base[0], b1 = run.base[run.base.length - 1];
+      if (!run.clippedStart && Math.abs(first.mm - b0.mm) > 1e-6) {
+        line(lx(first.x), yb(b0.mm), lx(first.x), ly(first.mm), C_OUTLINE, 1.5, undefined, undefined, meta(':s'));
+      }
+      if (!run.clippedEnd && Math.abs(last.mm - b1.mm) > 1e-6) {
+        line(lx(last.x), yb(b1.mm), lx(last.x), ly(last.mm), C_OUTLINE, 1.5, undefined, undefined, meta(':e'));
+      }
     });
   }
 

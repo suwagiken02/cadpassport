@@ -184,6 +184,13 @@ export type BuildingOutlineSegment = {
    */
   basePath?: { x: number; mm: number }[];
   /**
+   * 端が遮蔽で切られた位置か (= E-9-fix4)。true の側には縦の輪郭線を描かない。
+   * 建物の角ではなく「手前の建物に隠れて見えなくなった境目」なので、線を引くと
+   * 実機で「棟の真下から GL まで走る縦線」に見える（継ぎ目線）。
+   */
+  clippedStart?: boolean;
+  clippedEnd?: boolean;
+  /**
    * この壁の奥行き座標 (= E-9)。面に垂直な軸（N/S は y、E/W は x）。
    * 建物同士・同一建物の前後（L 字の手前の翼が奥の翼を隠す）の判定に使う。
    */
@@ -783,6 +790,9 @@ export function mirrorVariableAxis(fe: FaceElevation): FaceElevation {
     // E-9-fix: 下端の折れ線も反転（x を反転して左→右の順に戻す）。
     ...(s.basePath
       ? { basePath: s.basePath.map((p) => ({ x: nz(p.x), mm: p.mm })).reverse() } : {}),
+    // E-9-fix4: 切られた端の印も左右入れ替え。
+    ...(s.clippedStart ? { clippedEnd: true } : {}),
+    ...(s.clippedEnd ? { clippedStart: true } : {}),
     ...(s.depthCoord != null ? { depthCoord: s.depthCoord } : {}),   // 奥行きは左右反転で不変
   });
   const buildingOutlines = fe.buildingOutlines.map(o => ({

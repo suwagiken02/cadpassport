@@ -124,7 +124,10 @@ describe('重ならない 2 棟は両方そのまま見える', () => {
     ];
     const r = applyBuildingOcclusion(outlines, [], [back, frontB], 'east');
     const segs = r.buildingOutlines.find((o) => o.buildingId === 'back')!.segments;
-    expect(segs).toEqual([{ xStart: 0, xEnd: 100, heightStartMm: 3000, heightEndMm: 3000 }]);
+    // E-9-fix4: 右端は遮蔽で切れた境目＝縦の輪郭線を描かない印が付く。
+    expect(segs).toEqual([{
+      xStart: 0, xEnd: 100, heightStartMm: 3000, heightEndMm: 3000, clippedEnd: true,
+    }]);
   });
 });
 

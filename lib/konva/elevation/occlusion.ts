@@ -336,7 +336,10 @@ function profileBetween(
  *   ・線のみ(けらば・フラット軒): 折れ線を交点で割り、上に出た部分だけ残す。
  * 手前が無ければそのまま 1 本返す（単棟は不変）。
  */
-export function clipRoofBand(band: RoofBand, steps: StepSpan[]): RoofBand[] {
+export function clipRoofBand(
+  band: RoofBand, steps: StepSpan[], wallRanges?: [number, number][],
+): RoofBand[] {
+  // 手前に何も無ければ従来どおり素通し（単棟・R-1f の見え方は一切変えない）。
   if (steps.length === 0 || band.profile.length < 2) return [band];
   const xLo = Math.min(band.xStart, band.xEnd);
   const xHi = Math.max(band.xStart, band.xEnd);
@@ -370,6 +373,16 @@ export function clipRoofBand(band: RoofBand, steps: StepSpan[]): RoofBand[] {
     if (s.x0 > xLo + EPS && s.x0 < xHi - EPS) bounds.add(s.x0);
     if (s.x1 > xLo + EPS && s.x1 < xHi - EPS) bounds.add(s.x1);
   }
+  // E-9-fix4: 壁の端でも割る。壁の外（＝軒の出）は屋根面ではなく板の小口なので、
+  //   棟まで塗ってはいけない（実機: 2F の脇に 1F の壁のような矩形が出る症状）。
+  for (const [wa, wb] of wallRanges ?? []) {
+    if (wa > xLo + EPS && wa < xHi - EPS) bounds.add(wa);
+    if (wb > xLo + EPS && wb < xHi - EPS) bounds.add(wb);
+  }
+  /** その区間が「その建物の壁の上」か。壁範囲が未指定なら常に true（従来どおり）。 */
+  //   その面に壁を持たない屋根（例: 東壁だけの下屋を北から見る）は判定材料が無いので従来どおり。
+  const onWall = (a2: number, b2: number) => !wallRanges || wallRanges.length === 0
+    || wallRanges.some(([wa, wb]) => a2 >= wa - EPS && b2 <= wb + EPS);
   const xs = Array.from(bounds).sort((a, b) => a - b);
   const out: RoofBand[] = [];
   for (let i = 0; i < xs.length - 1; i++) {
@@ -377,6 +390,14 @@ export function clipRoofBand(band: RoofBand, steps: StepSpan[]): RoofBand[] {
     if (b - a <= EPS) continue;
     const h = stepTopAt(steps, (a + b) / 2);
     const prof = profileBetween(band.profile, a, b);
+    if (!onWall(a, b)) {
+      // 壁の外＝軒の出。屋根の面ではなく「けらば/軒の線」だけを描く（塗り・棟線・棟ラベル無し）。
+      const top = Math.max(...prof.map((p) => p.mm));
+      if (h >= top - EPS) continue;
+      out.push({ ...band, xStart: a, xEnd: b, profile: prof, ridgeMm: top,
+        filledToRidge: false, baseMm: undefined });
+      continue;
+    }
     if (band.baseMm != null) {
       // 面は baseMm 〜 プロファイル。プロファイルまで隠れたら消える。
       const top = Math.max(...prof.map((p) => p.mm));
@@ -538,6 +559,9 @@ export function applyBuildingOcclusion(
           ...(c.baseStartMm > EPS || c.baseEndMm > EPS
             ? { baseStartMm: c.baseStartMm, baseEndMm: c.baseEndMm } : {}),
           ...(c.basePath && c.basePath.length > 2 ? { basePath: c.basePath } : {}),
+          // E-9-fix4: 元の壁の端でない側＝遮蔽で切れた境目。縦の輪郭線を描かせない。
+          ...(c.x0 > sp.x0 + EPS ? { clippedStart: true } : {}),
+          ...(c.x1 < sp.x1 - EPS ? { clippedEnd: true } : {}),
           ...(s.depthCoord != null ? { depthCoord: s.depthCoord } : {}),
         })));
       changed = true;
@@ -549,7 +573,7 @@ export function applyBuildingOcclusion(
   const roofBands = bands.flatMap((b) => {
     const f = b.frontness ?? byId.get(b.buildingId);
     const steps = f == null ? [] : stepsFor(f, b.buildingId);
-    return steps.length === 0 ? [b] : clipRoofBand(b, steps);
+    return clipRoofBand(b, steps, wallRangesOf(outlines, b.buildingId));
   });
 
   return { buildingOutlines, roofBands };
