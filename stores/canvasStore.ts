@@ -37,7 +37,7 @@ import {
 import { computeContentBounds } from '@/lib/pages/contentBounds';
 import { liftLegacyRoofs } from '@/lib/konva/roofResolve';
 import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
-import { rematchElevationParts } from '@/lib/konva/elevation/elevationPartsRematch';
+import { carryOverElevationView, mergeElevationViews } from '@/lib/konva/elevation/elevationCarryOver';
 import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
 import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
 
@@ -1495,37 +1495,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // === 立面ビュー (= E-4) ===
   /** E-8d/E-8-v2e: 同じ面の旧ビューの手当て（編集差分・部材）を新ビューへ引き継ぐ。
    *  引き継げない分は勝手に消さず孤立として保持し、UI で一覧提示する。 */
-  carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView): ElevationView => {
-    const hasManualParts = (prev?.parts ?? []).some((p) => p.origin === 'manual');
-    if (!prev || ((prev.edits?.length ?? 0) === 0 && (prev.orphanEdits?.length ?? 0) === 0
-      && (prev.orphanParts?.length ?? 0) === 0 && !hasManualParts)) return next;
-    const r = rematchElevationEdits(prev.primitives, next.primitives, prev.edits);
-    const orphans = [...(prev.orphanEdits ?? []), ...r.orphans];
-    // E-8-v2e: 部材の手当て（追加・移動・削除の墓標）は意味データで引き継ぐ。
-    let parts = next.parts;
-    let orphanParts = prev.orphanParts ?? [];
-    if (next.parts && next.geom) {
-      const pr = rematchElevationParts(prev.parts, { parts: next.parts, geom: next.geom });
-      parts = pr.parts;
-      orphanParts = [...orphanParts, ...pr.orphans];
-    }
-    return {
-      ...next,
-      parts,
-      edits: r.edits.length > 0 ? r.edits : undefined,
-      orphanEdits: orphans.length > 0 ? orphans : undefined,
-      orphanParts: orphanParts.length > 0 ? orphanParts : undefined,
-    };
-  },
+  //  E-8-v3f: 判断は pure な lib 側 1 箇所に置く。store を通らない経路
+  //  （別ページ・新しいページへの配置）からも同じ引き継ぎを走らせるため。
+  carryOverElevationEdits: (prev: ElevationView | undefined, next: ElevationView): ElevationView =>
+    carryOverElevationView(prev, next),
   addElevationView: (v) => {
     const { canvasData, pushHistory } = get();
     pushHistory();
     // 同じ面の既存ビューは置換（1 面 1 ビュー）。E-8d: 旧ビューの編集を新ビューへ引き継ぐ。
-    const all = canvasData.elevationViews ?? [];
-    const prev = all.find((e) => e.face === v.face);
-    const kept = all.filter((e) => e.face !== v.face);
     set({
-      canvasData: { ...canvasData, elevationViews: [...kept, get().carryOverElevationEdits(prev, v)] },
+      canvasData: { ...canvasData, elevationViews: mergeElevationViews(canvasData.elevationViews, [v]) },
       isDirty: true,
     });
   },
@@ -1534,13 +1513,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { canvasData, pushHistory } = get();
     pushHistory();
     // 追加する面の既存ビューをまとめて置換（1 面 1 ビュー）。
-    const placedFaces = new Set(views.map((v) => v.face));
-    const all = canvasData.elevationViews ?? [];
-    const kept = all.filter((e) => !placedFaces.has(e.face));
     // E-8d: 面ごとに旧ビューの編集を引き継ぐ（引き継げない分は孤立として保持）。
-    const carried = views.map((v) => get().carryOverElevationEdits(all.find((e) => e.face === v.face), v));
     set({
-      canvasData: { ...canvasData, elevationViews: [...kept, ...carried] },
+      canvasData: { ...canvasData, elevationViews: mergeElevationViews(canvasData.elevationViews, views) },
       isDirty: true,
     });
   },

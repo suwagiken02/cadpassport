@@ -16,6 +16,7 @@ import { reconstructFaces, type Face } from '@/lib/konva/elevation/faceReconstru
 import { buildFaceElevation } from '@/lib/konva/elevation/elevationEngine';
 import { faceElevationToPrimitives, initialPlacementOrigin } from '@/lib/konva/elevation/elevationToObjects';
 import { faceElevationToParts } from '@/lib/konva/elevation/elevationParts';
+import { mergeElevationViews } from '@/lib/konva/elevation/elevationCarryOver';
 import { computeQuadLayout, elevationPrimitivesBounds, type FaceKey } from '@/lib/pages/quadLayout';
 import { sortPages, nextPageTitle, type PageMeta } from '@/lib/pages/pageOps';
 import { saveCurrentPageIfDirty } from '@/lib/pages/pageSave';
@@ -33,11 +34,13 @@ function blankCanvasData(): CanvasData {
   };
 }
 
-/** elevationViews を面キーで置換（同面は上書き）して canvas_data に merge。 */
-function mergeElevationViews(cv: CanvasData, views: ElevationView[]): CanvasData {
-  const placed = new Set(views.map((v) => v.face));
-  const kept = (cv.elevationViews ?? []).filter((e) => !placed.has(e.face));
-  return { ...cv, elevationViews: [...kept, ...views] };
+/**
+ * elevationViews を面キーで置換（同面は上書き）して canvas_data に merge。
+ * E-8-v3f: 置き換えられる同じ面の旧ビューからは手当てを引き継ぐ
+ * （この経路は store を通らないので、以前は引き継ぎが素通りしていた）。
+ */
+function mergeInto(cv: CanvasData, views: ElevationView[]): CanvasData {
+  return { ...cv, elevationViews: mergeElevationViews(cv.elevationViews, views) };
 }
 
 export default function ElevationPlaceDialog({
@@ -122,7 +125,7 @@ export default function ElevationPlaceDialog({
         const views = buildViews(baseOther);
         if (!views) { alert('配置できる立面がありません（建物・足場を確認してください）'); return; }
         if (!projectId) { alert('プロジェクトが不明です'); return; }
-        const merged = mergeElevationViews(blankCanvasData(), views);
+        const merged = mergeInto(blankCanvasData(), views);
         const { data, error } = await supabase
           .from('drawings')
           .insert({ project_id: projectId, title: newTitle.trim() || '立面図', canvas_data: merged as unknown as Record<string, unknown> })
@@ -142,7 +145,7 @@ export default function ElevationPlaceDialog({
         if (!views) { alert('配置できる立面がありません（建物・足場を確認してください）'); return; }
         const { data, error } = await supabase.from('drawings').select('canvas_data').eq('id', target).single();
         if (error || !data) { alert(`対象ページの取得に失敗しました: ${error?.message ?? '不明'}`); return; }
-        const merged = mergeElevationViews(data.canvas_data as CanvasData, views);
+        const merged = mergeInto(data.canvas_data as CanvasData, views);
         const { error: uerr } = await supabase.from('drawings')
           .update({ canvas_data: merged as unknown as Record<string, unknown>, updated_at: new Date().toISOString() })
           .eq('id', target);
