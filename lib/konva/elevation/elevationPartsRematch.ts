@@ -111,16 +111,26 @@ function withinScaffold(p: ElevationPart, geom: ElevationPartGeometry): boolean 
   //   比べる相手そのものが存在しない。ここで落とすと「置けるが作り直すと消える」に
   //   なるので、座標を持っている部材はそのまま引き継ぐ。
   if (geom.scaffolds.length === 0) return partRangeMm(p, undefined) != null;
-  const sg = geom.scaffolds[p.scaffoldIndex];
-  if (!sg) return false;                          // その面の足場ごと消えた
-  const box = scaffoldBoxMm(sg);
-  if (!box) return false;
-  const r = partRangeMm(p, sg);
-  const pv = partPivotMm(p, sg);
-  if (!r || !pv) return false;
-  const overlapsX = Math.max(r.x0Mm, r.x1Mm) >= box.x0Mm && Math.min(r.x0Mm, r.x1Mm) <= box.x1Mm;
-  const withinY = pv.yMm >= box.yMinMm && pv.yMm <= box.yMaxMm;
-  return overlapsX && withinY;
+
+  /** その連の範囲に掛かっているか。 */
+  const hits = (sg: ElevationPartGeometry['scaffolds'][number]): boolean => {
+    const box = scaffoldBoxMm(sg);
+    if (!box) return false;
+    const r = partRangeMm(p, sg);
+    const pv = partPivotMm(p, sg);
+    if (!r || !pv) return false;
+    const overlapsX = Math.max(r.x0Mm, r.x1Mm) >= box.x0Mm && Math.min(r.x0Mm, r.x1Mm) <= box.x1Mm;
+    const withinY = pv.yMm >= box.yMinMm && pv.yMm <= box.yMaxMm;
+    return overlapsX && withinY;
+  };
+
+  // 自分の連を先に見る（旧データの座標解決はこの連に依存するため）。
+  const own = geom.scaffolds[p.scaffoldIndex];
+  if (own && hits(own)) return true;
+  // E-8-v4a: 連番号は作り直しで詰まる（0 連目が消えると 1 連目が 0 番になる）。
+  //   番号だけを頼りにすると、場所は何も変わっていないのに孤立扱いになる。
+  //   場所で見て、どこかの連に掛かっていれば残す。
+  return geom.scaffolds.some(hits);
 }
 
 /**

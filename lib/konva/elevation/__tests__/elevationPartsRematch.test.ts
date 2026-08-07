@@ -172,13 +172,25 @@ describe('rematchElevationParts', () => {
     expect(a).not.toBe(b);
   });
 
-  it('別の足場連が消えたら、その連の部材は孤立に回る', () => {
+  // E-8-v4a: 連番号は作り直しで詰まる（0 連目が消えると 1 連目が 0 番になる）ので、
+  // 「何番の連か」ではなく「どこかの連に掛かっているか」で見る。
+  it('別の足場連が消えたら、そこにあった部材は孤立に回る', () => {
     const onSecond: ElevationPart = {
       id: 'manual:rail:2', kind: 'rail', scaffoldIndex: 1, origin: 'manual',
-      spanIndex: 0, levelMm: 900, x0: 0, x1: 180,
+      levelMm: 900, x0Mm: 60000, x1Mm: 61800,      // 残った連から遠く離れた位置
     };
     const r = rematchElevationParts([onSecond], bundle(3));   // 足場は 1 連しかない
     expect(r.orphans.map((p) => p.id)).toEqual(['manual:rail:2']);
+  });
+
+  it('連番号が詰まっても、場所が残っていれば引き継ぐ', () => {
+    const onSecond: ElevationPart = {
+      id: 'manual:rail:2', kind: 'rail', scaffoldIndex: 1, origin: 'manual',
+      levelMm: 900, x0Mm: 0, x1Mm: 1800,           // 残った連の上
+    };
+    const r = rematchElevationParts([onSecond], bundle(3));
+    expect(r.orphans).toEqual([]);
+    expect(r.parts.map((p) => p.id)).toContain('manual:rail:2');
   });
 
   it('孤立部材は人が読める説明になる', () => {

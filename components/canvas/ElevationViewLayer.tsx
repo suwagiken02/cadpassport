@@ -34,7 +34,8 @@ import {
 } from '@/lib/konva/elevation/elevationPartStyle';
 import { nextPartId } from '@/lib/konva/elevation/elevationSlots';
 import {
-  GRID_MM, movePart, newElevationPart, partsToPrimitives, withPartDeleted,
+  GRID_MM, movePart, newElevationPart, partRangeMm, partsToPrimitives, scaffoldIndexAtMm,
+  withPartDeleted,
   type ElevationPart,
 } from '@/lib/konva/elevation/elevationParts';
 import { KOMA_PITCH_MM } from '@/lib/konva/elevation/komaGrid';
@@ -302,7 +303,11 @@ function ElevationInteractiveGroup({
     const sg = view.geom?.scaffolds[part.scaffoldIndex];
     const { move } = dragResult(part, d);
     if (Math.abs(move.dxMm) < 1e-6 && Math.abs(move.dyMm) < 1e-6) return;  // 動いていない
-    const moved = movePart(part, sg, move);
+    const base = movePart(part, sg, move);
+    // E-8-v4a: 連をまたいで動かしたら帰属も移す（置いたときと同じ決め方）。
+    const moved = view.geom
+      ? { ...base, scaffoldIndex: scaffoldIndexAtMm(view.geom, partRangeMm(base, sg)?.x0Mm ?? 0) }
+      : base;
     useCanvasStore.getState().setElevationParts(
       view.id, parts.map((p) => (p.id === part.id ? moved : p)),
     );
@@ -374,13 +379,16 @@ function ElevationInteractiveGroup({
       yMm: -local.y * GRID_MM,
     };
     const isPost = addTool === 'post' || addTool === 'postExt';
-    const draft = newElevationPart(addTool, 'draft', 0, at, {
+    // E-8-v4a: 帰属する足場連は置いた場所で決める（0 決め打ちだと、複数連の面で
+    //   2 連目に置いた部材が 0 連目の巻き添えで消える）。
+    const si = scaffoldIndexAtMm(target.geom, at.xMm);
+    const draft = newElevationPart(addTool, 'draft', si, at, {
       komaCount: isPost ? addSize : undefined,
       sizeMm: isPost ? undefined : addSize,
       flip: addFlip,
       angleDeg: addAngle,
     });
-    const sg = target.geom.scaffolds[0];
+    const sg = target.geom.scaffolds[si];
     const snap = snapJoint(draft, target.parts ?? [], sg, { dxMm: 0, dyMm: 0 }, {
       pxPerMm: (gridPx * target.scale) / GRID_MM, tolPx: JOINT_SNAP_PX,
     });

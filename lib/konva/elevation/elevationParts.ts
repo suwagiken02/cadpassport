@@ -217,6 +217,33 @@ export function faceElevationToParts(fe: FaceElevation): ElevationPartsBundle {
   return { parts: withFreeCoords(parts, geom), geom };
 }
 
+/**
+ * その面軸位置(mm) が属する足場連の番号 (= E-8-v4a)。
+ *
+ * 部材の scaffoldIndex は「どの連の部材か」を表す帰属で、再マッチ（作り直したときに
+ * 残すかどうか）の判断に効く。置いた場所と無関係に 0 を入れていたため、L 字などの
+ * 複数連の面で 2 連目の上に置いた部材まで「0 連目の部材」になり、0 連目が消えると
+ * 巻き添えで全滅していた。
+ *
+ * 決め方は素直に「その x を含む連 → 無ければいちばん近い連」。
+ * 足場が 1 連も無い面（＝部材だけの面）は 0 を返す（連の概念が無いので比較もされない）。
+ */
+export function scaffoldIndexAtMm(geom: ElevationPartGeometry, xMm: number): number {
+  const sgs = geom.scaffolds;
+  if (sgs.length === 0) return 0;
+  const xg = xMm / GRID_MM;
+  let best = 0, bestDist = Infinity;
+  for (let i = 0; i < sgs.length; i++) {
+    const xs = sgs[i].postXs;
+    if (xs.length === 0) continue;
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    if (xg >= lo - 1e-6 && xg <= hi + 1e-6) return i;          // 範囲に収まる連
+    const d = xg < lo ? lo - xg : xg - hi;
+    if (d < bestDist) { bestDist = d; best = i; }
+  }
+  return best;                                                  // いちばん近い連
+}
+
 /** 仮想支柱の間隔(mm)。既存の支柱列を外へ延ばすときの標準スパン (= E-8-v2n)。 */
 export const VIRTUAL_SPAN_MM = 1800;
 
