@@ -5,18 +5,16 @@
 // 経路: ElevationPlaceDialog(今のページ) → canvasStore.addElevationViews
 //       → carryOverElevationEdits → rematchElevationParts
 //
-// 分かっていること（このファイルの active なテストが根拠）:
+// 原因（E-8-v3d-check の切り分け）:
 //   ・E-8-v3a より前は、手動部材は slotToPart で作られ spanIndex/postIndex/levelMm
-//     という「置き場所の番号」を必ず持っていた。再マッチはこの番号で照合する。
+//     という「置き場所の番号」を必ず持っていた。再マッチはこの番号で照合していた。
 //   ・E-8-v3a で位置を自由座標(x0Mm/x1Mm/levelMm)一次に変えたとき、
-//     newElevationPart は番号を持たせなくなった。
-//     → partSlotKey が `rail@0:s-:1500` のような「番号なし」キーになり、
-//       どのスロットとも一致しない＝必ず孤立して落ちる。
-//   ・自動部材を動かした場合も、縦にずらした時点で levelMm がコマ格子から外れ、
-//     同じ理由で落ちる。
+//     newElevationPart は番号を持たせなくなった。再マッチだけが v2 の
+//     「番号で場所を表す」世界に取り残され、パレット由来は 100%、動かした部材も
+//     縦にずらした時点で（levelMm がコマ格子から外れて）孤立していた。
 //
-// つまり再マッチだけが v2 の「番号で場所を表す」世界に取り残されている。
-// 直し方（未実装）は報告参照。直ったら下の skip を外すこと。
+// E-8-v3f の修正: 番号で見つからなければ座標そのもので判定し、座標を保ったまま残す。
+// 孤立にするのは「足場ごと消えた」「完全に範囲外」のときだけ（＝「勝手に消さない」）。
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import type { ElevationPart, ElevationPartGeometry } from '../elevationParts';
@@ -39,7 +37,7 @@ const geomAt = (topRailMm: number): ElevationPartGeometry => ({
 /** 作り直した後の自動部材（中身は本件に関係しないので空でよい）。 */
 const nextBundle = (topRailMm: number) => ({ parts: [] as ElevationPart[], geom: geomAt(topRailMm) });
 
-describe('E-8-v3d-check: 再マッチが v3 の自由座標部材を見失う', () => {
+describe('E-8-v3f: 作り直しでも手動部材を引き継ぐ', () => {
   it('パレットで置いた部材は「置き場所の番号」を持たない（v3a の設計）', () => {
     const rail = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 900, yMm: 1500 });
     expect(rail.spanIndex).toBeUndefined();
@@ -59,11 +57,7 @@ describe('E-8-v3d-check: 再マッチが v3 の自由座標部材を見失う', 
     expect(partSlotKey(moved)).toBe('rail@0:s1:1720');
   });
 
-  // ------------------------------------------------------------
-  // ここから下が「あるべき姿」。今は落ちるので skip（既存を赤にしない）。
-  // 修正したら skip を外す。
-  // ------------------------------------------------------------
-  describe.skip('あるべき姿: 高さを変えて作り直しても手動部材が残る', () => {
+  describe('高さを変えて作り直しても手動部材が残る (= E-8-v3f で修正)', () => {
     it('パレットで置いた手摺が引き継がれる', () => {
       const rail = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 900, yMm: 1500 });
       const r = rematchElevationParts([rail], nextBundle(8300));
@@ -105,21 +99,54 @@ describe('E-8-v3d-check: 再マッチが v3 の自由座標部材を見失う', 
     });
   });
 
-  // 現状の記録（直したらこの 2 つは削除する）。
-  it('現状: パレットで置いた部材は作り直しで孤立して消える（＝実機の症状）', () => {
-    const rail = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 900, yMm: 1500 });
-    const r = rematchElevationParts([rail], nextBundle(8300));
-    expect(r.parts).toHaveLength(0);
-    expect(r.orphans.map((p) => p.id)).toEqual(['manual:rail:1']);
+  // ------------------------------------------------------------
+  // 孤立にするのは「置き場所そのものが無くなった」ときだけ (= 鮎澤氏「残す」方針)。
+  // ------------------------------------------------------------
+  describe('孤立にするのは範囲外だけ', () => {
+    it('足場の外側（仮想グリッドの範囲内）に足した部材は残る', () => {
+      // 右端の支柱(x=540grid=5400mm)より外。v3 はここへ置ける
+      const rail = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 7200, yMm: 1500 });
+      const r = rematchElevationParts([rail], nextBundle(8300));
+      expect(r.orphans).toHaveLength(0);
+      expect(r.parts.map((p) => p.id)).toContain('manual:rail:1');
+    });
+
+    it('横に完全に外れた部材は孤立する', () => {
+      const far = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 60000, yMm: 1500 });
+      const r = rematchElevationParts([far], nextBundle(8300));
+      expect(r.orphans.map((p) => p.id)).toEqual(['manual:rail:1']);
+      expect(r.parts).toHaveLength(0);
+    });
+
+    it('足場より遥かに高い位置の部材は孤立する', () => {
+      const high = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 900, yMm: 60000 });
+      const r = rematchElevationParts([high], nextBundle(8300)).orphans;
+      expect(high.levelMm).toBe(60000);
+      expect(r.map((p) => p.id)).toEqual(['manual:rail:1']);
+    });
   });
 
-  it('現状: 縦にずらした自動部材も孤立して消える', () => {
-    const auto: ElevationPart = {
+  // ------------------------------------------------------------
+  // 移動・削除の意味が作り直しでぶり返さないこと（E-8-v2e からの担保）。
+  // ------------------------------------------------------------
+  describe('移動・削除がぶり返さない', () => {
+    /** 作り直しで生えてくる自動の手摺（元の場所）。 */
+    const autoRail: ElevationPart = {
       id: 'rail:0:1500:180', kind: 'rail', scaffoldIndex: 0, origin: 'auto',
-      spanIndex: 1, levelMm: 1500, x0: 180, x1: 360,
+      spanIndex: 1, levelMm: 1500, x0: 180, x1: 360, x0Mm: 1800, x1Mm: 3600,
     };
-    const moved = movePart(auto, geomAt(6500).scaffolds[0], { dxMm: 900, dyMm: 220 });
-    const r = rematchElevationParts([moved], nextBundle(8300));
-    expect(r.orphans).toHaveLength(1);
+
+    it('動かした部材は 1 本のまま（元の場所に自動が生え直さない）', () => {
+      const moved = movePart(autoRail, geomAt(6500).scaffolds[0], { dxMm: 900, dyMm: 220 });
+      const r = rematchElevationParts([moved], { parts: [autoRail], geom: geomAt(8300) });
+      expect(r.parts).toHaveLength(1);
+      expect(r.parts[0]).toMatchObject({ id: autoRail.id, levelMm: 1720, x0Mm: 2700 });
+    });
+
+    it('消した自動部材は墓標が効いて生え直さない', () => {
+      const tomb: ElevationPart = { ...autoRail, origin: 'manual', removed: true };
+      const r = rematchElevationParts([tomb], { parts: [autoRail], geom: geomAt(8300) });
+      expect(r.parts.filter((p) => !p.removed)).toHaveLength(0);
+    });
   });
 });
