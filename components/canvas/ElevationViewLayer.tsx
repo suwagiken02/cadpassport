@@ -190,11 +190,18 @@ function groupByPartId(prims: ElevationPrimitive[]): { id?: string; from: number
   return out;
 }
 
-/** primitives のローカル bbox（生座標・グリッド）。当たり判定と選択枠に使う。 */
+/**
+ * ローカル bbox（生座標・グリッド）。当たり判定と選択枠に使う。
+ * E-8-v4a: parts 由来のぶんも含める。足場ゼロの面や、背景（建物）が無い立面では
+ * primitives だけ見ると空になり、置いた部材が選べない・掴めない状態になっていた。
+ */
 function localBounds(view: ElevationView) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const see = (x: number, y: number) => { if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; };
-  for (const p of view.primitives) {
+  const prims = view.parts && view.geom
+    ? [...view.primitives, ...partsToPrimitives({ parts: view.parts, geom: view.geom })]
+    : view.primitives;
+  for (const p of prims) {
     if (p.kind === 'line') { see(p.x1, p.y1); see(p.x2, p.y2); }
     else if (p.kind === 'rect') { see(p.x, p.y); see(p.x + p.w, p.y + p.h); }
     else if (p.kind === 'polygon') { for (let k = 0; k < p.points.length; k += 2) see(p.points[k], p.points[k + 1]); }

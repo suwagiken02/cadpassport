@@ -297,10 +297,13 @@ export function postMemberTopMm(
 export function postKomaMm(
   part: ElevationPart, sg: ElevationPartGeometry['scaffolds'][number] | undefined,
 ): number[] {
-  if (!sg) return [];
+  // E-8-v4a: 自分の下端(levelMm)を持つ部材は、足場が無くてもコマ列を出せる。
+  //   コマは連鎖スナップの目印なので、ここが空だと足場ゼロの面で繋げられなくなる。
+  if (!sg && part.levelMm == null) return [];
   const bottomMm = postMemberBottomMm(part, sg);
   const topMm = postMemberTopMm(part, sg);
   if (part.levelMm != null) return komaLevelsFromJackMm(bottomMm, topMm);
+  if (!sg) return [];
   return sg.komaGridMm.filter((h) => h >= bottomMm - 1e-6 && h <= topMm + 1e-6);
 }
 
@@ -471,9 +474,13 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
 
   for (const p of parts) {
     if (p.removed) continue; // E-8-v2e: 削除マーク（墓標）は描かない
+    // E-8-v4a: 足場は「座標を引くための手がかり」であって、描く条件ではない。
+    //   部材が自分の座標(x0Mm/x1Mm/levelMm)を持っているなら、足場が無くても描く。
+    //   足場ゼロの面（建物だけ描いて足場を置いていない面）に置いた部材は、
+    //   ここで落とされて「置いたのに見えない」になっていた。
     const sg = geom.scaffolds[p.scaffoldIndex];
     const span = partSpanX(p, sg);
-    if (!sg || !span) continue;
+    if (!span) continue;   // 座標も足場も無い＝位置が決まらないので描けない
     // E-8-v2f: 見た目は elevationPartStyle が single source（旧 primitives 経路と共通）。
     const emittedFrom = out.length;   // E-8-v3c-fix4: この部材のぶんだけ後で回す
 
@@ -491,14 +498,17 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
         // E-8-v2j: segmentIndex があれば規格部材 1 本ぶんだけを描き、継ぎ目に印を出す。
         // E-8-v2r: levelMm があれば「その高さを下端にした規格部材 1 本」＝継ぎ足した支柱。
         //   下端は既存支柱の頭に載るので端キャップではなく継ぎ目のスリーブを出す。
-        const segs = postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm);
+        const segs = sg ? postSegmentsMm(sg.jackTopMm, sg.komaGridMm.length, sg.topRailMm) : [];
         const seg = p.segmentIndex != null ? segs[p.segmentIndex] : undefined;
         const stacked = p.levelMm != null;
         const koma = p.komaCount ?? seg?.komaCount ?? POST_MEMBER_DEFAULT_KOMA;
         // 継ぎ足した部材の占有範囲は postSlotBandMm が唯一の定義（ゴースト・確定と共通）。
         const band = stacked ? postSlotBandMm(p.levelMm!, koma) : null;
-        const bottomMm = band ? band.bottomMm : (seg ? seg.bottomMm : sg.jackTopMm);
-        const topMm = band ? band.topMm : (seg ? seg.topMm : sg.topRailMm);
+        // E-8-v4a: 高さの出どころは band(自分の levelMm) → seg(自動生成の段) → 足場の足元〜天端。
+        //   どれも無い＝高さが決まらないので描かない。
+        if (!band && !seg && !sg) break;
+        const bottomMm = band ? band.bottomMm : (seg ? seg.bottomMm : sg!.jackTopMm);
+        const topMm = band ? band.topMm : (seg ? seg.topMm : sg!.topRailMm);
         pushPost(out, lx(span.x0), ly(bottomMm), ly(topMm),
           { kind: 'post', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm },
           {
@@ -511,6 +521,8 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
       }
       case 'postExt': {
         // 延長部も同じピッチでコマが続く（基準はジャッキ上端のまま）。
+        // 自動生成専用（パレットに出さない）なので、足場が無ければ描かない (= E-8-v4a)。
+        if (!sg) break;
         const top = p.levelMm ?? sg.topRailMm;
         pushPost(out, lx(span.x0), ly(sg.topRailMm), ly(top),
           { kind: 'post', id: p.id, x: q(lx(span.x0)), heightMm: p.levelMm },
@@ -519,7 +531,7 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
       }
       case 'jack': {
         // E-8-v3b: 動かしたジャッキは levelMm(上端) を持つ。既定は足場の皿高さ。
-        const topMm = p.levelMm ?? sg.jackTopMm;
+        const topMm = p.levelMm ?? sg?.jackTopMm ?? 0;
         pushJack(out, lx(span.x0), ly(topMm), 0,
           { kind: 'jack', id: p.id, index: p.postIndex, x: q(lx(span.x0)), heightMm: topMm });
         break;
@@ -536,7 +548,7 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
       }
       case 'brace': {
         // 筋交は手動追加専用。スパンの対角に1本。flip で向きを反転できる (= E-8-v3c)。
-        const top = (p.levelMm ?? sg.topRailMm);
+        const top = (p.levelMm ?? sg?.topRailMm ?? 0);
         const bottom = top - 1800;
         const [yA, yB] = p.flip ? [ly(top), ly(bottom)] : [ly(bottom), ly(top)];
         pushBrace(out, lx(span.x0), yA, lx(span.x1), yB,

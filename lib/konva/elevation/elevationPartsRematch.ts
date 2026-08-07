@@ -107,6 +107,10 @@ function scaffoldBoxMm(sg: ElevationPartGeometry['scaffolds'][number]): {
  * 縦は基準点（手摺・踏板は高さ、支柱は下端、ジャッキは上端）が範囲内であること。
  */
 function withinScaffold(p: ElevationPart, geom: ElevationPartGeometry): boolean {
+  // E-8-v4a: 足場が 1 連も無い面（建物だけ描いて足場を置いていない面）では、
+  //   比べる相手そのものが存在しない。ここで落とすと「置けるが作り直すと消える」に
+  //   なるので、座標を持っている部材はそのまま引き継ぐ。
+  if (geom.scaffolds.length === 0) return partRangeMm(p, undefined) != null;
   const sg = geom.scaffolds[p.scaffoldIndex];
   if (!sg) return false;                          // その面の足場ごと消えた
   const box = scaffoldBoxMm(sg);

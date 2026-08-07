@@ -78,13 +78,27 @@ describe('rematchElevationParts', () => {
     expect(kept!.levelMm).toBe(900);
   });
 
-  it('足場ごと消えたら孤立に回す', () => {
+  // E-8-v4a: 足場ゼロの面も「部材を置いてよい面」になったので、
+  // 足場が消えただけでは孤立にしない（座標を持っていれば残す）。
+  it('足場が 1 連も無くなっても、座標を持つ部材は残る', () => {
     const manual: ElevationPart = {
       id: 'manual:rail:1', kind: 'rail', scaffoldIndex: 0, origin: 'manual',
       spanIndex: 2, levelMm: 900, x0: 360, x1: 540,
     };
     const gone: ElevationPartsBundle = { parts: [], geom: { minXg: 0, scaffolds: [] } };
     const r = rematchElevationParts([manual], gone);
+    expect(r.orphans).toEqual([]);
+    expect(r.parts.map((p) => p.id)).toEqual(['manual:rail:1']);
+  });
+
+  it('座標を引けない部材は孤立に回す（描きようが無い）', () => {
+    // 番号しか持たない旧データ＋足場ゼロ＝位置が決まらない
+    const noCoords: ElevationPart = {
+      id: 'manual:rail:1', kind: 'rail', scaffoldIndex: 0, origin: 'manual',
+      spanIndex: 2, levelMm: 900,
+    };
+    const gone: ElevationPartsBundle = { parts: [], geom: { minXg: 0, scaffolds: [] } };
+    const r = rematchElevationParts([noCoords], gone);
     expect(r.parts).toHaveLength(0);
     expect(r.orphans.map((p) => p.id)).toEqual(['manual:rail:1']);
   });

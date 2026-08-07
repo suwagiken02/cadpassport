@@ -91,11 +91,14 @@ describe('E-8-v3f: 作り直しでも手動部材を引き継ぐ', () => {
       expect(r.parts.map((p) => p.id)).toContain(auto.id);
     });
 
-    it('足場そのものが無くなった場合だけ孤立にする', () => {
+    // E-8-v4a: 足場ゼロの面でも部材を置けるようにしたので、
+    // 足場が無いこと自体は孤立の理由にならなくなった（座標があれば残す）。
+    it('足場そのものが無くなっても、座標を持つ部材は残る', () => {
       const rail = newElevationPart('rail', 'manual:rail:1', 0, { xMm: 900, yMm: 1500 });
       const gone = { parts: [] as ElevationPart[], geom: { minXg: 0, scaffolds: [] } };
       const r = rematchElevationParts([rail], gone);
-      expect(r.orphans).toHaveLength(1);
+      expect(r.orphans).toHaveLength(0);
+      expect(r.parts.map((p) => p.id)).toEqual(['manual:rail:1']);
     });
   });
 
