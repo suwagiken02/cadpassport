@@ -4,7 +4,9 @@ export type Point = { x: number; y: number };
 // === 操作モード ===
 // R-1g: 'roof' モードは撤去（setMode('roof') の呼び出しが無く未到達だった）。
 //   屋根の作成/編集は「躯体 → 屋根」の領域描きと、平面の出幅点線タップに一本化済み。
-export type ModeType = 'view' | 'building' | 'handrail' | 'post' | 'anti' | 'select' | 'erase' | 'memo' | 'obstacle' | 'move-select';
+export type ModeType = 'view' | 'building' | 'handrail' | 'post' | 'anti' | 'select' | 'erase' | 'memo' | 'obstacle' | 'move-select'
+  // P-1: 平面の追加部材（配置はドラッグ&ドロップなので mode 非依存。タブの選択状態にだけ使う）
+  | 'stair' | 'pipe';
 
 // === 建物入力方式 ===
 export type BuildingInputMethod = 'template' | 'direction';
@@ -197,6 +199,41 @@ export type Anti = {
   width: AntiWidth;
   lengthMm: number;
   direction: 'horizontal' | 'vertical';
+  /** 所属階。undefined は 1F 相当 */
+  floor?: number;
+};
+
+// === 階段 (= P-1) ===
+/**
+ * 平面図の階段。600×1800mm 固定で、足場の 1 区画にぴったり納まる。
+ * x/y は左上角（グリッド座標）。angleDeg は 90° 刻みで外形の向き、
+ * flip は同じ外形のまま上り下りを入れ替える（矢印の向きが変わる）。
+ */
+export type Stair = {
+  id: string;
+  x: number;
+  y: number;
+  /** 0/90/180/270。未設定は 0（縦長・上向き）。 */
+  angleDeg?: number;
+  /** 上る向きの反転。 */
+  flip?: boolean;
+  /** 所属階。undefined は 1F 相当 */
+  floor?: number;
+};
+
+// === 単管 (= P-1) ===
+/**
+ * 平面図の単管パイプ。線として描く。x/y は始点（グリッド座標）で、
+ * angleDeg ぶん傾けた長さ lengthMm の線分になる。スナップはしない（自由配置）。
+ */
+export type Pipe = {
+  id: string;
+  x: number;
+  y: number;
+  /** 長さ(mm)。既製品は 1000〜6000、任意長さも可。 */
+  lengthMm: number;
+  /** 角度(度)。0=右向き水平。未設定は 45。 */
+  angleDeg?: number;
   /** 所属階。undefined は 1F 相当 */
   floor?: number;
 };
@@ -446,6 +483,10 @@ export type CanvasData = {
   elevationViews?: ElevationView[];
   /** 寸法線オフセット mm (= 既存 hardcoded からの delta、 ドラッグで更新、 normalize で default 補完) */
   dimensionOffsetsMm?: DimensionOffsetsMm;
+  /** 階段 (= P-1、 undefined は既存プロジェクト互換、 normalize で [] に正規化) */
+  stairs?: Stair[];
+  /** 単管 (= P-1、 undefined は既存プロジェクト互換、 normalize で [] に正規化) */
+  pipes?: Pipe[];
 };
 
 /**

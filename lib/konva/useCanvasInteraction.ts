@@ -24,6 +24,8 @@ function getCategoryFromId(id: string, canvasData: CanvasData): MoveSelectCat | 
   if (canvasData.handrails.some(h => h.id === id)) return 'scaffold';
   if (canvasData.posts.some(p => p.id === id)) return 'scaffold';
   if (canvasData.antis.some(a => a.id === id)) return 'scaffold';
+  if ((canvasData.stairs ?? []).some(s => s.id === id)) return 'scaffold';
+  if ((canvasData.pipes ?? []).some(p => p.id === id)) return 'scaffold';
   if (canvasData.buildings.some(b => b.id === id)) return 'building';
   if (canvasData.obstacles.some(o => o.id === id)) return 'obstacle';
   if (canvasData.memos.some(m => m.id === id)) return 'memo';

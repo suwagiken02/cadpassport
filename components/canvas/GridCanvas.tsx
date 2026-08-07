@@ -13,6 +13,7 @@ import {
 } from '@/lib/konva/gridUtils';
 import BuildingLayer from './BuildingLayer';
 import ScaffoldLayer from './ScaffoldLayer';
+import PlanePartLayer from './PlanePartLayer';
 import DimensionLayer from './DimensionLayer';
 import DimensionLineLayer from './DimensionLineLayer';
 import ObstacleLayer from './ObstacleLayer';

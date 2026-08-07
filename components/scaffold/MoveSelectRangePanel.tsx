@@ -46,6 +46,9 @@ export default function MoveSelectRangePanel() {
         ...canvasData.handrails.map(h => h.id),
         ...canvasData.posts.map(p => p.id),
         ...canvasData.antis.map(a => a.id),
+        // P-1: 階段・単管も足場カテゴリ（手摺・支柱・アンチと同じ扱い）。
+        ...(canvasData.stairs ?? []).map(s => s.id),
+        ...(canvasData.pipes ?? []).map(p => p.id),
       );
     }
     if (categories.building) ids.push(...canvasData.buildings.map(b => b.id));

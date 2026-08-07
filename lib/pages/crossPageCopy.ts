@@ -11,7 +11,7 @@
 // ============================================================
 import type {
   CanvasData, BuildingShape, RoofOverhang, Roof, Obstacle, Handrail, Post, Anti, Memo,
-  HeightMarker, RidgeLine, ElevationView, MagnetPin, Point,
+  HeightMarker, RidgeLine, ElevationView, MagnetPin, Point, Stair, Pipe,
 } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -29,12 +29,15 @@ export type CrossPagePayload = {
   ridgeLines: RidgeLine[];
   elevationViews: ElevationView[];
   magnetPins: MagnetPin[];
+  stairs: Stair[];
+  pipes: Pipe[];
 };
 
 function emptyPayload(): CrossPagePayload {
   return {
     buildings: [], roofOverhangs: [], roofs: [], obstacles: [], handrails: [], posts: [],
     antis: [], memos: [], heightMarkers: [], ridgeLines: [], elevationViews: [], magnetPins: [],
+    stairs: [], pipes: [],
   };
 }
 
@@ -93,6 +96,8 @@ export function collectSelectionSubset(
   pushSelected(canvasData.memos, subset.memos);
   pushSelected(canvasData.elevationViews ?? [], subset.elevationViews);
   pushSelected(canvasData.magnetPins ?? [], subset.magnetPins);
+  pushSelected(canvasData.stairs ?? [], subset.stairs);
+  pushSelected(canvasData.pipes ?? [], subset.pipes);
 
   return { subset, sourceIds, origin: subsetOrigin(subset) };
 }
@@ -108,6 +113,8 @@ function subsetOrigin(s: CrossPagePayload): Point {
   for (const a of s.antis) see(a.x, a.y);
   for (const m of s.memos) see(m.x, m.y);
   for (const mp of s.magnetPins) see(mp.x, mp.y);
+  for (const st of s.stairs) see(st.x, st.y);
+  for (const pp of s.pipes) see(pp.x, pp.y);
   for (const ev of s.elevationViews) see(ev.originGrid.x, ev.originGrid.y);
   for (const rl of s.ridgeLines) { see(rl.p1.x, rl.p1.y); see(rl.p2.x, rl.p2.y); }
   return Number.isFinite(minX) ? { x: minX, y: minY } : { x: 0, y: 0 };
@@ -152,6 +159,8 @@ export function instantiateSubset(
   for (const m of subset.memos) out.memos.push({ ...clone(m), id: genId(), x: m.x + offset.x, y: m.y + offset.y });
   for (const ev of subset.elevationViews) out.elevationViews.push({ ...clone(ev), id: genId(), originGrid: off(ev.originGrid) });
   for (const mp of subset.magnetPins) out.magnetPins.push({ ...clone(mp), id: genId(), x: mp.x + offset.x, y: mp.y + offset.y });
+  for (const st of subset.stairs) out.stairs.push({ ...clone(st), id: genId(), x: st.x + offset.x, y: st.y + offset.y });
+  for (const pp of subset.pipes) out.pipes.push({ ...clone(pp), id: genId(), x: pp.x + offset.x, y: pp.y + offset.y });
 
   return out;
 }
@@ -161,6 +170,7 @@ export function payloadIds(p: CrossPagePayload): string[] {
   return [
     ...p.buildings, ...p.roofOverhangs, ...p.roofs, ...p.obstacles, ...p.handrails, ...p.posts,
     ...p.antis, ...p.memos, ...p.heightMarkers, ...p.ridgeLines, ...p.elevationViews, ...p.magnetPins,
+    ...p.stairs, ...p.pipes,
   ].map((o) => o.id);
 }
 
@@ -193,6 +203,8 @@ export function mergePayloadIntoCanvas(canvasData: CanvasData, payload: CrossPag
     ridgeLines: [...(canvasData.ridgeLines ?? []), ...payload.ridgeLines],
     elevationViews: [...(canvasData.elevationViews ?? []), ...payload.elevationViews],
     magnetPins: [...(canvasData.magnetPins ?? []), ...payload.magnetPins],
+    stairs: [...(canvasData.stairs ?? []), ...payload.stairs],
+    pipes: [...(canvasData.pipes ?? []), ...payload.pipes],
   };
 }
 

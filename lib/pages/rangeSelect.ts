@@ -37,6 +37,8 @@ export function collectIdsInRect(canvasData: CanvasData, rect: SelectRect): stri
   for (const h of canvasData.handrails) if (inRect(h)) ids.push(h.id);
   for (const p of canvasData.posts) if (inRect(p)) ids.push(p.id);
   for (const a of canvasData.antis) if (inRect(a)) ids.push(a.id);
+  for (const s of canvasData.stairs ?? []) if (inRect(s)) ids.push(s.id);
+  for (const p of canvasData.pipes ?? []) if (inRect(p)) ids.push(p.id);
   for (const m of canvasData.memos) if (inRect(m)) ids.push(m.id);
   for (const mp of canvasData.magnetPins ?? []) if (inRect(mp)) ids.push(mp.id);
   for (const ev of canvasData.elevationViews ?? []) if (inRect(ev.originGrid)) ids.push(ev.id);

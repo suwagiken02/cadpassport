@@ -11,6 +11,10 @@ import { HandrailLengthMm, HandrailDirection, AntiWidth, ObstacleType } from '@/
 import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
 import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstacleToWall, snapToMagnetPin } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
+import {
+  PIPE_DEFAULT_ANGLE_DEG, PIPE_MIN_LENGTH_MM, PIPE_PRESET_LENGTHS_MM, clampPipeLengthMm,
+  snapStairToCellGrid,
+} from '@/lib/konva/planeParts';
 import NumInput from '@/components/ui/NumInput';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
 import { ANGLE_PRESETS, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
@@ -67,13 +71,17 @@ type ToolbarDrag =
   | { type: 'handrail'; lengthMm: number; direction: 'horizontal' | 'vertical' | number; currentX: number; currentY: number }
   | { type: 'anti'; lengthMm: number; direction: 'horizontal' | 'vertical'; antiWidth: AntiWidth; currentX: number; currentY: number }
   | { type: 'post'; currentX: number; currentY: number }
+  | { type: 'stair'; angleDeg: number; flip: boolean; currentX: number; currentY: number }
+  | { type: 'pipe'; lengthMm: number; angleDeg: number; currentX: number; currentY: number }
   | { type: 'obstacle'; obstacleType: ObstacleType; widthMm: number; heightMm: number; rotation: number; currentX: number; currentY: number };
 
-type PartTab = 'handrail' | 'post' | 'anti';
+type PartTab = 'handrail' | 'post' | 'anti' | 'stair' | 'pipe';
 const PART_TABS: { id: PartTab; label: string }[] = [
   { id: 'handrail', label: '手摺' },
   { id: 'post', label: '支柱' },
   { id: 'anti', label: 'アンチ' },
+  { id: 'stair', label: '階段' },
+  { id: 'pipe', label: '単管' },
 ];
 
 export default function PartSelector() {
@@ -152,6 +160,12 @@ export default function PartSelector() {
   const [expanded, setExpanded] = useState(true);
   const [toolbarDrag, setToolbarDrag] = useState<ToolbarDrag | null>(null);
   const [direction, setDirection] = useState<'horizontal' | 'vertical'>('horizontal');
+  // P-1: 階段の向き（90° 刻み）と上り下りの反転
+  const [stairAngle, setStairAngle] = useState(0);
+  const [stairFlip, setStairFlip] = useState(false);
+  // P-1: 単管の長さ（既製品 or 任意）と角度（既定 45°）
+  const [pipeLengthMm, setPipeLengthMm] = useState<number>(PIPE_PRESET_LENGTHS_MM[0]);
+  const [pipeAngle, setPipeAngle] = useState<number>(PIPE_DEFAULT_ANGLE_DEG);
   const [handrailAngle, setHandrailAngle] = useState<number | 'horizontal' | 'vertical'>('horizontal');
   const [showAngleModal, setShowAngleModal] = useState(false);
   const [trashHover, setTrashHover] = useState(false);
@@ -244,6 +258,28 @@ export default function PartSelector() {
     }, []
   );
 
+  // --- 階段ドラッグ (= P-1) ---
+  const handleStairDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      setToolbarDrag({
+        type: 'stair', angleDeg: stairAngle, flip: stairFlip,
+        currentX: e.clientX, currentY: e.clientY,
+      });
+    }, [stairAngle, stairFlip]
+  );
+
+  // --- 単管ドラッグ (= P-1) ---
+  const handlePipeDown = useCallback(
+    (lengthMm: number, e: React.PointerEvent) => {
+      e.preventDefault();
+      setToolbarDrag({
+        type: 'pipe', lengthMm, angleDeg: pipeAngle,
+        currentX: e.clientX, currentY: e.clientY,
+      });
+    }, [pipeAngle]
+  );
+
   // --- 障害物ドラッグ ---
   const handleObstacleDown = useCallback(
     (e: React.PointerEvent) => {
@@ -325,6 +361,13 @@ export default function PartSelector() {
         return;
       }
 
+      // P-1: 階段・単管は手摺プレビューを使わない（カーソル追従の札だけ）。
+      if (toolbarDrag.type === 'stair' || toolbarDrag.type === 'pipe') {
+        useCanvasStore.getState().setHandrailPreview(null);
+        useCanvasStore.getState().setSnapPoint(null);
+        return;
+      }
+
       const canvasRect = getCanvasRect(e);
       if (canvasRect) {
         const { zoom, panX, panY, canvasData } = useCanvasStore.getState();
@@ -393,6 +436,19 @@ export default function PartSelector() {
             }
           }
           addPost({ id: uuidv4(), x: snapX, y: snapY });
+        } else if (toolbarDrag.type === 'stair') {
+          // P-1: 600×1800 の区画格子へ吸着（手摺が実際に有るかは見ない）。
+          const at = snapStairToCellGrid(gridPos, toolbarDrag.angleDeg);
+          useCanvasStore.getState().addStair({
+            id: uuidv4(), x: at.x, y: at.y,
+            angleDeg: toolbarDrag.angleDeg, flip: toolbarDrag.flip, floor: activeFloor,
+          });
+        } else if (toolbarDrag.type === 'pipe') {
+          // P-1: 単管はスナップ無し（置いた場所そのまま）。
+          useCanvasStore.getState().addPipe({
+            id: uuidv4(), x: gridPos.x, y: gridPos.y,
+            lengthMm: toolbarDrag.lengthMm, angleDeg: toolbarDrag.angleDeg, floor: activeFloor,
+          });
         } else if (toolbarDrag.type === 'obstacle') {
           const wGrid = mmToGrid(toolbarDrag.widthMm);
           const hGrid = mmToGrid(toolbarDrag.heightMm);
@@ -486,8 +542,10 @@ export default function PartSelector() {
 
   // タブ系モードかどうか（'view' = 図面を開いた直後の閲覧モード。 部材パレットを開いた時点で
   // タブ＋部材リストを表示する。 配置は mode 非依存のドラッグ&ドロップなのでこれだけで配置可能）
-  const isTabMode = mode === 'handrail' || mode === 'post' || mode === 'anti' || mode === 'select' || mode === 'view';
-  const activeTab: PartTab = (mode === 'handrail' || mode === 'post' || mode === 'anti') ? mode : 'handrail';
+  const isTabMode = mode === 'handrail' || mode === 'post' || mode === 'anti'
+    || mode === 'stair' || mode === 'pipe' || mode === 'select' || mode === 'view';
+  const activeTab: PartTab = (mode === 'handrail' || mode === 'post' || mode === 'anti'
+    || mode === 'stair' || mode === 'pipe') ? mode : 'handrail';
 
   // --- カーソル追従プレビュー ---
   const dragPreview = toolbarDrag && (
@@ -504,10 +562,16 @@ export default function PartSelector() {
       <div style={{ position: 'fixed', left: toolbarDrag.currentX, top: toolbarDrag.currentY - 20, transform: 'translate(-50%, -100%)', pointerEvents: 'none', zIndex: 9999 }}>
         <div className={`${
           toolbarDrag.type === 'anti' ? 'bg-amber-500/80' :
-          toolbarDrag.type === 'obstacle' ? 'bg-purple-500/80' : 'bg-handrail/80'
+          toolbarDrag.type === 'obstacle' ? 'bg-purple-500/80' :
+          toolbarDrag.type === 'stair' ? 'bg-gray-500/80' :
+          toolbarDrag.type === 'pipe' ? 'bg-slate-500/80' : 'bg-handrail/80'
         } text-white text-xs font-mono px-2 py-1 rounded shadow-lg whitespace-nowrap flex items-center gap-1`}>
           {toolbarDrag.type === 'obstacle' ? (
             <span>{OBSTACLE_TYPES.find(o => o.id === toolbarDrag.obstacleType)?.label}</span>
+          ) : toolbarDrag.type === 'stair' ? (
+            <span>階段 600×1800 {toolbarDrag.angleDeg}°{toolbarDrag.flip ? ' 反転' : ''}</span>
+          ) : toolbarDrag.type === 'pipe' ? (
+            <span>単管 {toolbarDrag.lengthMm} {toolbarDrag.angleDeg}°</span>
           ) : (
             <>
               <span>{toolbarDrag.direction === 'horizontal' ? '━' : toolbarDrag.direction === 'vertical' ? '┃' : `${toolbarDrag.direction}°`}</span>
@@ -616,6 +680,80 @@ export default function PartSelector() {
             className="px-2 py-1 rounded text-[11px] font-mono select-none touch-none shrink-0 bg-yellow-500 text-gray-900 border border-yellow-600">{l}</button>
         ))}</div>
       </div>
+    </div>
+  );
+
+  // === 階段 (= P-1) ===
+  const stairPanel = (
+    <div className="space-y-2">
+      <p className="text-xs text-dimension">ドラッグしてキャンバスに配置</p>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] text-dimension">向き</span>
+        {[0, 90, 180, 270].map((deg) => (
+          <button key={deg} onClick={() => setStairAngle(deg)}
+            className={`w-9 h-7 rounded text-[10px] border transition-colors ${
+              stairAngle === deg ? 'border-accent bg-accent/15 text-accent' : 'border-dark-border text-dimension'
+            }`}
+          >{deg}°</button>
+        ))}
+        <button onClick={() => setStairFlip((v) => !v)}
+          className={`px-2 h-7 rounded text-[10px] font-bold border transition-colors ${
+            stairFlip ? 'border-accent bg-accent/15 text-accent' : 'border-dark-border text-dimension'
+          }`}
+        >⇅ 上り反転</button>
+      </div>
+      <button
+        onPointerDown={handleStairDown}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"
+      >
+        <span className="inline-block w-3 h-5 rounded-sm bg-gray-400 border border-gray-600" />
+        階段 600×1800
+      </button>
+      <p className="text-[10px] text-dimension">600×1800 の区画にぴったり納まる位置へ吸着します</p>
+    </div>
+  );
+
+  // === 単管 (= P-1) ===
+  const pipePanel = (
+    <div className="space-y-2">
+      <p className="text-xs text-dimension">ドラッグしてキャンバスに配置</p>
+      <div className="flex gap-1 flex-wrap">
+        {PIPE_PRESET_LENGTHS_MM.map((mm) => (
+          <button key={mm}
+            onClick={() => setPipeLengthMm(mm)}
+            onPointerDown={(e) => { setPipeLengthMm(mm); handlePipeDown(mm, e); }}
+            className={`px-2 py-1.5 rounded-lg text-xs font-mono select-none touch-none shrink-0 ${
+              pipeLengthMm === mm ? 'bg-slate-500 text-white' : 'bg-dark-bg text-canvas border border-dark-border'
+            }`}
+          >{mm / 1000}m</button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] text-dimension">長さ</span>
+        <NumInput
+          value={pipeLengthMm}
+          onChange={(v) => setPipeLengthMm(clampPipeLengthMm(v))}
+          min={PIPE_MIN_LENGTH_MM}
+          className="w-20 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
+        />
+        <span className="text-[10px] text-dimension">mm</span>
+        <span className="text-[10px] text-dimension ml-2">角度</span>
+        <NumInput
+          value={pipeAngle}
+          onChange={(v) => setPipeAngle(v)}
+          min={0}
+          className="w-16 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
+        />
+        <span className="text-[10px] text-dimension">°</span>
+      </div>
+      <button
+        onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"
+      >
+        <span className="inline-block w-5 h-0.5 bg-gray-400 rotate-45" />
+        単管 {pipeLengthMm}mm / {pipeAngle}°
+      </button>
+      <p className="text-[10px] text-dimension">スナップしません（どこにでも置けます）</p>
     </div>
   );
 
@@ -756,6 +894,9 @@ export default function PartSelector() {
                   {antiButtons}
                 </div>
               )}
+
+              {activeTab === 'stair' && stairPanel}
+              {activeTab === 'pipe' && pipePanel}
             </div>
           </>
         )}
@@ -922,6 +1063,9 @@ export default function PartSelector() {
                       {antiButtons}
                     </div>
                   )}
+
+                  {activeTab === 'stair' && stairPanel}
+                  {activeTab === 'pipe' && pipePanel}
                 </div>
               </>
             )}

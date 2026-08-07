@@ -61,6 +61,8 @@ const createEmptyCanvasData = (): CanvasData => ({
   heightMarkers: [],
   ridgeLines: [],
   elevationViews: [],
+  stairs: [],
+  pipes: [],
 });
 
 /** 互換: 旧プロジェクトで欠落しているフィールドを補完する */
@@ -80,6 +82,8 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
     heightMarkers: data.heightMarkers ?? [],
     ridgeLines: data.ridgeLines ?? [],
     elevationViews: data.elevationViews ?? [],
+    stairs: data.stairs ?? [],
+    pipes: data.pipes ?? [],
     dimensionOffsetsMm: data.dimensionOffsetsMm ?? { ...DEFAULT_DIMENSION_OFFSETS_MM },
   };
   // 旧 scaffoldStart → scaffoldStart1F / scaffoldStart2F への移行。
@@ -405,6 +409,13 @@ type CanvasStore = {
   addHandrails: (hs: Handrail[]) => void;
   addPost: (p: Post) => void;
   addAnti: (a: Anti) => void;
+  // P-1: 平面の追加部材（階段・単管）
+  addStair: (s: import('@/types').Stair) => void;
+  /** 階段の向き（90° 刻みの回転・上り下りの反転）を差し替える。 */
+  updateStair: (id: string, patch: { angleDeg?: number; flip?: boolean }) => void;
+  addPipe: (p: import('@/types').Pipe) => void;
+  /** 単管の長さ・角度を差し替える。 */
+  updatePipe: (id: string, patch: { lengthMm?: number; angleDeg?: number }) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1253,6 +1264,47 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  // === 平面の追加部材 (= P-1) ===
+  addStair: (s) => {
+    track('manual_edit', { kind: 'add_stair' });
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, stairs: [...(canvasData.stairs ?? []), s] },
+      isDirty: true,
+    });
+  },
+  updateStair: (id, patch) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        stairs: (canvasData.stairs ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      },
+      isDirty: true,
+    });
+  },
+  addPipe: (p) => {
+    track('manual_edit', { kind: 'add_pipe' });
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, pipes: [...(canvasData.pipes ?? []), p] },
+      isDirty: true,
+    });
+  },
+  updatePipe: (id, patch) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        pipes: (canvasData.pipes ?? []).map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      },
+      isDirty: true,
+    });
+  },
   clearScaffold: () => {
     const { canvasData, pushHistory } = get();
     if (canvasData.handrails.length === 0 && canvasData.posts.length === 0 && canvasData.antis.length === 0) return;
@@ -1696,6 +1748,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => r.id !== id),
         heightMarkers: (canvasData.heightMarkers ?? []).filter((h) => h.id !== id),
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id),
+        stairs: (canvasData.stairs ?? []).filter((s2) => s2.id !== id),
+        pipes: (canvasData.pipes ?? []).filter((p) => p.id !== id),
         // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
         roofs: (canvasData.roofs ?? []).filter((r) => r.id !== id && r.buildingId !== id),
       },
@@ -1721,6 +1775,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ridgeLines: (canvasData.ridgeLines ?? []).filter((r) => !idSet.has(r.id)),
         heightMarkers: (canvasData.heightMarkers ?? []).filter((h) => !idSet.has(h.id)),
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => !idSet.has(e.id)),
+        stairs: (canvasData.stairs ?? []).filter((s2) => !idSet.has(s2.id)),
+        pipes: (canvasData.pipes ?? []).filter((p) => !idSet.has(p.id)),
         // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
         roofs: (canvasData.roofs ?? []).filter((r) => !idSet.has(r.id) && !idSet.has(r.buildingId)),
       },
@@ -1758,6 +1814,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ),
         memos: canvasData.memos.map((m) =>
           m.id === id ? { ...m, x: m.x + dx, y: m.y + dy } : m
+        ),
+        // P-1: 階段・単管も既存部材と同じ動かし方（左上/始点をずらすだけ）。
+        stairs: (canvasData.stairs ?? []).map((s) =>
+          s.id === id ? { ...s, x: s.x + dx, y: s.y + dy } : s
+        ),
+        pipes: (canvasData.pipes ?? []).map((p) =>
+          p.id === id ? { ...p, x: p.x + dx, y: p.y + dy } : p
         ),
       },
       isDirty: true,

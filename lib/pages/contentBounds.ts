@@ -5,6 +5,7 @@
 // ============================================================
 import type { CanvasData } from '@/types';
 import { elevationPrimitivesBounds } from './quadLayout';
+import { pipeEndpointsGrid, stairCornersGrid } from '@/lib/konva/planeParts';
 
 export type GridBounds = { minX: number; minY: number; maxX: number; maxY: number };
 
@@ -23,6 +24,8 @@ export function computeContentBounds(cv: CanvasData): GridBounds | null {
   for (const h of cv.handrails) see(h.x, h.y);
   for (const p of cv.posts) see(p.x, p.y);
   for (const a of cv.antis) see(a.x, a.y);
+  for (const s of cv.stairs ?? []) for (const c of stairCornersGrid(s)) see(c.x, c.y);
+  for (const p of cv.pipes ?? []) for (const e of pipeEndpointsGrid(p)) see(e.x, e.y);
   for (const m of cv.memos) see(m.x, m.y);
   for (const mp of cv.magnetPins ?? []) see(mp.x, mp.y);
   for (const rl of cv.ridgeLines ?? []) { see(rl.p1.x, rl.p1.y); see(rl.p2.x, rl.p2.y); }

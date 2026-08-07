@@ -30,6 +30,8 @@ export function canvasDataIsEmpty(cv: CanvasData | null | undefined): boolean {
     cv.heightMarkers?.length ?? 0,
     cv.roofs?.length ?? 0,
     cv.roofOverhangs?.length ?? 0,
+    cv.stairs?.length ?? 0,
+    cv.pipes?.length ?? 0,
   ];
   return counts.every((n) => n === 0);
 }
