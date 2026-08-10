@@ -9,7 +9,8 @@
 // 単管: 長さ自由・スナップ無し。既製品は 1〜6m。既定の角度は 45°。
 // ============================================================
 import { mmToGrid } from './gridUtils';
-import type { Stair, Pipe } from '@/types';
+import { getHandrailEndpoints } from './snapUtils';
+import type { Stair, Pipe, Handrail } from '@/types';
 
 /** 階段の実寸(mm)。600 手摺 × 1800 手摺の区画と同じ。 */
 export const STAIR_WIDTH_MM = 600;
@@ -59,6 +60,108 @@ export function snapStairToCellGrid(
   const left = cursor.x - w / 2;
   const top = cursor.y - h / 2;
   return { x: Math.round(left / w) * w, y: Math.round(top / h) * h };
+}
+
+/** 手摺が実際に作っている枡（グリッド・左上と大きさ）。 */
+export type StairCell = { x: number; y: number; w: number; h: number };
+
+/** 座標比較の許容差（グリッド）。手摺は整数グリッドに乗るので十分小さくてよい。 */
+const CELL_EPS = 1e-6;
+
+type Seg = { a: number; b: number; at: number };
+
+/**
+ * 手摺を「水平の線分」「垂直の線分」に分ける。
+ * 斜めの手摺は枡を作らないので捨てる。
+ * a/b は伸びる向きの区間（昇順）、at はもう一方の軸の値。
+ */
+function axisSegments(handrails: Handrail[]): { hor: Seg[]; ver: Seg[] } {
+  const hor: Seg[] = [], ver: Seg[] = [];
+  for (const h of handrails) {
+    const [p, q] = getHandrailEndpoints(h);
+    if (Math.abs(p.y - q.y) < CELL_EPS) {
+      hor.push({ a: Math.min(p.x, q.x), b: Math.max(p.x, q.x), at: p.y });
+    } else if (Math.abs(p.x - q.x) < CELL_EPS) {
+      ver.push({ a: Math.min(p.y, q.y), b: Math.max(p.y, q.y), at: p.x });
+    }
+  }
+  return { hor, ver };
+}
+
+/** その線分が [from, to] を覆っているか（手摺が枡の 1 辺として通っているか）。 */
+const covers = (s: Seg, at: number, from: number, to: number) =>
+  Math.abs(s.at - at) < CELL_EPS && s.a <= from + CELL_EPS && s.b >= to - CELL_EPS;
+
+/**
+ * 実際に配置されている手摺が作る枡のうち、指定の大きさに一致するものを列挙する
+ * (= P-1-fix10)。
+ *
+ * P-1 では「手摺が有るかに関わらず抽象的な 600×1800 の格子へ吸着する」仕様にしたが、
+ * その格子と実際に置かれた手摺の位置は一致しないので、枡に入らなかった。
+ * 実在の手摺から枡を見つけるのが正しい。
+ *
+ * 枡の条件: 上下 2 辺が水平手摺、左右 2 辺が垂直手摺で覆われていること。
+ * 手摺は枡の辺より長くてもよい（1800 の手摺が枡の脇を通り過ぎる場合）。
+ */
+export function stairCellsFromHandrails(
+  handrails: Handrail[], footprint: { w: number; h: number },
+): StairCell[] {
+  const { hor, ver } = axisSegments(handrails);
+  const { w, h } = footprint;
+  const out: StairCell[] = [];
+  const seen = new Set<string>();
+  for (const v of ver) {
+    for (const t of hor) {
+      const x = v.at, y = t.at;
+      // 左辺(v) が縦に h ぶん、上辺(t) が横に w ぶん通っているか
+      if (!covers(v, x, y, y + h) || !covers(t, y, x, x + w)) continue;
+      // 右辺と下辺
+      if (!ver.some((o) => covers(o, x + w, y, y + h))) continue;
+      if (!hor.some((o) => covers(o, y + h, x, x + w))) continue;
+      const key = `${x},${y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ x, y, w, h });
+    }
+  }
+  return out;
+}
+
+/**
+ * 階段の吸着先 (= P-1-fix10)。**実在の枡を優先し、無ければ抽象格子**。
+ *
+ * ・向きは自動で変えない（鮎澤氏）。パレットで選んだ向きの外形に合う枡だけを探す。
+ * ・カーソルを含む枡があればそこ。無ければ最寄りの枡（近くに限る）。
+ * ・枡が見つからない場所では従来どおり 600×1800 の格子へ寄せる
+ *   （手摺がまだ無い場所にも置けること自体は維持する）。
+ *
+ * 返すのは階段の**左上角**の座標。ゴーストも配置もこの 1 本を通すので、
+ * 「ゴーストの位置＝置かれる位置」が保たれる。
+ */
+export function snapStairToCell(
+  cursor: { x: number; y: number }, angleDeg: number | undefined, handrails: Handrail[],
+): { x: number; y: number } {
+  const fp = stairFootprintGrid(angleDeg);
+  // 探索範囲。遠くの枡へ飛ばさないため、かつドラッグ中の計算量を抑えるため。
+  const reach = Math.max(fp.w, fp.h) * 2;
+  const near = handrails.filter((hr) => {
+    const [p, q] = getHandrailEndpoints(hr);
+    const minX = Math.min(p.x, q.x) - reach, maxX = Math.max(p.x, q.x) + reach;
+    const minY = Math.min(p.y, q.y) - reach, maxY = Math.max(p.y, q.y) + reach;
+    return cursor.x >= minX && cursor.x <= maxX && cursor.y >= minY && cursor.y <= maxY;
+  });
+
+  const cells = stairCellsFromHandrails(near, fp);
+  if (cells.length > 0) {
+    const inside = cells.filter((c) =>
+      cursor.x >= c.x - CELL_EPS && cursor.x <= c.x + c.w + CELL_EPS
+      && cursor.y >= c.y - CELL_EPS && cursor.y <= c.y + c.h + CELL_EPS);
+    const pool = inside.length > 0 ? inside : cells;
+    const dist = (c: StairCell) => Math.hypot(c.x + c.w / 2 - cursor.x, c.y + c.h / 2 - cursor.y);
+    const best = pool.reduce((a, b) => (dist(a) <= dist(b) ? a : b));
+    if (inside.length > 0 || dist(best) <= reach) return { x: best.x, y: best.y };
+  }
+  return snapStairToCellGrid(cursor, angleDeg);
 }
 
 /** 階段の 4 隅（グリッド）。選択枠・当たり判定に使う。 */

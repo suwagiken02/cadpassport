@@ -13,7 +13,7 @@ import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstac
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import {
   PIPE_DEFAULT_ANGLE_DEG, PIPE_MIN_LENGTH_MM, PIPE_PRESET_LENGTHS_MM, clampPipeLengthMm,
-  snapStairToCellGrid,
+  snapStairToCell,
 } from '@/lib/konva/planeParts';
 import NumInput from '@/components/ui/NumInput';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
@@ -372,10 +372,11 @@ export default function PartSelector() {
         useCanvasStore.getState().setSnapPoint(null);
         const cr = getCanvasRect(e);
         if (!cr) { useCanvasStore.getState().setPlanePartPreview(null); return; }
-        const { zoom, panX, panY } = useCanvasStore.getState();
+        const { zoom, panX, panY, canvasData: cv } = useCanvasStore.getState();
         const gridPos = screenToGrid(e.clientX - cr.left, e.clientY - cr.top, panX, panY, zoom);
         if (toolbarDrag.type === 'stair') {
-          const at = snapStairToCellGrid(gridPos, toolbarDrag.angleDeg);
+          // P-1-fix10: 実在の手摺が作る枡を優先。ゴーストと配置は同じ関数を通す。
+          const at = snapStairToCell(gridPos, toolbarDrag.angleDeg, cv.handrails);
           useCanvasStore.getState().setPlanePartPreview({
             kind: 'stair',
             stair: {
@@ -465,8 +466,9 @@ export default function PartSelector() {
           }
           addPost({ id: uuidv4(), x: snapX, y: snapY });
         } else if (toolbarDrag.type === 'stair') {
-          // P-1: 600×1800 の区画格子へ吸着（手摺が実際に有るかは見ない）。
-          const at = snapStairToCellGrid(gridPos, toolbarDrag.angleDeg);
+          // P-1-fix10: 実在の手摺が作る枡へ吸着（無ければ 600×1800 の格子）。
+          //   ゴースト(onMove)とまったく同じ関数・同じ引数なので位置が必ず一致する。
+          const at = snapStairToCell(gridPos, toolbarDrag.angleDeg, canvasData.handrails);
           useCanvasStore.getState().addStair({
             id: uuidv4(), x: at.x, y: at.y,
             angleDeg: toolbarDrag.angleDeg, flip: toolbarDrag.flip, floor: activeFloor,
@@ -720,7 +722,7 @@ export default function PartSelector() {
           階段 600×1800
         </button>
       </div>
-      <p className="text-[10px] text-dimension">600×1800 の区画にぴったり納まる位置へ吸着します</p>
+      <p className="text-[10px] text-dimension">手摺で囲まれた枡へ吸着します（枡が無い場所では 600×1800 の格子へ）</p>
     </div>
   );
 
