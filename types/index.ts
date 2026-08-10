@@ -487,6 +487,12 @@ export type CanvasData = {
   stairs?: Stair[];
   /** 単管 (= P-1、 undefined は既存プロジェクト互換、 normalize で [] に正規化) */
   pipes?: Pipe[];
+  /**
+   * キャンバス直下の手動部材 (= E-8-v5a、 undefined は既存互換、 normalize で [] に正規化)。
+   * 立面ビューに所属せず、キャンバスの絶対座標に住む。実寸で描く。
+   * 既存の elevationViews[].parts の手動部材は移行しない（今までどおり動く）。
+   */
+  freeParts?: import('@/lib/konva/freeParts').FreePart[];
 };
 
 /**

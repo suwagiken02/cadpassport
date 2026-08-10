@@ -101,7 +101,7 @@ function renderPrim(p: ElevationPrimitive, i: number, S: ToScreen, pxPerGrid: nu
  * 対話版の描画。ローカル座標のままノードを作る（Group の変換が画面へ写す）。
  * `s` は Group の拡大率（= pxPerGrid）で、線幅・文字サイズを px 固定に戻すために使う。
  */
-function renderPrimLocal(
+export function renderPrimLocal(
   p: ElevationPrimitive, key: string | number, s: number,
   opts: { selected: boolean; overridden: boolean; interactive: boolean },
 ) {
@@ -180,7 +180,7 @@ function renderPrimLocal(
  * E-8-v2f: 同じ部材のプリミティブ（太線＋丸ハンドル・帯＋輪郭）をひとまとめにする。
  * partsToPrimitives は 1 部材分を連続で出すので、meta.id の「連なり」で切ればよい。
  */
-function groupByPartId(prims: ElevationPrimitive[]): { id?: string; from: number; items: ElevationPrimitive[] }[] {
+export function groupByPartId(prims: ElevationPrimitive[]): { id?: string; from: number; items: ElevationPrimitive[] }[] {
   const out: { id?: string; from: number; items: ElevationPrimitive[] }[] = [];
   prims.forEach((p, i) => {
     const id = p.meta?.id;

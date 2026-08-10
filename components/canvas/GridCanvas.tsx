@@ -28,6 +28,7 @@ import RidgeLineLayer from './RidgeLineLayer';
 import DirectionPad from './DirectionPad';
 import { directionInputColors } from '@/lib/directionInputLabels';
 import ElevationViewLayer from './ElevationViewLayer';
+import FreePartLayer from './FreePartLayer';
 import { applyRoofShapeRidge } from '@/components/building/roofShapeApply';
 import ScaffoldStartLayer from './ScaffoldStartLayer';
 import CompassWidget from './CompassWidget';
@@ -656,6 +657,9 @@ export default function GridCanvas({ width, height }: Props) {
 
       {/* 立面ビューレイヤー (= E-4b、 キャンバスに配置した立面。ドラッグ移動・選択・消去) */}
       <ElevationViewLayer />
+
+      {/* キャンバス直下の手動部材 (= E-8-v5a、 立面ビューに所属しない・実寸) */}
+      <FreePartLayer />
 
       {/* メモレイヤー */}
       <MemoLayer />

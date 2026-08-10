@@ -40,6 +40,7 @@ import { rematchElevationEdits } from '@/lib/konva/elevation/elevationRematch';
 import { carryOverElevationView, mergeElevationViews } from '@/lib/konva/elevation/elevationCarryOver';
 import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
 import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
+import { moveFreePart } from '@/lib/konva/freeParts';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -63,6 +64,7 @@ const createEmptyCanvasData = (): CanvasData => ({
   elevationViews: [],
   stairs: [],
   pipes: [],
+  freeParts: [],
 });
 
 /** 互換: 旧プロジェクトで欠落しているフィールドを補完する */
@@ -84,6 +86,7 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
     elevationViews: data.elevationViews ?? [],
     stairs: data.stairs ?? [],
     pipes: data.pipes ?? [],
+    freeParts: data.freeParts ?? [],
     dimensionOffsetsMm: data.dimensionOffsetsMm ?? { ...DEFAULT_DIMENSION_OFFSETS_MM },
   };
   // 旧 scaffoldStart → scaffoldStart1F / scaffoldStart2F への移行。
@@ -416,6 +419,10 @@ type CanvasStore = {
   addPipe: (p: import('@/types').Pipe) => void;
   /** 単管の長さ・角度を差し替える。 */
   updatePipe: (id: string, patch: { lengthMm?: number; angleDeg?: number }) => void;
+  // E-8-v5a: キャンバス直下の手動部材（立面ビューに所属しない）
+  addFreePart: (p: import('@/lib/konva/freeParts').FreePart) => void;
+  /** 1 本を差し替える（移動・回転の確定）。 */
+  setFreePart: (id: string, next: import('@/lib/konva/freeParts').FreePart) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1305,6 +1312,29 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  // === キャンバス直下の手動部材 (= E-8-v5a) ===
+  // 立面ビューに所属しないので、引き継ぎ・孤立判定・足場連の帰属はどれも要らない。
+  // 平面部材（階段・単管）とまったく同じ「配列に足す / 差し替える」だけ。
+  addFreePart: (p) => {
+    track('manual_edit', { kind: 'add_free_part' });
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, freeParts: [...(canvasData.freeParts ?? []), p] },
+      isDirty: true,
+    });
+  },
+  setFreePart: (id, next) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        freeParts: (canvasData.freeParts ?? []).map((p) => (p.id === id ? next : p)),
+      },
+      isDirty: true,
+    });
+  },
   clearScaffold: () => {
     const { canvasData, pushHistory } = get();
     if (canvasData.handrails.length === 0 && canvasData.posts.length === 0 && canvasData.antis.length === 0) return;
@@ -1750,6 +1780,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => e.id !== id),
         stairs: (canvasData.stairs ?? []).filter((s2) => s2.id !== id),
         pipes: (canvasData.pipes ?? []).filter((p) => p.id !== id),
+        // E-8-v5a: 手動部材は配列から取り除くだけ（自動生成ではないので墓標は要らない）。
+        freeParts: (canvasData.freeParts ?? []).filter((p) => p.id !== id),
         // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
         roofs: (canvasData.roofs ?? []).filter((r) => r.id !== id && r.buildingId !== id),
       },
@@ -1777,6 +1809,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         elevationViews: (canvasData.elevationViews ?? []).filter((e) => !idSet.has(e.id)),
         stairs: (canvasData.stairs ?? []).filter((s2) => !idSet.has(s2.id)),
         pipes: (canvasData.pipes ?? []).filter((p) => !idSet.has(p.id)),
+        freeParts: (canvasData.freeParts ?? []).filter((p) => !idSet.has(p.id)),
         // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
         roofs: (canvasData.roofs ?? []).filter((r) => !idSet.has(r.id) && !idSet.has(r.buildingId)),
       },
@@ -1821,6 +1854,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ),
         pipes: (canvasData.pipes ?? []).map((p) =>
           p.id === id ? { ...p, x: p.x + dx, y: p.y + dy } : p
+        ),
+        // E-8-v5a: 手動部材は自由座標なので、グリッドの移動量を mm へ直して足すだけ。
+        freeParts: (canvasData.freeParts ?? []).map((p) =>
+          p.id === id ? moveFreePart(p, dx, dy) : p
         ),
       },
       isDirty: true,
