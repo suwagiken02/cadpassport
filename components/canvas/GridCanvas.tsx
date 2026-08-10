@@ -646,6 +646,9 @@ export default function GridCanvas({ width, height }: Props) {
       {/* 足場部材レイヤー（手摺・支柱・アンチ） */}
       <ScaffoldLayer />
 
+      {/* 平面の追加部材（階段・単管・P-1）。手摺・支柱・アンチと同じ扱い。 */}
+      <PlanePartLayer />
+
       {/* 離れ表示レイヤー */}
       <KidareLayer />
 
