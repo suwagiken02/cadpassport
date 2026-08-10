@@ -102,7 +102,7 @@ describe('立面ビューの背景の外に置いた部材が切れない（既�
   /** 背景は原点まわりの小さな絵。部材だけ遠くに置いてある立面ビュー。 */
   const viewWithFarPart = (): ElevationView => ({
     id: 'v1', face: 'north', originGrid: { x: 0, y: 0 }, scale: 1,
-    primitives: [{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 0, stroke: '#fff' }],
+    primitives: [{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 0, stroke: '#fff', width: 1 }],
     parts: [{
       id: 'manual:rail:1', kind: 'rail', scaffoldIndex: 0, origin: 'manual',
       x0Mm: 20000, x1Mm: 21800, levelMm: 3000,
@@ -119,7 +119,7 @@ describe('立面ビューの背景の外に置いた部材が切れない（既�
   it('部材の無い旧ビューは従来どおり背景だけ', () => {
     const plain: ElevationView = {
       id: 'v2', face: 'north', originGrid: { x: 0, y: 0 }, scale: 1,
-      primitives: [{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 0, stroke: '#fff' }],
+      primitives: [{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 0, stroke: '#fff', width: 1 }],
     } as ElevationView;
     const b = computeContentBounds(base({ elevationViews: [plain] }))!;
     expect(b).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
