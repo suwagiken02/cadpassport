@@ -10,6 +10,7 @@
 // ============================================================
 import type { CanvasData, BuildingShape, HeightMarker, Point } from '@/types';
 import { getOutlinePolygon } from '@/lib/konva/heightMarkerUtils';
+import { freePartAnchorGrid } from '@/lib/konva/freeParts';
 
 export type SelectRect = { x: number; y: number; w: number; h: number };
 
@@ -39,6 +40,11 @@ export function collectIdsInRect(canvasData: CanvasData, rect: SelectRect): stri
   for (const a of canvasData.antis) if (inRect(a)) ids.push(a.id);
   for (const s of canvasData.stairs ?? []) if (inRect(s)) ids.push(s.id);
   for (const p of canvasData.pipes ?? []) if (inRect(p)) ids.push(p.id);
+  // E-8-v5a: キャンバス直下の手動部材は基準点（置いたときに指した点）で判定する。
+  for (const fp of canvasData.freeParts ?? []) {
+    const a = freePartAnchorGrid(fp);
+    if (a && inRect(a)) ids.push(fp.id);
+  }
   for (const m of canvasData.memos) if (inRect(m)) ids.push(m.id);
   for (const mp of canvasData.magnetPins ?? []) if (inRect(mp)) ids.push(mp.id);
   for (const ev of canvasData.elevationViews ?? []) if (inRect(ev.originGrid)) ids.push(ev.id);

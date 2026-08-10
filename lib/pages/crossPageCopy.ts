@@ -13,6 +13,7 @@ import type {
   CanvasData, BuildingShape, RoofOverhang, Roof, Obstacle, Handrail, Post, Anti, Memo,
   HeightMarker, RidgeLine, ElevationView, MagnetPin, Point, Stair, Pipe,
 } from '@/types';
+import { freePartAnchorGrid, moveFreePart, type FreePart } from '@/lib/konva/freeParts';
 import { v4 as uuidv4 } from 'uuid';
 
 /** 別ページ/クリップボード用オブジェクト群（CanvasData の配列サブセット）。 */
@@ -31,13 +32,15 @@ export type CrossPagePayload = {
   magnetPins: MagnetPin[];
   stairs: Stair[];
   pipes: Pipe[];
+  /** キャンバス直下の手動部材 (= E-8-v5a)。 */
+  freeParts: FreePart[];
 };
 
 function emptyPayload(): CrossPagePayload {
   return {
     buildings: [], roofOverhangs: [], roofs: [], obstacles: [], handrails: [], posts: [],
     antis: [], memos: [], heightMarkers: [], ridgeLines: [], elevationViews: [], magnetPins: [],
-    stairs: [], pipes: [],
+    stairs: [], pipes: [], freeParts: [],
   };
 }
 
@@ -98,6 +101,7 @@ export function collectSelectionSubset(
   pushSelected(canvasData.magnetPins ?? [], subset.magnetPins);
   pushSelected(canvasData.stairs ?? [], subset.stairs);
   pushSelected(canvasData.pipes ?? [], subset.pipes);
+  pushSelected(canvasData.freeParts ?? [], subset.freeParts);
 
   return { subset, sourceIds, origin: subsetOrigin(subset) };
 }
@@ -115,6 +119,7 @@ function subsetOrigin(s: CrossPagePayload): Point {
   for (const mp of s.magnetPins) see(mp.x, mp.y);
   for (const st of s.stairs) see(st.x, st.y);
   for (const pp of s.pipes) see(pp.x, pp.y);
+  for (const fp of s.freeParts) { const a = freePartAnchorGrid(fp); if (a) see(a.x, a.y); }
   for (const ev of s.elevationViews) see(ev.originGrid.x, ev.originGrid.y);
   for (const rl of s.ridgeLines) { see(rl.p1.x, rl.p1.y); see(rl.p2.x, rl.p2.y); }
   return Number.isFinite(minX) ? { x: minX, y: minY } : { x: 0, y: 0 };
@@ -161,6 +166,8 @@ export function instantiateSubset(
   for (const mp of subset.magnetPins) out.magnetPins.push({ ...clone(mp), id: genId(), x: mp.x + offset.x, y: mp.y + offset.y });
   for (const st of subset.stairs) out.stairs.push({ ...clone(st), id: genId(), x: st.x + offset.x, y: st.y + offset.y });
   for (const pp of subset.pipes) out.pipes.push({ ...clone(pp), id: genId(), x: pp.x + offset.x, y: pp.y + offset.y });
+  // E-8-v5a: 手動部材は自由座標なので、グリッドのオフセットを mm へ直して足す。
+  for (const fp of subset.freeParts) out.freeParts.push({ ...moveFreePart(clone(fp), offset.x, offset.y), id: genId() });
 
   return out;
 }
@@ -170,7 +177,7 @@ export function payloadIds(p: CrossPagePayload): string[] {
   return [
     ...p.buildings, ...p.roofOverhangs, ...p.roofs, ...p.obstacles, ...p.handrails, ...p.posts,
     ...p.antis, ...p.memos, ...p.heightMarkers, ...p.ridgeLines, ...p.elevationViews, ...p.magnetPins,
-    ...p.stairs, ...p.pipes,
+    ...p.stairs, ...p.pipes, ...p.freeParts,
   ].map((o) => o.id);
 }
 
@@ -205,6 +212,7 @@ export function mergePayloadIntoCanvas(canvasData: CanvasData, payload: CrossPag
     magnetPins: [...(canvasData.magnetPins ?? []), ...payload.magnetPins],
     stairs: [...(canvasData.stairs ?? []), ...payload.stairs],
     pipes: [...(canvasData.pipes ?? []), ...payload.pipes],
+    freeParts: [...(canvasData.freeParts ?? []), ...payload.freeParts],
   };
 }
 

@@ -32,6 +32,8 @@ export function canvasDataIsEmpty(cv: CanvasData | null | undefined): boolean {
     cv.roofOverhangs?.length ?? 0,
     cv.stairs?.length ?? 0,
     cv.pipes?.length ?? 0,
+    // E-8-v5a: 手動部材だけのページ（立面も建物も無い）を「空」と誤判定しない。
+    cv.freeParts?.length ?? 0,
   ];
   return counts.every((n) => n === 0);
 }

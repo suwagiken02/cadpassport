@@ -49,6 +49,8 @@ export default function MoveSelectRangePanel() {
         // P-1: 階段・単管も足場カテゴリ（手摺・支柱・アンチと同じ扱い）。
         ...(canvasData.stairs ?? []).map(s => s.id),
         ...(canvasData.pipes ?? []).map(p => p.id),
+        // E-8-v5a: キャンバス直下の手動部材も足場カテゴリ。
+        ...(canvasData.freeParts ?? []).map(p => p.id),
       );
     }
     if (categories.building) ids.push(...canvasData.buildings.map(b => b.id));

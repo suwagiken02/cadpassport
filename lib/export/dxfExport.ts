@@ -1,6 +1,7 @@
 import { CanvasData } from '@/types';
 import { gridToMm } from '@/lib/konva/gridUtils';
 import { getHandrailEndpoints } from '@/lib/konva/snapUtils';
+import { freePartsToPrimitives } from '@/lib/konva/freeParts';
 
 export const exportToDxf = (canvasData: CanvasData, siteName: string): void => {
   // DXFファイルを手動構築（dxf-writerのAPIに依存）
@@ -22,6 +23,8 @@ export const exportToDxf = (canvasData: CanvasData, siteName: string): void => {
     { name: 'OBSTACLE', color: 3 },
     { name: 'DIMENSION', color: 8 },
     { name: 'MEMO', color: 7 },
+    // E-8-v5a: キャンバス直下の手動部材。
+    { name: 'FREEPART', color: 6 },
   ];
 
   layers.forEach((layer) => {
@@ -92,6 +95,29 @@ export const exportToDxf = (canvasData: CanvasData, siteName: string): void => {
   canvasData.memos.forEach((m) => {
     dxf += '0\nTEXT\n8\nMEMO\n';
     dxf += `10\n${gridToMm(m.x)}\n20\n${gridToMm(m.y)}\n40\n30\n1\n${m.text}\n`;
+  });
+
+  // キャンバス直下の手動部材 (= E-8-v5a)。描かれる線をそのまま LINE で出す。
+  // 座標は画面と同じグリッドなので、他の要素と同じ gridToMm でよい。
+  freePartsToPrimitives(canvasData.freeParts ?? []).forEach((p) => {
+    const seg = (x1: number, y1: number, x2: number, y2: number) => {
+      dxf += '0\nLINE\n8\nFREEPART\n';
+      dxf += `10\n${gridToMm(x1)}\n20\n${gridToMm(y1)}\n`;
+      dxf += `11\n${gridToMm(x2)}\n21\n${gridToMm(y2)}\n`;
+    };
+    if (p.kind === 'line') seg(p.x1, p.y1, p.x2, p.y2);
+    else if (p.kind === 'rect') {
+      seg(p.x, p.y, p.x + p.w, p.y);
+      seg(p.x + p.w, p.y, p.x + p.w, p.y + p.h);
+      seg(p.x + p.w, p.y + p.h, p.x, p.y + p.h);
+      seg(p.x, p.y + p.h, p.x, p.y);
+    } else if (p.kind === 'polygon' && p.points.length >= 4) {
+      for (let k = 0; k < p.points.length; k += 2) {
+        const n = (k + 2) % p.points.length;
+        seg(p.points[k], p.points[k + 1], p.points[n], p.points[n + 1]);
+      }
+    }
+    // circle（端キャップ）と text は線ではないので出さない。
   });
 
   dxf += '0\nENDSEC\n0\nEOF\n';

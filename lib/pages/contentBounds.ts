@@ -6,6 +6,8 @@
 import type { CanvasData } from '@/types';
 import { elevationPrimitivesBounds } from './quadLayout';
 import { pipeEndpointsGrid, stairCornersGrid } from '@/lib/konva/planeParts';
+import { freePartsBoundsGrid } from '@/lib/konva/freeParts';
+import { partsToPrimitives } from '@/lib/konva/elevation/elevationParts';
 
 export type GridBounds = { minX: number; minY: number; maxX: number; maxY: number };
 
@@ -29,8 +31,17 @@ export function computeContentBounds(cv: CanvasData): GridBounds | null {
   for (const m of cv.memos) see(m.x, m.y);
   for (const mp of cv.magnetPins ?? []) see(mp.x, mp.y);
   for (const rl of cv.ridgeLines ?? []) { see(rl.p1.x, rl.p1.y); see(rl.p2.x, rl.p2.y); }
+  // E-8-v5a: キャンバス直下の手動部材（立面ビューに所属しない）。
+  const fb = freePartsBoundsGrid(cv.freeParts);
+  if (fb) { see(fb.minX, fb.minY); see(fb.maxX, fb.maxY); }
   for (const ev of cv.elevationViews ?? []) {
-    const lb = elevationPrimitivesBounds(ev.primitives);
+    // E-8-v5a: 背景プリミティブしか見ていなかったため、背景（建物・足場の絵）の外へ
+    //   置いた手動部材がページの範囲に入らず、PDF/画像の枠から切れていた。
+    //   実際に描かれるものを全部見る（ElevationViewLayer の localBounds と同じ合わせ方）。
+    const prims = ev.parts && ev.geom
+      ? [...ev.primitives, ...partsToPrimitives({ parts: ev.parts, geom: ev.geom })]
+      : ev.primitives;
+    const lb = elevationPrimitivesBounds(prims);
     if (!lb) continue;
     see(ev.originGrid.x + lb.minX * ev.scale, ev.originGrid.y + lb.minY * ev.scale);
     see(ev.originGrid.x + lb.maxX * ev.scale, ev.originGrid.y + lb.maxY * ev.scale);

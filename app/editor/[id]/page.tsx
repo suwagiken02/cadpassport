@@ -266,8 +266,10 @@ export default function EditorPage() {
 
   // 起動時自動全範囲表示 (= #1): コンテンツ + canvasSize 確定後、 drawingId ごとに 1 回。
   // E-6f: 建物レス(立面のみ等)ページも対象にするためコンテンツ総数で判定・content 基準にフィット。
+  // E-8-v5a: 手動部材だけのページ（建物も立面も無い）でも全体表示が効くように数に入れる。
   const contentCount = canvasData.buildings.length + (canvasData.elevationViews?.length ?? 0)
-    + canvasData.obstacles.length + canvasData.memos.length;
+    + canvasData.obstacles.length + canvasData.memos.length
+    + (canvasData.freeParts?.length ?? 0);
   useEffect(() => {
     if (!drawingId) return;
     if (canvasSize.width === 0 || canvasSize.height === 0) return;
