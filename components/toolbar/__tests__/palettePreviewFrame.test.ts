@@ -37,11 +37,49 @@ function svgOf(element: React.ReactElement): Record<string, unknown> {
   throw new Error('svg が見つからない');
 }
 
+/** pointerdown を起こす（capture 呼び出しを記録する偽イベント）。 */
+function firePointerDown(props: Record<string, unknown>, pointerId = 7) {
+  const captured: number[] = [];
+  const e = {
+    pointerId,
+    currentTarget: { setPointerCapture: (id: number) => { captured.push(id); } },
+  };
+  (props.onPointerDown as (ev: unknown) => void)(e);
+  return { captured, e };
+}
+
 describe('姿図の枠は 1 つ（手摺・階段・単管で共有）', () => {
   it('枠は掴める（onPointerDown を必ず持つ）', () => {
-    const drag = () => {};
-    const props = svgOf(h(PalettePreviewFrame, { onDragOut: drag, children: null }));
-    expect(props.onPointerDown).toBe(drag);
+    const props = svgOf(h(PalettePreviewFrame, { onDragOut: () => {}, children: null }));
+    expect(typeof props.onPointerDown).toBe('function');
+  });
+
+  it('掴んだらポインタを捕まえる（要素の外へ出ても切れない）', () => {
+    const props = svgOf(h(PalettePreviewFrame, { onDragOut: () => {}, children: null }));
+    expect(firePointerDown(props, 42).captured).toEqual([42]);
+  });
+
+  it('捕まえたうえで、ドラッグ開始の処理も必ず呼ぶ', () => {
+    const seen: unknown[] = [];
+    const props = svgOf(h(PalettePreviewFrame, { onDragOut: (ev: unknown) => seen.push(ev), children: null }));
+    const { captured, e } = firePointerDown(props);
+    expect(captured).toHaveLength(1);
+    expect(seen).toEqual([e]);
+  });
+
+  it('捕獲に失敗する環境でもドラッグ開始は止めない', () => {
+    const seen: unknown[] = [];
+    const props = svgOf(h(PalettePreviewFrame, { onDragOut: (ev: unknown) => seen.push(ev), children: null }));
+    const e = {
+      pointerId: 1,
+      currentTarget: { setPointerCapture: () => { throw new Error('unsupported'); } },
+    };
+    expect(() => (props.onPointerDown as (ev: unknown) => void)(e)).not.toThrow();
+    expect(seen).toEqual([e]);
+  });
+
+  it('掴めない姿図（onDragOut 無し）には何も付けない', () => {
+    expect(svgOf(h(PalettePreviewFrame, { children: null })).onPointerDown).toBeUndefined();
   });
 
   it('枠の見た目・大きさ・タッチ設定は手摺のものそのまま', () => {
@@ -68,16 +106,25 @@ describe('姿図の枠は 1 つ（手摺・階段・単管で共有）', () => {
 });
 
 describe('階段・単管の姿図も掴める', () => {
-  it('階段の姿図にドラッグ開始が渡っている', () => {
-    const drag = () => {};
-    expect(svgOf(h(StairPreview, { angleDeg: 90, flip: true, onDragOut: drag })).onPointerDown)
-      .toBe(drag);
+  it('階段の姿図は掴むとポインタを捕まえ、ドラッグ開始を呼ぶ', () => {
+    const seen: unknown[] = [];
+    const props = svgOf(h(StairPreview, { angleDeg: 90, flip: true, onDragOut: (e: unknown) => seen.push(e) }));
+    expect(firePointerDown(props, 3).captured).toEqual([3]);
+    expect(seen).toHaveLength(1);
   });
 
-  it('単管の姿図にドラッグ開始が渡っている', () => {
-    const drag = () => {};
-    expect(svgOf(h(PipePreview, { lengthMm: 6000, angleDeg: 45, onDragOut: drag })).onPointerDown)
-      .toBe(drag);
+  it('単管の姿図は掴むとポインタを捕まえ、ドラッグ開始を呼ぶ', () => {
+    const seen: unknown[] = [];
+    const props = svgOf(h(PipePreview, { lengthMm: 6000, angleDeg: 45, onDragOut: (e: unknown) => seen.push(e) }));
+    expect(firePointerDown(props, 4).captured).toEqual([4]);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('手摺の姿図も同じ枠なので同じように捕まえる', () => {
+    const seen: unknown[] = [];
+    const props = svgOf(h(PalettePreviewFrame, { onDragOut: (e: unknown) => seen.push(e), children: null }));
+    expect(firePointerDown(props, 5).captured).toEqual([5]);
+    expect(seen).toHaveLength(1);
   });
 
   it('枠は手摺と同じ（大きさ・クラス名・タッチ設定）', () => {
@@ -119,6 +166,27 @@ describe('パレットの選択状態がドラッグに乗る', () => {
 
   it('単管のドラッグは長さ・角度を運ぶ', () => {
     expect(src).toMatch(/type: 'pipe', lengthMm, angleDeg: pipeAngle/);
+  });
+
+  it('ドラッグ中の pointermove / pointerup は window で拾う（要素の外でも届く）', () => {
+    expect(src).toMatch(/window\.addEventListener\('pointermove', onMove\)/);
+    expect(src).toMatch(/window\.addEventListener\('pointerup', onUp\)/);
+  });
+
+  it('pointerleave / pointercancel でドラッグを終わらせていない', () => {
+    expect(src).not.toMatch(/pointerleave/);
+    // pointercancel でドラッグ状態を捨てる箇所は無い（パネル移動用は別ファイル）
+    expect(src).not.toMatch(/pointercancel[^]{0,200}setToolbarDrag\(null\)/);
+  });
+
+  it('キャンバス側のドロップは階段・単管の種別を知っている', () => {
+    expect(src).toMatch(/toolbarDrag\.type === 'stair'[^]*?addStair\(/);
+    expect(src).toMatch(/toolbarDrag\.type === 'pipe'[^]*?addPipe\(/);
+  });
+
+  it('単管の任意長さの入力欄が、長さの並びにある', () => {
+    // 角度行の下に置くと姿図に押し下げられて見えなくなる（P-1-fix6 の実機指摘）
+    expect(src).toMatch(/PIPE_PRESET_LENGTHS_MM\.map[^]*?<NumInput[^]*?clampPipeLengthMm[^]*?<AnglePickerRow/);
   });
 
   it('姿図が枠を通さず直接 svg を書いている箇所は無い（配線の抜けを作らない）', () => {

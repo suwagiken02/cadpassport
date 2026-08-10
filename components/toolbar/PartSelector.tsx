@@ -704,8 +704,11 @@ export default function PartSelector() {
   const pipePanel = (
     <div className="space-y-2">
       <p className="text-xs text-dimension">ドラッグしてキャンバスに配置</p>
-      {/* 長さ: 値は単管固有(1〜6m)だが、並び・見た目は手摺の長さボタン列と揃える。 */}
-      <div className="flex gap-1.5 overflow-x-auto sm:flex-wrap">
+      {/* 長さ: 値は単管固有(1〜6m)だが、並び・見た目は手摺の長さボタン列と揃える。
+          任意長さの入力もこの並びに置く (= P-1-fix6)。角度行の下に置いていたら、
+          姿図(80px)に押し下げられてパネルの見えている範囲から外れ、
+          実機では「入力欄が無い」に見えていた。長さは長さの場所で入れる。 */}
+      <div className="flex gap-1.5 overflow-x-auto sm:flex-wrap items-center">
         {PIPE_PRESET_LENGTHS_MM.map((mm) => (
           <button key={`pp-${mm}`}
             onClick={() => setPipeLengthMm(mm)}
@@ -715,6 +718,13 @@ export default function PartSelector() {
             }`}
           >{mm / 1000}m</button>
         ))}
+        <NumInput
+          value={pipeLengthMm}
+          onChange={(v) => setPipeLengthMm(clampPipeLengthMm(v))}
+          min={PIPE_MIN_LENGTH_MM}
+          className="w-20 shrink-0 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
+        />
+        <span className="text-[10px] text-dimension shrink-0">mm</span>
       </div>
       {/* 角度: 手摺と同じ部品。姿図は P-1-fix の仕組み（キャンバスと同じ描画関数）のまま。 */}
       <AnglePickerRow
@@ -731,16 +741,7 @@ export default function PartSelector() {
           />
         )}
       />
-      {/* 任意長さ（既製品以外）。 */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] text-dimension">長さ</span>
-        <NumInput
-          value={pipeLengthMm}
-          onChange={(v) => setPipeLengthMm(clampPipeLengthMm(v))}
-          min={PIPE_MIN_LENGTH_MM}
-          className="w-20 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
-        />
-        <span className="text-[10px] text-dimension">mm</span>
         <button
           onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"

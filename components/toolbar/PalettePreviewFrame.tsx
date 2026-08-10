@@ -37,13 +37,34 @@ type Props = {
 export default function PalettePreviewFrame({
   size = PREVIEW_FRAME_SIZE, viewBox, onDragOut, children,
 }: Props) {
+  /**
+   * 掴んだ瞬間にポインタをこの要素へ捕まえる (= P-1-fix6)。
+   *
+   * 捕まえていないと、ポインタが要素の外（＝パレットの外）へ出た時点で
+   * 以降のイベントの行き先がブラウザの当たり判定任せになる。上に別の要素が
+   * 乗っていたり、要素が再描画で作り直されたりすると、そこでドラッグが切れる。
+   * 捕まえておけば pointermove / pointerup は必ず届き続ける
+   * （捕まえた要素まで飛んだあと window まで上がるので、既存の window 側の
+   *   リスナーはそのまま効く＝ドロップの処理は変えなくてよい）。
+   *
+   * 掴む → 離す までを枠が一貫して面倒を見るので、部材ごとに書き分けない。
+   */
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 未対応・捕獲不可（既に別要素が捕まえている等）でも、従来どおり window 側で拾う
+    }
+    onDragOut?.(e);
+  };
+
   return (
     <svg
       width={size} height={size}
       {...(viewBox ? { viewBox } : {})}
       className={PREVIEW_FRAME_CLASS}
       style={{ touchAction: 'none' }}
-      onPointerDown={onDragOut}
+      onPointerDown={onDragOut ? onPointerDown : undefined}
     >
       {children}
     </svg>
