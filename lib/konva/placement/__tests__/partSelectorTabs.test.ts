@@ -41,6 +41,15 @@ describe('部材メニューのタブ', () => {
 
   it('立面タブは立面が無いページでも開ける（案内を出す）', () => {
     expect(SRC).toContain("if (paletteTab === 'elevation')");
-    expect(SRC).toContain('立面図がありません');
+    // E-8-v5a-fix: 立面図が無くてもキャンバスに直接置けるようになったので、
+    //   「立面図がありません。📐 から配置してください」は嘘になった。
+    expect(SRC).not.toContain('立面図がありません');
+    expect(SRC).toContain('キャンバスに直接置きます');
+  });
+
+  it('置き先の案内は「選択中のビュー」だけを指す（実際の置き先と一致）', () => {
+    // 最後に触ったビューを案内すると、選んでいないのに「北面に置きます」と嘘をつく
+    expect(SRC).toMatch(/const selectedView = elevViews\.find\(\(v\) => selectedIds\.includes\(v\.id\)\);/);
+    expect(SRC).not.toMatch(/targetViewLabel = .*lastElevationViewId/);
   });
 });

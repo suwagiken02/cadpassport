@@ -121,9 +121,11 @@ export default function PartSelector() {
   const FACE_LABEL: Record<string, string> = {
     north: '北面', south: '南面', east: '東面', west: '西面',
   };
-  const targetView = elevViews.find((v) => selectedIds.includes(v.id))
-    ?? elevViews.find((v) => v.id === lastElevationViewId) ?? elevViews[0];
-  const targetViewLabel = targetView ? (FACE_LABEL[targetView.face] ?? '立面') : null;
+  // E-8-v5a-fix: 置き先の案内は**実際の置き先**に合わせる。
+  //   部材がビューに入るのは「そのビューを選択しているとき」だけで、選んでいなければ
+  //   キャンバス直下(freeParts)に置かれる。最後に触ったビューを案内すると嘘になる。
+  const selectedView = elevViews.find((v) => selectedIds.includes(v.id));
+  const targetViewLabel = selectedView ? (FACE_LABEL[selectedView.face] ?? '立面') : null;
 
   // E-8-v3c-fix3: タブは常に出す。立面が無いページで隠すと「タブが見当たらない」になる。
   const paletteTabs = (
@@ -565,7 +567,7 @@ export default function PartSelector() {
         <p className="text-[10px] text-dimension mb-2">
           {targetViewLabel
             ? `立面図の部材（${targetViewLabel}に置きます）`
-            : '立面図がありません。📐 から配置してください'}
+            : 'キャンバスに直接置きます（立面図を選ぶと、その図の部材になります）'}
         </p>
         <ElevationPartActions />
       </FloatingPanel>

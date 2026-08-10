@@ -13,10 +13,12 @@
 // ElevationViewLayer の renderPrimLocal）。ので「立面で置いた部材」と「キャンバスに
 // 置いた部材」が別物に見えることはない。
 //
-// 置き先の切り分け（既存の立面編集を一切変えないための約束）:
-//   ・立面ビューを選択中にパレットで置く → 従来どおりそのビューの parts へ（現行のまま）
-//   ・どのビューも選択していないときに置く → ここ（freeParts）へ
+// 置き先の切り分け（既存の立面編集を一切変えないための約束）は placementGate.ts:
+//   ・立面ビューが受け取れる状態で選択中 → 従来どおりそのビューの parts へ（現行のまま）
+//   ・それ以外                          → ここ（freeParts）へ
 // つまり今まで「何も起きなかった」操作だけを拾う。既存の動きは素通しする。
+// 置けるかは mode に依らない（= E-8-v5a-fix）。平面部材と同じで、開いた直後
+// （閲覧モード）から置ける。部材の選択・移動は他の部材と同じ条件（選択モード）。
 // ============================================================
 import React, { useEffect, useMemo, useState } from 'react';
 import { Layer, Group, Rect } from 'react-konva';
@@ -24,6 +26,7 @@ import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
+import { canPlaceFreePart } from '@/lib/konva/elevation/placementGate';
 import {
   GRID_MM, movePart, type ElevationPart,
 } from '@/lib/konva/elevation/elevationParts';
@@ -69,16 +72,21 @@ export default function FreePartLayer() {
   const parts = useMemo(() => freeParts ?? [], [freeParts]);
   const gridPx = INITIAL_GRID_PX * zoom;
 
-  const plain = isPlainSelectMode({
+  const flags = {
     mode, isHeightMarkerMode, isRidgeLineMode, isMeasuring, isMagnetPinMode,
     isAreaDesignationMode, isReorderMode,
     moveSelectActive: mode === 'move-select',
     pendingTargetType,
-  });
-  const interactive = (plain && selectActive) || mode === 'erase';
+  };
+  const interactive = (isPlainSelectMode(flags) && selectActive) || mode === 'erase';
   /** 立面ビューを選択中は、従来どおりそのビューが配置を受け持つ。 */
   const viewSelected = (views ?? []).some((v) => selectedIds.includes(v.id));
-  const placing = interactive && !!addTool && addTool !== 'text' && !viewSelected;
+  /**
+   * 置けるかは **mode に依らない**（= E-8-v5a-fix）。平面部材と同じ流儀。
+   * 以前は素の選択モードを要求していたため、mode の既定 'view'（開いた直後の
+   * 閲覧モード）では置き場所の面が出ず、まっさらなキャンバスに置けなかった。
+   */
+  const placing = canPlaceFreePart({ addTool, flags, selectActive, viewSelected });
 
   const prims = useMemo(() => freePartsToPrimitives(parts), [parts]);
   const groups = useMemo(() => groupByPartId(prims), [prims]);
