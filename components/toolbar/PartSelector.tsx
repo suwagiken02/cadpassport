@@ -18,6 +18,7 @@ import {
 import NumInput from '@/components/ui/NumInput';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
 import { ANGLE_PRESETS, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
+import { PipePreview, StairPreview } from './PlanePartPreview';
 
 /** アンチの既定サイズセット（手摺と intersect してパレット表示する）。規格別。 */
 const ANTI_BASE_LENGTHS_METRIC: number[] = [1800, 1200, 900, 600, 400];
@@ -702,13 +703,20 @@ export default function PartSelector() {
           }`}
         >⇅ 上り反転</button>
       </div>
-      <button
-        onPointerDown={handleStairDown}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"
-      >
-        <span className="inline-block w-3 h-5 rounded-sm bg-gray-400 border border-gray-600" />
-        階段 600×1800
-      </button>
+      {/* 姿図（掴んで引き出せる）。向き・上り反転がそのまま絵に出る (= P-1-fix)。 */}
+      <div className="flex items-center gap-2">
+        <StairPreview
+          angleDeg={stairAngle} flip={stairFlip}
+          className="bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none shrink-0"
+          onPointerDown={handleStairDown}
+        />
+        <button
+          onPointerDown={handleStairDown}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"
+        >
+          階段 600×1800
+        </button>
+      </div>
       <p className="text-[10px] text-dimension">600×1800 の区画にぴったり納まる位置へ吸着します</p>
     </div>
   );
@@ -746,13 +754,20 @@ export default function PartSelector() {
         />
         <span className="text-[10px] text-dimension">°</span>
       </div>
-      <button
-        onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"
-      >
-        <span className="inline-block w-5 h-0.5 bg-gray-400 rotate-45" />
-        単管 {pipeLengthMm}mm / {pipeAngle}°
-      </button>
+      {/* 姿図。長さは 6m を枠いっぱいとした相対の長さで出る (= P-1-fix)。 */}
+      <div className="flex items-center gap-2">
+        <PipePreview
+          lengthMm={pipeLengthMm} angleDeg={pipeAngle}
+          className="bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none shrink-0"
+          onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
+        />
+        <button
+          onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"
+        >
+          単管 {pipeLengthMm}mm / {pipeAngle}°
+        </button>
+      </div>
       <p className="text-[10px] text-dimension">スナップしません（どこにでも置けます）</p>
     </div>
   );

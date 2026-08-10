@@ -16,15 +16,14 @@ import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import {
-  pipeEndpointsGrid, stairArrowGrid, stairFootprintGrid, stairTreadLinesGrid,
+  PLANE_PART_COLORS, pipeEndpointsGrid, stairArrowGrid, stairFootprintGrid, stairTreadLinesGrid,
 } from '@/lib/konva/planeParts';
 
-/** 階段の色（現場の図面で使う灰系＋選択のオレンジ）。 */
-const STAIR_FILL = '#9CA3AF';
-const STAIR_STROKE = '#4B5563';
-const STAIR_ARROW = '#1F2937';
-/** 単管の色（鋼管の銀鼠）。 */
-const PIPE_COLOR = '#6B7280';
+/** 色は planeParts.ts（pure）が唯一の定義。パレットの姿図と必ず同じ絵になる。 */
+const STAIR_FILL = PLANE_PART_COLORS.stairFill;
+const STAIR_STROKE = PLANE_PART_COLORS.stairStroke;
+const STAIR_ARROW = PLANE_PART_COLORS.stairArrow;
+const PIPE_COLOR = PLANE_PART_COLORS.pipe;
 const SELECT_COLOR = '#FF6B35';
 
 export default function PlanePartLayer() {

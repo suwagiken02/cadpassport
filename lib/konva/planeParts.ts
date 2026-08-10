@@ -120,6 +120,22 @@ export function pipeEndpointsGrid(pipe: Pipe): [{ x: number; y: number }, { x: n
   ];
 }
 
+/**
+ * 階段・単管の色 (= P-1-fix)。
+ * キャンバス（PlanePartLayer）とパレットの姿図（PlanePartPreview）が
+ * 同じ定義を見るように、pure 側に 1 箇所だけ置く。
+ */
+export const PLANE_PART_COLORS = {
+  /** 階段の面。 */
+  stairFill: '#9CA3AF',
+  /** 階段の輪郭と段板の区切り。 */
+  stairStroke: '#4B5563',
+  /** 上る向きの矢印。 */
+  stairArrow: '#1F2937',
+  /** 単管（鋼管の銀鼠）。 */
+  pipe: '#6B7280',
+} as const;
+
 /** 単管の長さを実用範囲に丸める（任意長さの入力用）。 */
 export function clampPipeLengthMm(mm: number): number {
   if (!Number.isFinite(mm)) return PIPE_PRESET_LENGTHS_MM[0];
