@@ -376,7 +376,7 @@ export default function PartSelector() {
         const { zoom, panX, panY, canvasData: cv } = useCanvasStore.getState();
         const gridPos = screenToGrid(e.clientX - cr.left, e.clientY - cr.top, panX, panY, zoom);
         if (toolbarDrag.type === 'stair') {
-          // P-1-fix10: 実在の手摺が作る枡を優先。ゴーストと配置は同じ関数を通す。
+          // P-1-fix11: 辺が近くの手摺に沿う位置へ。ゴーストと配置は同じ関数を通す。
           const at = snapStairToCell(gridPos, toolbarDrag.angleDeg, cv.handrails);
           useCanvasStore.getState().setPlanePartPreview({
             kind: 'stair',
@@ -467,7 +467,7 @@ export default function PartSelector() {
           }
           addPost({ id: uuidv4(), x: snapX, y: snapY });
         } else if (toolbarDrag.type === 'stair') {
-          // P-1-fix10: 実在の手摺が作る枡へ吸着（無ければ 600×1800 の格子）。
+          // P-1-fix11: 辺が近くの手摺に沿う位置へ吸着（無ければ 600×1800 の格子）。
           //   ゴースト(onMove)とまったく同じ関数・同じ引数なので位置が必ず一致する。
           const at = snapStairToCell(gridPos, toolbarDrag.angleDeg, canvasData.handrails);
           useCanvasStore.getState().addStair({
@@ -723,7 +723,7 @@ export default function PartSelector() {
           階段 600×1800
         </button>
       </div>
-      <p className="text-[10px] text-dimension">手摺で囲まれた枡へ吸着します（枡が無い場所では 600×1800 の格子へ）</p>
+      <p className="text-[10px] text-dimension">近くの手摺に辺が沿う位置へ吸着します（手摺が無い場所では 600×1800 の格子へ）</p>
     </div>
   );
 
