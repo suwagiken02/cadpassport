@@ -17,8 +17,9 @@ import {
 } from '@/lib/konva/planeParts';
 import NumInput from '@/components/ui/NumInput';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
-import { ANGLE_PRESETS, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
+import { ANGLE_PRESETS, angleToDeg, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
 import { PipePreview, StairPreview } from './PlanePartPreview';
+import AnglePickerRow, { PREVIEW_FRAME_CLASS, PREVIEW_FRAME_SIZE } from './AnglePickerRow';
 
 /** アンチの既定サイズセット（手摺と intersect してパレット表示する）。規格別。 */
 const ANTI_BASE_LENGTHS_METRIC: number[] = [1800, 1200, 900, 600, 400];
@@ -602,54 +603,31 @@ export default function PartSelector() {
   );
 
   const ap = getAnglePreviewPoints(handrailAngle);
+  /** 手摺の姿図（従来どおり getAnglePreviewPoints の線分）。 */
+  const handrailPreview = (
+    <svg
+      width={ap.W} height={ap.H}
+      className={PREVIEW_FRAME_CLASS}
+      style={{ touchAction: 'none' }}
+      onPointerDown={(e) => handleHandrailDown(selectedHandrailLength, handrailAngle, e)}
+    >
+      <line x1={ap.cx - ap.dx} y1={ap.cy - ap.dy} x2={ap.cx + ap.dx} y2={ap.cy + ap.dy}
+        stroke="#378ADD" strokeWidth={3} strokeLinecap="round" />
+      <circle cx={ap.cx - ap.dx} cy={ap.cy - ap.dy} r={3} fill="#378ADD" />
+      <circle cx={ap.cx + ap.dx} cy={ap.cy + ap.dy} r={3} fill="#378ADD" />
+    </svg>
+  );
+  // P-1-fix4: この行は AnglePickerRow に切り出し、単管と共通の部品にした（見た目は不変）。
   const angleSelector = (
-    <div className="space-y-1.5">
-      <div className="flex gap-1 flex-wrap">
-        {ANGLE_PRESETS.map((p) => (
-          <button key={String(p.value)} onClick={() => setHandrailAngle(p.value)}
-            className={`px-2 py-1 rounded text-xs font-bold transition-colors ${
-              handrailAngle === p.value ? 'bg-accent text-white' : 'bg-dark-bg text-dimension border border-dark-border'
-            }`}
-          >{p.label}</button>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <svg
-          width={ap.W} height={ap.H}
-          className="bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none"
-          style={{ touchAction: 'none' }}
-          onPointerDown={(e) => handleHandrailDown(selectedHandrailLength, handrailAngle, e)}
-        >
-          <line x1={ap.cx - ap.dx} y1={ap.cy - ap.dy} x2={ap.cx + ap.dx} y2={ap.cy + ap.dy}
-            stroke="#378ADD" strokeWidth={3} strokeLinecap="round" />
-          <circle cx={ap.cx - ap.dx} cy={ap.cy - ap.dy} r={3} fill="#378ADD" />
-          <circle cx={ap.cx + ap.dx} cy={ap.cy + ap.dy} r={3} fill="#378ADD" />
-        </svg>
-        <div className="flex items-center gap-1">
-          <NumInput
-            value={typeof handrailAngle === 'number' ? handrailAngle : handrailAngle === 'horizontal' ? 0 : 90}
-            onChange={(v) => setHandrailAngle(v)}
-            min={0}
-            className="w-16 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
-          />
-          <span className="text-[10px] text-dimension">°</span>
-        </div>
-        <div className="flex gap-0.5">
-          <button onClick={() => setHandrailAngle((prev) => (typeof prev === 'number' ? prev : 0) - 10)}
-            className="px-2 py-1 rounded text-xs font-bold bg-dark-bg text-dimension border border-dark-border hover:border-accent/50 transition-colors"
-          >-10°</button>
-          <button onClick={() => setHandrailAngle((prev) => (typeof prev === 'number' ? prev : 0) - 1)}
-            className="px-2 py-1 rounded text-xs font-bold bg-dark-bg text-dimension border border-dark-border hover:border-accent/50 transition-colors"
-          >-1°</button>
-          <button onClick={() => setHandrailAngle((prev) => (typeof prev === 'number' ? prev : 0) + 1)}
-            className="px-2 py-1 rounded text-xs font-bold bg-dark-bg text-dimension border border-dark-border hover:border-accent/50 transition-colors"
-          >+1°</button>
-          <button onClick={() => setHandrailAngle((prev) => (typeof prev === 'number' ? prev : 0) + 10)}
-            className="px-2 py-1 rounded text-xs font-bold bg-dark-bg text-dimension border border-dark-border hover:border-accent/50 transition-colors"
-          >+10°</button>
-        </div>
-      </div>
-    </div>
+    <AnglePickerRow
+      presets={ANGLE_PRESETS}
+      isActive={(v) => handrailAngle === v}
+      onPreset={(v) => setHandrailAngle(v)}
+      numValue={typeof handrailAngle === 'number' ? handrailAngle : handrailAngle === 'horizontal' ? 0 : 90}
+      onNum={(v) => setHandrailAngle(v)}
+      onStep={(d) => setHandrailAngle((prev) => (typeof prev === 'number' ? prev : 0) + d)}
+      preview={handrailPreview}
+    />
   );
 
   const handrailButtons = (
@@ -703,11 +681,12 @@ export default function PartSelector() {
           }`}
         >⇅ 上り反転</button>
       </div>
-      {/* 姿図（掴んで引き出せる）。向き・上り反転がそのまま絵に出る (= P-1-fix)。 */}
+      {/* 姿図（掴んで引き出せる）。向き・上り反転がそのまま絵に出る (= P-1-fix)。
+          枠の大きさ・位置は手摺と揃える (= P-1-fix4)。 */}
       <div className="flex items-center gap-2">
         <StairPreview
           angleDeg={stairAngle} flip={stairFlip}
-          className="bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none shrink-0"
+          size={PREVIEW_FRAME_SIZE} className={PREVIEW_FRAME_CLASS}
           onPointerDown={handleStairDown}
         />
         <button
@@ -721,13 +700,16 @@ export default function PartSelector() {
     </div>
   );
 
-  // === 単管 (= P-1) ===
+  // === 単管 (= P-1 / UI は P-1-fix4 で手摺と共通化) ===
+  // 「線状の部材を、角度と長さを決めて置く」操作は手摺とまったく同じなので、
+  // 角度まわりは AnglePickerRow をそのまま使う（プリセット・姿図・±微調整）。
   const pipePanel = (
     <div className="space-y-2">
       <p className="text-xs text-dimension">ドラッグしてキャンバスに配置</p>
-      <div className="flex gap-1 flex-wrap">
+      {/* 長さ: 値は単管固有(1〜6m)だが、並び・見た目は手摺の長さボタン列と揃える。 */}
+      <div className="flex gap-1.5 overflow-x-auto sm:flex-wrap">
         {PIPE_PRESET_LENGTHS_MM.map((mm) => (
-          <button key={mm}
+          <button key={`pp-${mm}`}
             onClick={() => setPipeLengthMm(mm)}
             onPointerDown={(e) => { setPipeLengthMm(mm); handlePipeDown(mm, e); }}
             className={`px-2 py-1.5 rounded-lg text-xs font-mono select-none touch-none shrink-0 ${
@@ -736,6 +718,23 @@ export default function PartSelector() {
           >{mm / 1000}m</button>
         ))}
       </div>
+      {/* 角度: 手摺と同じ部品。姿図は P-1-fix の仕組み（キャンバスと同じ描画関数）のまま。 */}
+      <AnglePickerRow
+        presets={ANGLE_PRESETS}
+        isActive={(v) => pipeAngle === angleToDeg(v)}
+        onPreset={(v) => setPipeAngle(angleToDeg(v))}
+        numValue={pipeAngle}
+        onNum={(v) => setPipeAngle(v)}
+        onStep={(d) => setPipeAngle((prev) => prev + d)}
+        preview={(
+          <PipePreview
+            lengthMm={pipeLengthMm} angleDeg={pipeAngle}
+            size={PREVIEW_FRAME_SIZE} className={PREVIEW_FRAME_CLASS}
+            onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
+          />
+        )}
+      />
+      {/* 任意長さ（既製品以外）。 */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-dimension">長さ</span>
         <NumInput
@@ -745,22 +744,6 @@ export default function PartSelector() {
           className="w-20 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
         />
         <span className="text-[10px] text-dimension">mm</span>
-        <span className="text-[10px] text-dimension ml-2">角度</span>
-        <NumInput
-          value={pipeAngle}
-          onChange={(v) => setPipeAngle(v)}
-          min={0}
-          className="w-16 bg-dark-bg border border-dark-border rounded px-2 py-1 text-xs font-mono"
-        />
-        <span className="text-[10px] text-dimension">°</span>
-      </div>
-      {/* 姿図。長さは 6m を枠いっぱいとした相対の長さで出る (= P-1-fix)。 */}
-      <div className="flex items-center gap-2">
-        <PipePreview
-          lengthMm={pipeLengthMm} angleDeg={pipeAngle}
-          className="bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none shrink-0"
-          onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
-        />
         <button
           onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-bg border border-dark-border text-canvas text-sm select-none touch-none cursor-grab active:cursor-grabbing"

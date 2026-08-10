@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  // tsconfig の jsx は Next のために 'preserve'。vitest から .tsx を読むときだけ
+  // 変換方式を指定する（P-1-fix4: パレット部品の出力をテストで固定するため）。
+  // この設定は vitest からしか読まれないので、本体のビルドには影響しない。
+  oxc: { jsx: { runtime: 'automatic' } },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './'),
