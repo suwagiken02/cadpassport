@@ -1667,8 +1667,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setElevationAddTool: (t) => set({
     elevationAddTool: t,
     elevationEditSelectedId: null,
-    // 種類を変えたら寸法も既定へ戻す（支柱=コマ数 / 手摺・踏板=長さ mm）
-    elevationAddSize: t && t !== 'text'
+    // 種類を**変えたとき**だけ寸法を既定へ戻す（支柱=コマ数 / 手摺・踏板=長さ mm）。
+    // E-8-v5b-fix: 同じ種類を選び直すたびに戻していたため、長さボタンで選んだ寸法が
+    //   即座に上書きされ「長さを変えられない」になっていた。長さボタンも姿図も、
+    //   押した瞬間にその種類で引き出しを始める（= setElevationAddTool を呼ぶ）ため。
+    elevationAddSize: t && t !== 'text' && t !== get().elevationAddTool
       ? defaultPartSize(t) : get().elevationAddSize,
   }),
   partPaletteTab: 'plane',
