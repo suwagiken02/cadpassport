@@ -17,7 +17,7 @@ import {
 } from '@/lib/konva/planeParts';
 import NumInput from '@/components/ui/NumInput';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
-import { ANGLE_PRESETS, angleToDeg, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
+import { ANGLE_PRESETS, PIPE_ANGLE_PRESETS, angleToDeg, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
 import { PipePreview, StairPreview } from './PlanePartPreview';
 import AnglePickerRow from './AnglePickerRow';
 import PalettePreviewFrame from './PalettePreviewFrame';
@@ -752,9 +752,10 @@ export default function PartSelector() {
         />
         <span className="text-[10px] text-dimension shrink-0">mm</span>
       </div>
-      {/* 角度: 手摺と同じ部品。姿図は P-1-fix の仕組み（キャンバスと同じ描画関数）のまま。 */}
+      {/* 角度: 手摺と同じ部品。プリセットだけ単管用（火打ちの四隅・P-1-fix9）。
+          姿図は P-1-fix の仕組み（キャンバスと同じ描画関数）のまま。 */}
       <AnglePickerRow
-        presets={ANGLE_PRESETS}
+        presets={PIPE_ANGLE_PRESETS}
         isActive={(v) => pipeAngle === angleToDeg(v)}
         onPreset={(v) => setPipeAngle(angleToDeg(v))}
         numValue={pipeAngle}

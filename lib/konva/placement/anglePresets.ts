@@ -22,6 +22,23 @@ export const ANGLE_PRESETS: { label: string; value: AngleValue }[] = [
   { label: '75°', value: 75 },
 ];
 
+/**
+ * 単管のプリセット (= P-1-fix9)。単管は火打ち（斜めの補強材）として使うことが多い。
+ *
+ * 手摺と違い、単管は**置いた点から伸びる**ので、45° と 225° は同じ傾きでも
+ * 伸びる向きが逆になる。四隅どちらへも伸ばせないと火打ちが組めないので、
+ * 斜めは 4 方向すべて出す（15/30/60/75 は実務で使わないので落とす）。
+ * プリセット以外の角度は数値入力と ±ボタンで作れる。
+ */
+export const PIPE_ANGLE_PRESETS: { label: string; value: AngleValue }[] = [
+  { label: '横', value: 'horizontal' as const },
+  { label: '縦', value: 'vertical' as const },
+  { label: '45°', value: 45 },
+  { label: '135°', value: 135 },
+  { label: '225°', value: 225 },
+  { label: '315°', value: 315 },
+];
+
 /** 立面のプリセット（度）。横=0・縦=90 として同じ並びを数値で持つ。 */
 export const ANGLE_PRESET_DEGS: { label: string; deg: number }[] =
   ANGLE_PRESETS.map((p) => ({ label: p.label, deg: angleToDeg(p.value) }));

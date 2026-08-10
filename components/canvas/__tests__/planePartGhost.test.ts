@@ -144,6 +144,28 @@ describe('単管のゴースト', () => {
     expect(ang(45)).toBeCloseTo(45);
     expect(ang(90)).toBeCloseTo(90);
   });
+
+  it('火打ちの四隅がゴーストで区別できる (= P-1-fix9)', () => {
+    // 置いた点から伸びるので、45 と 225 は同じ傾きでも伸びる向きが逆
+    const dir = (deg: number) => {
+      const [a, b] = pipeEndpointsGrid(pipeGhostAt({ x: 0, y: 0 }, 2000, deg).pipe);
+      return { x: Math.sign(Math.round(b.x - a.x)), y: Math.sign(Math.round(b.y - a.y)) };
+    };
+    expect(dir(45)).toEqual({ x: 1, y: 1 });
+    expect(dir(135)).toEqual({ x: -1, y: 1 });
+    expect(dir(225)).toEqual({ x: -1, y: -1 });
+    expect(dir(315)).toEqual({ x: 1, y: -1 });
+    // 始点は動かない（どの向きでも置いた点から伸びる）
+    for (const deg of [45, 135, 225, 315]) {
+      expect(pipeEndpointsGrid(pipeGhostAt({ x: 12, y: 34 }, 2000, deg).pipe)[0])
+        .toEqual({ x: 12, y: 34 });
+    }
+  });
+
+  it('単管パレットは火打ち用のプリセット、手摺は従来のまま', () => {
+    expect(partSelector).toMatch(/<PipePreview[^]*?presets=\{PIPE_ANGLE_PRESETS\}|presets=\{PIPE_ANGLE_PRESETS\}/);
+    expect(partSelector).toMatch(/presets=\{ANGLE_PRESETS\}/);
+  });
 });
 
 describe('ゴーストが消える', () => {

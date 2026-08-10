@@ -14,9 +14,11 @@ import AnglePickerRow from '../AnglePickerRow';
 import { PREVIEW_FRAME_CLASS, PREVIEW_FRAME_SIZE } from '../PalettePreviewFrame';
 import NumInput from '@/components/ui/NumInput';
 import {
-  ANGLE_PRESETS, ANGLE_STEPS, angleToDeg, getAnglePreviewPoints, type AngleValue,
+  ANGLE_PRESETS, ANGLE_PRESET_DEGS, ANGLE_STEPS, PIPE_ANGLE_PRESETS, angleToDeg,
+  getAnglePreviewPoints, type AngleValue,
 } from '@/lib/konva/placement/anglePresets';
-import { PIPE_DEFAULT_ANGLE_DEG } from '@/lib/konva/planeParts';
+import { PIPE_DEFAULT_ANGLE_DEG, pipeEndpointsGrid } from '@/lib/konva/planeParts';
+import { pipePreview } from '@/lib/konva/planePartPreview';
 
 const h = React.createElement;
 
@@ -211,7 +213,7 @@ function clickByText(element: React.ReactElement, text: string): void {
 /** PartSelector の単管パネルと同じ props の組み立て。 */
 function pipeAngleRow(angle: number, setAngle: (v: number | ((p: number) => number)) => void) {
   return h(AnglePickerRow<AngleValue>, {
-    presets: ANGLE_PRESETS,
+    presets: PIPE_ANGLE_PRESETS,
     isActive: (v: AngleValue) => angle === angleToDeg(v),
     onPreset: (v: AngleValue) => setAngle(angleToDeg(v)),
     numValue: angle,
@@ -221,10 +223,27 @@ function pipeAngleRow(angle: number, setAngle: (v: number | ((p: number) => numb
   });
 }
 
-describe('単管も手摺と同じ角度 UI を持つ', () => {
-  it('手摺と同じプリセットが出る（横 / 縦 / 15〜75°）', () => {
+describe('単管の角度 UI（火打ち向け・P-1-fix9）', () => {
+  it('プリセットは 横 / 縦 / 45 / 135 / 225 / 315 の 6 つ', () => {
     const labels = buttonsOf(pipeAngleRow(45, () => {})).map((b) => b.text);
-    expect(labels.slice(0, ANGLE_PRESETS.length)).toEqual(['横', '縦', '15°', '30°', '45°', '60°', '75°']);
+    expect(labels.slice(0, PIPE_ANGLE_PRESETS.length))
+      .toEqual(['横', '縦', '45°', '135°', '225°', '315°']);
+  });
+
+  it('斜めは四隅の 4 方向そろっている（火打ちはどの隅にも入る）', () => {
+    const degs = PIPE_ANGLE_PRESETS.map((p) => angleToDeg(p.value)).filter((d) => d % 90 !== 0);
+    expect(degs).toEqual([45, 135, 225, 315]);
+  });
+
+  it('同じ傾きでも伸びる向きが逆になる（45 と 225 は別物）', () => {
+    const dir = (deg: number) => {
+      const [a, b] = pipeEndpointsGrid({ id: 'p', x: 0, y: 0, lengthMm: 2000, angleDeg: deg });
+      return { x: Math.sign(Math.round(b.x - a.x)), y: Math.sign(Math.round(b.y - a.y)) };
+    };
+    expect(dir(45)).toEqual({ x: 1, y: 1 });
+    expect(dir(225)).toEqual({ x: -1, y: -1 });
+    expect(dir(135)).toEqual({ x: -1, y: 1 });
+    expect(dir(315)).toEqual({ x: 1, y: -1 });
   });
 
   it('微調整ボタンが出る（-10 / -1 / +1 / +10）', () => {
@@ -232,12 +251,16 @@ describe('単管も手摺と同じ角度 UI を持つ', () => {
     expect(labels.slice(-ANGLE_STEPS.length)).toEqual(['-10°', '-1°', '+1°', '+10°']);
   });
 
-  it('プリセットが角度に反映される', () => {
-    const cases: [string, number][] = [['横', 0], ['縦', 90], ['15°', 15], ['30°', 30], ['45°', 45], ['60°', 60], ['75°', 75]];
+  it('プリセットが角度に反映される（姿図・ゴーストはこの角度を読む）', () => {
+    const cases: [string, number][] = [['横', 0], ['縦', 90], ['45°', 45], ['135°', 135], ['225°', 225], ['315°', 315]];
     for (const [label, deg] of cases) {
       let got = -1;
       clickByText(pipeAngleRow(45, (v) => { got = typeof v === 'function' ? v(45) : v; }), label);
       expect(got, label).toBe(deg);
+      // その角度で姿図・ゴーストの線が実際に傾く
+      const { line } = pipePreview({ lengthMm: 2000, angleDeg: got });
+      const drawn = (Math.atan2(line.y2 - line.y1, line.x2 - line.x1) * 180) / Math.PI;
+      expect(((drawn % 360) + 360) % 360, label).toBeCloseTo(deg % 360);
     }
   });
 
@@ -257,15 +280,62 @@ describe('単管も手摺と同じ角度 UI を持つ', () => {
   });
 
   it('角度を変えれば選択状態も移る', () => {
-    const btns = buttonsOf(pipeAngleRow(0, () => {}));
-    expect(btns.filter((b) => b.className.includes('bg-accent')).map((b) => b.text)).toEqual(['横']);
+    for (const [angle, label] of [[0, '横'], [90, '縦'], [225, '225°'], [315, '315°']] as const) {
+      const btns = buttonsOf(pipeAngleRow(angle, () => {}));
+      expect(btns.filter((b) => b.className.includes('bg-accent')).map((b) => b.text), label)
+        .toEqual([label]);
+    }
+  });
+
+  it('プリセット以外の角度も作れる（数値入力・±ボタン）', () => {
+    let got = -1;
+    clickByText(pipeAngleRow(45, (v) => { got = typeof v === 'function' ? v(45) : v; }), '+1°');
+    expect(got).toBe(46);
+    // どのプリセットも選択状態にならない
+    const btns = buttonsOf(pipeAngleRow(46, () => {}));
+    expect(btns.filter((b) => b.className.includes('bg-accent'))).toEqual([]);
+  });
+});
+
+describe('手摺のプリセットは変えていない', () => {
+  it('手摺は 横 / 縦 / 15 / 30 / 45 / 60 / 75 の 7 つのまま', () => {
+    expect(ANGLE_PRESETS.map((p) => p.label))
+      .toEqual(['横', '縦', '15°', '30°', '45°', '60°', '75°']);
+    const labels = buttonsOf(currentHandrailAngleRow({
+      handrailAngle: 45, setHandrailAngle: () => {}, preview: null,
+    })).map((b) => b.text);
+    expect(labels.slice(0, ANGLE_PRESETS.length))
+      .toEqual(['横', '縦', '15°', '30°', '45°', '60°', '75°']);
+  });
+
+  it('単管の変更が手摺に漏れていない（別の一覧）', () => {
+    expect(PIPE_ANGLE_PRESETS).not.toEqual(ANGLE_PRESETS);
+    expect(ANGLE_PRESETS).toHaveLength(7);
+    expect(PIPE_ANGLE_PRESETS).toHaveLength(6);
+  });
+
+  it('立面のプリセットも手摺と同じ並びのまま', () => {
+    expect(ANGLE_PRESET_DEGS.map((p) => p.label))
+      .toEqual(['横', '縦', '15°', '30°', '45°', '60°', '75°']);
   });
 });
 
 describe('手摺と単管が同じ部品を使っている', () => {
-  it('プリセット行・微調整行の見た目が同一（部材によらない）', () => {
+  it('プリセットの中身以外（並び・微調整・数値入力）は完全に同一', () => {
+    // P-1-fix9 でプリセットの一覧だけが部材ごとに変わる。それ以外は 1 文字も違わない。
+    const stripPresets = (m: string) => m.replace(
+      /<div className="flex gap-1 flex-wrap">[^]*?<\/div>/, '<PRESETS/>',
+    );
     const hr = markup(currentHandrailAngleRow({ handrailAngle: 45, setHandrailAngle: () => {}, preview: null }));
     const pp = markup(pipeAngleRow(45, () => {}));
-    expect(pp).toBe(hr);
+    expect(stripPresets(pp)).toBe(stripPresets(hr));
+    expect(pp).not.toBe(hr);   // プリセットだけは違う
+  });
+
+  it('プリセットのボタンの見た目は同じ（選択色・クラス名）', () => {
+    const hrBtn = buttonsOf(currentHandrailAngleRow({ handrailAngle: 45, setHandrailAngle: () => {}, preview: null }))
+      .find((b) => b.text === '45°')!;
+    const ppBtn = buttonsOf(pipeAngleRow(45, () => {})).find((b) => b.text === '45°')!;
+    expect(ppBtn.className).toBe(hrBtn.className);
   });
 });
