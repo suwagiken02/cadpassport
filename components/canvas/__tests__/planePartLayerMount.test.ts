@@ -69,13 +69,15 @@ describe('描画・当たり判定の作法が手摺と同じ', () => {
   });
 
   it('ドラッグで動かせる（手摺と同じ moveElement 経由）', () => {
-    expect(planeLayer).toMatch(/draggable=\{mode === 'select'\}/);
+    expect(planeLayer).toMatch(/draggable: mode === 'select'/);
     expect(planeLayer).toMatch(/moveElement\(/);
   });
 
   it('タップで選択される（selectedIds に乗る）', () => {
-    expect(planeLayer).toMatch(/setSelectedIds\(\[stair\.id\]\)/);
-    expect(planeLayer).toMatch(/setSelectedIds\(\[pipe\.id\]\)/);
+    // P-1-fix8: 階段・単管で 1 つの interactionOf(id) に共通化した
+    expect(planeLayer).toMatch(/setSelectedIds\(\[id\]\)/);
+    expect(planeLayer).toMatch(/interactionOf\(stair\.id/);
+    expect(planeLayer).toMatch(/interactionOf\(pipe\.id/);
   });
 });
 

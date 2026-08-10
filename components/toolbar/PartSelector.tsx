@@ -364,10 +364,34 @@ export default function PartSelector() {
         return;
       }
 
-      // P-1: 階段・単管は手摺プレビューを使わない（カーソル追従の札だけ）。
+      // P-1-fix8: 階段・単管も、置かれる姿をキャンバスに出す（手摺と同じ考え方）。
+      //   札だけでは「どこにどう置けるか」が離すまで分からない、が実機の指摘。
+      //   階段は**吸着後**の位置に出す＝どの区画に納まるかが置く前に分かる。
       if (toolbarDrag.type === 'stair' || toolbarDrag.type === 'pipe') {
         useCanvasStore.getState().setHandrailPreview(null);
         useCanvasStore.getState().setSnapPoint(null);
+        const cr = getCanvasRect(e);
+        if (!cr) { useCanvasStore.getState().setPlanePartPreview(null); return; }
+        const { zoom, panX, panY } = useCanvasStore.getState();
+        const gridPos = screenToGrid(e.clientX - cr.left, e.clientY - cr.top, panX, panY, zoom);
+        if (toolbarDrag.type === 'stair') {
+          const at = snapStairToCellGrid(gridPos, toolbarDrag.angleDeg);
+          useCanvasStore.getState().setPlanePartPreview({
+            kind: 'stair',
+            stair: {
+              id: 'preview', x: at.x, y: at.y,
+              angleDeg: toolbarDrag.angleDeg, flip: toolbarDrag.flip,
+            },
+          });
+        } else {
+          useCanvasStore.getState().setPlanePartPreview({
+            kind: 'pipe',
+            pipe: {
+              id: 'preview', x: gridPos.x, y: gridPos.y,
+              lengthMm: toolbarDrag.lengthMm, angleDeg: toolbarDrag.angleDeg,
+            },
+          });
+        }
         return;
       }
 
@@ -399,6 +423,7 @@ export default function PartSelector() {
         setTrashHover(false);
         useCanvasStore.getState().setHandrailPreview(null);
         useCanvasStore.getState().setObstaclePreview(null);
+        useCanvasStore.getState().setPlanePartPreview(null);
         useCanvasStore.getState().setSnapPoint(null);
         return;
       }
@@ -501,6 +526,7 @@ export default function PartSelector() {
       setTrashHover(false);
       useCanvasStore.getState().setHandrailPreview(null);
       useCanvasStore.getState().setObstaclePreview(null);
+      useCanvasStore.getState().setPlanePartPreview(null);
       // スナップインジケーターを確実にクリア（setTimeoutより後に実行されても安全）
       setTimeout(() => useCanvasStore.getState().setSnapPoint(null), 500);
     };

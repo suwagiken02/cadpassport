@@ -175,6 +175,17 @@ type CanvasStore = {
   setHandrailPreview: (p: { x: number; y: number; lengthMm: number; direction: HandrailDirection } | null) => void;
   snapPoint: { x: number; y: number } | null;
   setSnapPoint: (p: { x: number; y: number } | null) => void;
+  /**
+   * 階段・単管の配置プレビュー (= P-1-fix8)。手摺の handrailPreview と同じ役目。
+   * 中身は実際に置かれる部材そのもの（Stair / Pipe）なので、描画は本番と同じ
+   * 幾何関数を通せる＝ゴーストと置いた結果が食い違わない。
+   * 階段は**吸着後**の位置が入る（どの区画に納まるかが離す前に分かる）。
+   */
+  planePartPreview:
+    | { kind: 'stair'; stair: import('@/types').Stair }
+    | { kind: 'pipe'; pipe: import('@/types').Pipe }
+    | null;
+  setPlanePartPreview: (p: CanvasStore['planePartPreview']) => void;
 
   // Obstacle drag preview
   obstaclePreview: { x: number; y: number; widthGrid: number; heightGrid: number; type: import('@/types').ObstacleType } | null;
@@ -657,6 +668,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     handrailPreview: null,
     obstaclePreview: null,
     snapPoint: null,
+    planePartPreview: null,
     memoDraft: null,
     memoDraftSource: 'memo',
     building2FDraft: null,
@@ -751,6 +763,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setHandrailPreview: (p) => set({ handrailPreview: p }),
   snapPoint: null,
   setSnapPoint: (p) => set({ snapPoint: p }),
+  planePartPreview: null,
+  setPlanePartPreview: (p) => set({ planePartPreview: p }),
 
   obstaclePreview: null,
   setObstaclePreview: (p) => set({ obstaclePreview: p }),
