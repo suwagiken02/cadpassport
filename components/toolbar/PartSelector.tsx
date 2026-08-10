@@ -19,7 +19,8 @@ import NumInput from '@/components/ui/NumInput';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
 import { ANGLE_PRESETS, angleToDeg, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
 import { PipePreview, StairPreview } from './PlanePartPreview';
-import AnglePickerRow, { PREVIEW_FRAME_CLASS, PREVIEW_FRAME_SIZE } from './AnglePickerRow';
+import AnglePickerRow from './AnglePickerRow';
+import PalettePreviewFrame from './PalettePreviewFrame';
 
 /** アンチの既定サイズセット（手摺と intersect してパレット表示する）。規格別。 */
 const ANTI_BASE_LENGTHS_METRIC: number[] = [1800, 1200, 900, 600, 400];
@@ -605,17 +606,15 @@ export default function PartSelector() {
   const ap = getAnglePreviewPoints(handrailAngle);
   /** 手摺の姿図（従来どおり getAnglePreviewPoints の線分）。 */
   const handrailPreview = (
-    <svg
-      width={ap.W} height={ap.H}
-      className={PREVIEW_FRAME_CLASS}
-      style={{ touchAction: 'none' }}
-      onPointerDown={(e) => handleHandrailDown(selectedHandrailLength, handrailAngle, e)}
+    <PalettePreviewFrame
+      size={ap.W}
+      onDragOut={(e) => handleHandrailDown(selectedHandrailLength, handrailAngle, e)}
     >
       <line x1={ap.cx - ap.dx} y1={ap.cy - ap.dy} x2={ap.cx + ap.dx} y2={ap.cy + ap.dy}
         stroke="#378ADD" strokeWidth={3} strokeLinecap="round" />
       <circle cx={ap.cx - ap.dx} cy={ap.cy - ap.dy} r={3} fill="#378ADD" />
       <circle cx={ap.cx + ap.dx} cy={ap.cy + ap.dy} r={3} fill="#378ADD" />
-    </svg>
+    </PalettePreviewFrame>
   );
   // P-1-fix4: この行は AnglePickerRow に切り出し、単管と共通の部品にした（見た目は不変）。
   const angleSelector = (
@@ -686,8 +685,7 @@ export default function PartSelector() {
       <div className="flex items-center gap-2">
         <StairPreview
           angleDeg={stairAngle} flip={stairFlip}
-          size={PREVIEW_FRAME_SIZE} className={PREVIEW_FRAME_CLASS}
-          onPointerDown={handleStairDown}
+          onDragOut={handleStairDown}
         />
         <button
           onPointerDown={handleStairDown}
@@ -729,8 +727,7 @@ export default function PartSelector() {
         preview={(
           <PipePreview
             lengthMm={pipeLengthMm} angleDeg={pipeAngle}
-            size={PREVIEW_FRAME_SIZE} className={PREVIEW_FRAME_CLASS}
-            onPointerDown={(e) => handlePipeDown(pipeLengthMm, e)}
+            onDragOut={(e) => handlePipeDown(pipeLengthMm, e)}
           />
         )}
       />

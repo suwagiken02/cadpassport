@@ -11,19 +11,11 @@
 // 姿図（preview）は部材ごとに違うので呼び出し側が渡す:
 //   手摺 … getAnglePreviewPoints の線分 SVG（従来どおり）
 //   単管 … PlanePartPreview（キャンバスと同じ描画関数で描く・P-1-fix の仕組みを維持）
+// どちらも枠は PalettePreviewFrame（= P-1-fix5）なので、掴んで引き出す挙動は同じ。
 // ============================================================
 import React from 'react';
 import { ANGLE_STEPS } from '@/lib/konva/placement/anglePresets';
 import NumInput from '@/components/ui/NumInput';
-
-/**
- * 姿図の枠。手摺の実装から取った文字列そのままで、手摺・階段・単管が共有する
- * （枠の大きさ・見た目を部材ごとにバラつかせない）。
- */
-export const PREVIEW_FRAME_CLASS =
-  'bg-dark-bg rounded-lg border border-dark-border cursor-grab active:cursor-grabbing select-none';
-/** 姿図の一辺(px)。手摺の getAnglePreviewPoints の枠と同じ。 */
-export const PREVIEW_FRAME_SIZE = 80;
 
 type Props<V> = {
   /** 角度プリセット（横 / 縦 / 15°…）。 */

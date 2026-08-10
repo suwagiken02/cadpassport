@@ -10,7 +10,8 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import React from 'react';
-import AnglePickerRow, { PREVIEW_FRAME_CLASS, PREVIEW_FRAME_SIZE } from '../AnglePickerRow';
+import AnglePickerRow from '../AnglePickerRow';
+import { PREVIEW_FRAME_CLASS, PREVIEW_FRAME_SIZE } from '../PalettePreviewFrame';
 import NumInput from '@/components/ui/NumInput';
 import {
   ANGLE_PRESETS, ANGLE_STEPS, angleToDeg, getAnglePreviewPoints, type AngleValue,

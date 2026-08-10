@@ -3,9 +3,10 @@
 // ============================================================
 // 平面パレットの姿図（階段・単管）(= P-1-fix)
 //
-// 既存の手摺の姿図（angleSelector の SVG）と同じ見せ方に揃える:
-//   ・bg-dark-bg の角丸枠に収める / 掴んでキャンバスへ引き出せる
-//   ・絵は「実際に置かれる部材」そのもの（planePartPreview が pure で作る）
+// 枠は手摺と同じ PalettePreviewFrame（= P-1-fix5）。だから
+//   ・bg-dark-bg の角丸枠に収まる
+//   ・掴んでキャンバスへ引き出せる（手摺とまったく同じ配線）
+// 絵だけが部材ごとに違う（planePartPreview が pure で作る「実際に置かれる部材」）。
 // 色はキャンバス（PlanePartLayer）と同じ PLANE_PART_COLORS を使うので、
 // パレットで見た絵と置いた結果が一致する。
 //
@@ -14,18 +15,19 @@
 import React from 'react';
 import { pipePreview, stairPreview } from '@/lib/konva/planePartPreview';
 import { PLANE_PART_COLORS } from '@/lib/konva/planeParts';
+import PalettePreviewFrame, { PREVIEW_FRAME_SIZE } from './PalettePreviewFrame';
 
 const C = PLANE_PART_COLORS;
 
 type CommonProps = {
   size?: number;
-  className?: string;
-  onPointerDown?: (e: React.PointerEvent) => void;
+  /** 掴んでキャンバスへ引き出す。手摺と同じ枠が受ける。 */
+  onDragOut?: (e: React.PointerEvent) => void;
 };
 
 /** 階段: 外形 ＋ 段板の区切り ＋ 上る向きの矢印。 */
 export function StairPreview({
-  angleDeg, flip, size = 60, className, onPointerDown,
+  angleDeg, flip, size = PREVIEW_FRAME_SIZE, onDragOut,
 }: CommonProps & { angleDeg?: number; flip?: boolean }) {
   const { outline, treads, arrow, view, scale } = stairPreview({ angleDeg, flip }, size);
   const px = (v: number) => v / scale;
@@ -42,12 +44,8 @@ export function StairPreview({
   ].join(' ');
 
   return (
-    <svg
-      width={size} height={size}
-      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className={className}
-      style={{ touchAction: 'none' }}
-      onPointerDown={onPointerDown}
+    <PalettePreviewFrame
+      size={size} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} onDragOut={onDragOut}
     >
       <rect
         x={outline.x} y={outline.y} width={outline.w} height={outline.h}
@@ -63,29 +61,25 @@ export function StairPreview({
         stroke={C.stairArrow} strokeWidth={px(1.8)} strokeLinecap="round"
       />
       <polygon points={headPts} fill={C.stairArrow} />
-    </svg>
+    </PalettePreviewFrame>
   );
 }
 
 /** 単管: 1 本の線。長さと角度がそのまま出る（枠は 6m 基準で固定）。 */
 export function PipePreview({
-  lengthMm, angleDeg, size = 60, className, onPointerDown,
+  lengthMm, angleDeg, size = PREVIEW_FRAME_SIZE, onDragOut,
 }: CommonProps & { lengthMm: number; angleDeg?: number }) {
   const { line, view, scale } = pipePreview({ lengthMm, angleDeg }, size);
   const px = (v: number) => v / scale;
 
   return (
-    <svg
-      width={size} height={size}
-      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className={className}
-      style={{ touchAction: 'none' }}
-      onPointerDown={onPointerDown}
+    <PalettePreviewFrame
+      size={size} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} onDragOut={onDragOut}
     >
       <line
         x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
         stroke={C.pipe} strokeWidth={px(3)} strokeLinecap="round"
       />
-    </svg>
+    </PalettePreviewFrame>
   );
 }
