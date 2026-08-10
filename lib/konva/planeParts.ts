@@ -5,8 +5,10 @@
 // ここには「どこに置くか」「どんな形か」だけを置き、描画は Konva 側が使う。
 //
 // 階段: 600×1800mm。足場の 1 区画（600 手摺 2 本 × 1800 手摺 2 本で囲まれる枡）に
-//       ぴったり納まる。手摺が実際に置いてあるかは見ない（区画の格子に合わせる）。
-// 単管: 長さ自由・スナップ無し。既製品は 1〜6m。既定の角度は 45°。
+//       ぴったり納まる。**実在の手摺が作る枡**を優先し、枡が無い場所では
+//       600×1800 の格子へ寄せる (= P-1-fix10。P-1 は抽象格子だけを見ていて、
+//       実際の手摺の位置と合わず枡に入らなかった)。
+// 単管: 長さ自由・スナップ無し。既製品は 1〜6m。既定は 5m / 45°。
 // ============================================================
 import { mmToGrid } from './gridUtils';
 import { getHandrailEndpoints } from './snapUtils';
@@ -22,6 +24,8 @@ export const STAIR_TREADS = 6;
 export const PIPE_PRESET_LENGTHS_MM = [1000, 2000, 3000, 4000, 5000, 6000] as const;
 /** 単管の既定の角度(度)。0=右向き水平、正の値で時計回り（画面座標）。 */
 export const PIPE_DEFAULT_ANGLE_DEG = 45;
+/** 単管の既定の長さ(mm) (= P-1-fix10)。現場でいちばん使うのが 5m（鮎澤氏）。 */
+export const PIPE_DEFAULT_LENGTH_MM = 5000;
 /** 単管の長さの下限・上限(mm)。任意長さの入力を現実的な範囲に収める。 */
 export const PIPE_MIN_LENGTH_MM = 100;
 export const PIPE_MAX_LENGTH_MM = 6000;

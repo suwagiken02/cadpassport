@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import DarkModeInit from '@/components/DarkModeInit';
 import AnalyticsInit from '@/components/AnalyticsInit';
-import ShowDimensionsInit from '@/components/ShowDimensionsInit';
 import { DevToolsExposer } from '@/components/DevToolsExposer';
 import { PWARegister } from '@/components/PWARegister';
 
@@ -35,7 +34,6 @@ export default function RootLayout({
       <body className="bg-dark-bg text-canvas antialiased">
         <DarkModeInit />
         <AnalyticsInit />
-        <ShowDimensionsInit />
         <DevToolsExposer />
         <PWARegister />
         {children}

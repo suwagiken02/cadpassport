@@ -815,7 +815,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   showDirectionGuide: true,
   toggleDirectionGuide: () => set({ showDirectionGuide: !get().showDirectionGuide }),
 
-  showDimensions: true,
+  // P-1-fix10: コーナーガイドは既定オフ（鮎澤氏）。全モード・全端末で off から始める。
+  //   これは保存されない画面状態なので、既存の保存データには影響しない。
+  showDimensions: false,
   toggleShowDimensions: () => set({ showDimensions: !get().showDimensions }),
   setShowDimensions: (v) => set({ showDimensions: v }),
   showDimensionLines: false,

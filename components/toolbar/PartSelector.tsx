@@ -12,7 +12,8 @@ import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
 import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstacleToWall, snapToMagnetPin } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import {
-  PIPE_DEFAULT_ANGLE_DEG, PIPE_MIN_LENGTH_MM, PIPE_PRESET_LENGTHS_MM, clampPipeLengthMm,
+  PIPE_DEFAULT_ANGLE_DEG, PIPE_DEFAULT_LENGTH_MM, PIPE_MIN_LENGTH_MM, PIPE_PRESET_LENGTHS_MM,
+  clampPipeLengthMm,
   snapStairToCell,
 } from '@/lib/konva/planeParts';
 import NumInput from '@/components/ui/NumInput';
@@ -167,7 +168,7 @@ export default function PartSelector() {
   const [stairAngle, setStairAngle] = useState(0);
   const [stairFlip, setStairFlip] = useState(false);
   // P-1: 単管の長さ（既製品 or 任意）と角度（既定 45°）
-  const [pipeLengthMm, setPipeLengthMm] = useState<number>(PIPE_PRESET_LENGTHS_MM[0]);
+  const [pipeLengthMm, setPipeLengthMm] = useState<number>(PIPE_DEFAULT_LENGTH_MM);
   const [pipeAngle, setPipeAngle] = useState<number>(PIPE_DEFAULT_ANGLE_DEG);
   const [handrailAngle, setHandrailAngle] = useState<number | 'horizontal' | 'vertical'>('horizontal');
   const [showAngleModal, setShowAngleModal] = useState(false);
