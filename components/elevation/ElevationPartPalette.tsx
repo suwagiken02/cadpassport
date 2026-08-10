@@ -18,7 +18,7 @@
 // ============================================================
 import React, { useEffect, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { PALETTE_KINDS } from '@/lib/konva/elevation/elevationSlots';
+import { DEFAULT_ELEVATION_PART_KIND, PALETTE_KINDS } from '@/lib/konva/elevation/elevationSlots';
 import {
   POST_KOMA_CHOICES, SPAN_LENGTH_CHOICES_MM, type ElevationPartKind,
 } from '@/lib/konva/elevation/elevationParts';
@@ -46,6 +46,17 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
   /** 入力方式。マウス=シャドー追従+クリック / 指=パレットから引き出して離す。 */
   const [inputMode, setInputMode] = useState<PlacementMode>('hover-click');
   useEffect(() => { setInputMode(defaultPlacementMode()); }, []);
+
+  /**
+   * 開いた時点で「手摺」を選んでおく (= E-8-v5c)。
+   * 「何も選ばれていない段階」は要らない（鮎澤氏）。長さ・角度・姿図も手摺の
+   * 既定値で出るので、開いてすぐ置ける。
+   * 開いたときの 1 回だけ。ユーザーが自分で解除したら解除のまま（再選択しない）。
+   */
+  useEffect(() => {
+    const s = useCanvasStore.getState();
+    if (!s.elevationAddTool) s.setElevationAddTool(DEFAULT_ELEVATION_PART_KIND);
+  }, []);
 
   /** パレットのボタンを掴んでキャンバスへ引き出す（平面と共通の受け口）。 */
   const startDragOut = (kind: ElevationPartKind, e: React.PointerEvent) => {

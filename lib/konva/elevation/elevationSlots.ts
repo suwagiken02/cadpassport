@@ -58,6 +58,12 @@ export type ElevationSlot = {
 export const PALETTE_KINDS: ElevationPartKind[] = ['post', 'rail', 'board', 'jack', 'brace'];
 
 /**
+ * パレットを開いた時点で選ばれている種類 (= E-8-v5c)。
+ * 「何も選ばれていない段階」は要らない（鮎澤氏）。いちばん使うのが手摺。
+ */
+export const DEFAULT_ELEVATION_PART_KIND: ElevationPartKind = 'rail';
+
+/**
  * 縦位置は「コマ列（ジャッキ上端から 450 刻み）」を基準にする (= E-8-v2g)。
  * 実物の支柱には 450 刻みでコマが付いていて、そこにしか部材は掛からない。
  * 自動生成の作業床は 1800 ピッチ（スタート端数ぶんズレる）でコマ列に乗らないので、
