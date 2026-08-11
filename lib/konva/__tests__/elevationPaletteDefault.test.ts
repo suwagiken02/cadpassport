@@ -71,12 +71,23 @@ describe('開いた時点で手摺が選ばれている', () => {
     expect(palette).toMatch(/\}, \[\]\);/);
   });
 
-  it('すでに選んでいる種類があれば上書きしない', () => {
+  it('すでに選んでいる種類があれば上書きしない（開き直しの途中で再描画されても）', () => {
     st().setElevationAddTool('post');
     st().setElevationAddSize(8);
     openPalette();
     expect(st().elevationAddTool).toBe('post');
     expect(st().elevationAddSize).toBe(8);
+  });
+
+  it('タブを離れると武装が解けるので、戻ったときは手摺から始まる (= P-2)', () => {
+    useCanvasStore.setState({ partPaletteTab: 'elevation' });
+    st().setElevationAddTool('post');
+    st().setElevationAddSize(8);
+    st().setPartPaletteTab('plane');        // 立面タブを離れる → 武装解除
+    st().setPartPaletteTab('elevation');
+    openPalette();                          // パレットが開き直る
+    expect(st().elevationAddTool).toBe('rail');
+    expect(st().elevationAddSize).toBe(1800);
   });
 });
 

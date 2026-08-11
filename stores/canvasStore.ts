@@ -909,7 +909,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   showSettings: false,
   setShowSettings: (show) => set({ showSettings: show }),
   showPartSelector: false,
-  togglePartSelector: () => set({ showPartSelector: !get().showPartSelector }),
+  /** 部材メニューの開閉。閉じるときは武装も解除する (= P-2)。 */
+  togglePartSelector: () => {
+    const open = !get().showPartSelector;
+    set(open ? { showPartSelector: true } : { showPartSelector: false, elevationAddTool: null });
+  },
   showSettingsPanel: true,
   toggleSettingsPanel: () => set({ showSettingsPanel: !get().showSettingsPanel }),
 
@@ -1675,7 +1679,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       ? defaultPartSize(t) : get().elevationAddSize,
   }),
   partPaletteTab: 'plane',
-  setPartPaletteTab: (t) => set({ partPaletteTab: t }),
+  /**
+   * 部材メニューのタブ切替 (= P-2)。
+   * 切り替え**前**のタブの武装（選択中の部材）を解除する。残しておくと、
+   * 平面タブに戻ったのに立面部材のシャドーが追従し続ける（実機の指摘）。
+   */
+  setPartPaletteTab: (t) => {
+    const prev = get().partPaletteTab;
+    if (prev === t) { set({ partPaletteTab: t }); return; }
+    set({
+      partPaletteTab: t,
+      ...(prev === 'elevation' ? { elevationAddTool: null, elevationEditSelectedId: null } : {}),
+    });
+  },
   lastElevationViewId: null,
   setLastElevationViewId: (id) => set({ lastElevationViewId: id }),
   elevationAddSize: 1800,
