@@ -7,7 +7,7 @@ import ElevationPartPalette from '@/components/elevation/ElevationPartPalette';
 import ElevationPartActions from '@/components/elevation/ElevationPartActions';
 import FloatingPanel from '@/components/ui/FloatingPanel';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
-import { HandrailLengthMm, HandrailDirection, AntiWidth, ObstacleType } from '@/types';
+import { HandrailLengthMm, HandrailDirection, AntiWidth, ObstacleType, Point } from '@/types';
 import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
 import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstacleToWall, snapToMagnetPin, snapPostToHandrailEnds } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
@@ -18,6 +18,9 @@ import {
 } from '@/lib/konva/planeParts';
 import NumInput from '@/components/ui/NumInput';
 import { toPlacePayload, type PlacePayload, type ToolbarDrag } from './placePayload';
+import {
+  clearPlanePreviews, placePlanePart, updatePlanePreview,
+} from '@/lib/konva/placement/planePlacement';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
 import { ANGLE_PRESETS, PIPE_ANGLE_PRESETS, angleToDeg, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
 import { PipePreview, StairPreview } from './PlanePartPreview';
@@ -335,192 +338,25 @@ export default function PartSelector() {
     return null;
   }, []);
 
-  /** シャドー（置かれる姿）の更新。 */
-  const updatePreview = useCallback((drag: PlacePayload, clientX: number, clientY: number) => {
-      if (drag.type === 'post') {
-        // P-2: 支柱にもシャドーを出す（他の部材と揃える）。吸着後の位置に出るので、
-        //   どの手摺の端に付くかが置く前に分かる。
-        useCanvasStore.getState().setHandrailPreview(null);
-        useCanvasStore.getState().setSnapPoint(null);
-        const cr = canvasRectAt(clientX, clientY);
-        if (!cr) { useCanvasStore.getState().setPlanePartPreview(null); return; }
-        const { zoom, panX, panY, canvasData: cv } = useCanvasStore.getState();
-        const gridPos = screenToGrid(clientX - cr.left, clientY - cr.top, panX, panY, zoom);
-        const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-        const at = snapPostToHandrailEnds(gridPos, cv.handrails, snapRadius);
-        useCanvasStore.getState().setPlanePartPreview({ kind: 'post', x: at.x, y: at.y });
-        return;
-      }
-
-      if (drag.type === 'obstacle') {
-        useCanvasStore.getState().setHandrailPreview(null);
-        useCanvasStore.getState().setSnapPoint(null);
-        const cr = canvasRectAt(clientX, clientY);
-        if (cr) {
-          const { zoom, panX, panY, canvasData } = useCanvasStore.getState();
-          const gridPos = screenToGrid(clientX - cr.left, clientY - cr.top, panX, panY, zoom);
-          const wg = mmToGrid(drag.widthMm);
-          const hg = mmToGrid(drag.heightMm);
-          // 壁スナップを試行。成功ならその位置、失敗ならカーソル中心に配置
-          const snapped = snapObstacleToWall(gridPos, wg, hg, canvasData.buildings);
-          useCanvasStore.getState().setObstaclePreview({
-            x: snapped ? snapped.x : gridPos.x - Math.round(wg / 2),
-            y: snapped ? snapped.y : gridPos.y - Math.round(hg / 2),
-            widthGrid: wg, heightGrid: hg,
-            type: drag.obstacleType,
-          });
-        } else {
-          useCanvasStore.getState().setObstaclePreview(null);
-        }
-        return;
-      }
-
-      // P-1-fix8: 階段・単管も、置かれる姿をキャンバスに出す（手摺と同じ考え方）。
-      //   札だけでは「どこにどう置けるか」が離すまで分からない、が実機の指摘。
-      //   階段は**吸着後**の位置に出す＝どの区画に納まるかが置く前に分かる。
-      if (drag.type === 'stair' || drag.type === 'pipe') {
-        useCanvasStore.getState().setHandrailPreview(null);
-        useCanvasStore.getState().setSnapPoint(null);
-        const cr = canvasRectAt(clientX, clientY);
-        if (!cr) { useCanvasStore.getState().setPlanePartPreview(null); return; }
-        const { zoom, panX, panY, canvasData: cv } = useCanvasStore.getState();
-        const gridPos = screenToGrid(clientX - cr.left, clientY - cr.top, panX, panY, zoom);
-        if (drag.type === 'stair') {
-          // P-1-fix11: 辺が近くの手摺に沿う位置へ。ゴーストと配置は同じ関数を通す。
-          const at = snapStairToCell(gridPos, drag.angleDeg, cv.handrails);
-          useCanvasStore.getState().setPlanePartPreview({
-            kind: 'stair',
-            stair: {
-              id: 'preview', x: at.x, y: at.y,
-              angleDeg: drag.angleDeg, flip: drag.flip,
-            },
-          });
-        } else {
-          useCanvasStore.getState().setPlanePartPreview({
-            kind: 'pipe',
-            pipe: {
-              id: 'preview', x: gridPos.x, y: gridPos.y,
-              lengthMm: drag.lengthMm, angleDeg: drag.angleDeg,
-            },
-          });
-        }
-        return;
-      }
-
-      const canvasRect = canvasRectAt(clientX, clientY);
-      if (canvasRect) {
-        const { zoom, panX, panY, canvasData } = useCanvasStore.getState();
-        const gridPos = screenToGrid(clientX - canvasRect.left, clientY - canvasRect.top, panX, panY, zoom);
-        const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-        const result = snapHandrailPlacement(
-          gridPos, drag.lengthMm as HandrailLengthMm, drag.direction,
-          canvasData.handrails, snapRadius, canvasData.antis
-        );
-        const previewPos = result ? result.snappedStart : gridPos;
-        useCanvasStore.getState().setSnapPoint(result ? result.snapIndicator : null);
-        useCanvasStore.getState().setHandrailPreview({
-          x: previewPos.x, y: previewPos.y,
-          lengthMm: drag.lengthMm, direction: drag.direction,
-        });
-      } else {
-        useCanvasStore.getState().setHandrailPreview(null);
-        useCanvasStore.getState().setSnapPoint(null);
-      }
+  /** クライアント座標 → キャンバスのグリッド座標。外なら null。 */
+  const gridAt = useCallback((clientX: number, clientY: number): Point | null => {
+    const rect = canvasRectAt(clientX, clientY);
+    if (!rect) return null;
+    const { zoom, panX, panY } = useCanvasStore.getState();
+    return screenToGrid(clientX - rect.left, clientY - rect.top, panX, panY, zoom);
   }, [canvasRectAt]);
 
-  /** シャドーを全部消す。 */
-  const clearPreviews = useCallback(() => {
-    const s = useCanvasStore.getState();
-    s.setHandrailPreview(null);
-    s.setObstaclePreview(null);
-    s.setPlanePartPreview(null);
-    s.setSnapPoint(null);
-  }, []);
+  const updatePreview = useCallback((drag: PlacePayload, clientX: number, clientY: number) => {
+    updatePlanePreview(drag, gridAt(clientX, clientY));
+  }, [gridAt]);
+
+  const clearPreviews = useCallback(() => clearPlanePreviews(), []);
 
   /** その位置へ置く。キャンバスの外なら何もしない。 */
   const placeAt = useCallback((drag: PlacePayload, clientX: number, clientY: number) => {
-      const canvasRect = canvasRectAt(clientX, clientY);
-      if (canvasRect && toolbarDrag) {
-        const { zoom, panX, panY, canvasData, activeFloor } = useCanvasStore.getState();
-        const gridPos = screenToGrid(clientX - canvasRect.left, clientY - canvasRect.top, panX, panY, zoom);
-
-        if (drag.type === 'handrail') {
-          const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-          const result = snapHandrailPlacement(gridPos, drag.lengthMm as HandrailLengthMm, drag.direction, canvasData.handrails, snapRadius, canvasData.antis);
-          const dropPos = result ? result.snappedStart : gridPos;
-          if (result) { useCanvasStore.getState().setSnapPoint(result.snapIndicator); setTimeout(() => useCanvasStore.getState().setSnapPoint(null), 400); }
-          // S-5e-4b: パレット drop の手摺に activeFloor を付与（従来は floor 未付与＝常に 1F 扱いの不具合）。
-          //   activeFloor=1(単一階/既定)では従来と同一（h.floor ?? 1）。
-          addHandrail({ id: uuidv4(), x: dropPos.x, y: dropPos.y, lengthMm: drag.lengthMm as HandrailLengthMm, direction: drag.direction, color: getHandrailColor(drag.lengthMm as HandrailLengthMm), floor: activeFloor });
-        } else if (drag.type === 'anti') {
-          const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-          const result = snapHandrailPlacement(gridPos, drag.lengthMm as HandrailLengthMm, drag.direction, canvasData.handrails, snapRadius, canvasData.antis);
-          const dropPos = result ? result.snappedStart : gridPos;
-          if (result) { useCanvasStore.getState().setSnapPoint(result.snapIndicator); setTimeout(() => useCanvasStore.getState().setSnapPoint(null), 400); }
-          addAnti({ id: uuidv4(), x: dropPos.x, y: dropPos.y, width: drag.antiWidth, lengthMm: drag.lengthMm, direction: drag.direction });
-        } else if (drag.type === 'post') {
-          const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-          const at = snapPostToHandrailEnds(gridPos, canvasData.handrails, snapRadius);
-          addPost({ id: uuidv4(), x: at.x, y: at.y });
-        } else if (drag.type === 'stair') {
-          // P-1-fix11: 辺が近くの手摺に沿う位置へ吸着（無ければ 600×1800 の格子）。
-          //   ゴースト(onMove)とまったく同じ関数・同じ引数なので位置が必ず一致する。
-          const at = snapStairToCell(gridPos, drag.angleDeg, canvasData.handrails);
-          useCanvasStore.getState().addStair({
-            id: uuidv4(), x: at.x, y: at.y,
-            angleDeg: drag.angleDeg, flip: drag.flip, floor: activeFloor,
-          });
-        } else if (drag.type === 'pipe') {
-          // P-1: 単管はスナップ無し（置いた場所そのまま）。
-          useCanvasStore.getState().addPipe({
-            id: uuidv4(), x: gridPos.x, y: gridPos.y,
-            lengthMm: drag.lengthMm, angleDeg: drag.angleDeg, floor: activeFloor,
-          });
-        } else if (drag.type === 'obstacle') {
-          const wGrid = mmToGrid(drag.widthMm);
-          const hGrid = mmToGrid(drag.heightMm);
-
-          // Phase M-6a-place: ピン優先吸着（最近傍角×最近傍ピン）
-          const cx = gridPos.x;
-          const cy = gridPos.y;
-          const corners = drag.obstacleType === 'custom_circle'
-            ? [{ x: cx, y: cy }]
-            : [
-                { x: cx - wGrid / 2, y: cy - hGrid / 2 },
-                { x: cx + wGrid / 2, y: cy - hGrid / 2 },
-                { x: cx + wGrid / 2, y: cy + hGrid / 2 },
-                { x: cx - wGrid / 2, y: cy + hGrid / 2 },
-              ];
-          const pins = canvasData.magnetPins ?? [];
-          let bestPinSnap: { dx: number; dy: number; pinId: string } | null = null;
-          let bestCorr = Infinity;
-          for (const c of corners) {
-            const snap = snapToMagnetPin(c, pins, zoom);
-            if (snap) {
-              const corr = Math.hypot(snap.dx, snap.dy);
-              if (corr < bestCorr) {
-                bestCorr = corr;
-                bestPinSnap = snap;
-              }
-            }
-          }
-
-          let finalX: number;
-          let finalY: number;
-          if (bestPinSnap) {
-            // ピン優先: 中心を補正してから左上算出
-            finalX = Math.round(cx + bestPinSnap.dx - wGrid / 2);
-            finalY = Math.round(cy + bestPinSnap.dy - hGrid / 2);
-          } else {
-            // ピン圏外: 既存の壁スナップ → カーソル中心配置
-            const snapped = snapObstacleToWall(gridPos, wGrid, hGrid, canvasData.buildings);
-            finalX = snapped ? snapped.x : gridPos.x - Math.round(wGrid / 2);
-            finalY = snapped ? snapped.y : gridPos.y - Math.round(hGrid / 2);
-          }
-          addObstacle({ id: uuidv4(), type: drag.obstacleType, x: finalX, y: finalY, width: wGrid, height: hGrid });
-        }
-      }
-  }, [addHandrail, addAnti, addPost, addObstacle, canvasRectAt]);
+    const gridPos = gridAt(clientX, clientY);
+    if (gridPos) placePlanePart(drag, gridPos);
+  }, [gridAt]);
 
   // --- パレットから引き出す（ドラッグ&ドロップ・従来の置き方） ---
   useEffect(() => {

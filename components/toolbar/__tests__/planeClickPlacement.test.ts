@@ -101,18 +101,20 @@ describe('ドラッグでもクリックでも同じ処理を通る', () => {
 
 describe('シャドーが出る', () => {
   it('支柱にもシャドーが出る（他の部材と揃えた）', () => {
-    expect(src).toMatch(/setPlanePartPreview\(\{ kind: 'post'/);
+    expect(read('lib/konva/placement/planePlacement.ts')).toMatch(/setPlanePartPreview\(\{ kind: 'post'/);
     expect(read('components/canvas/PlanePartLayer.tsx')).toMatch(/preview\?\.kind === 'post' &&/);
   });
 
   it('支柱の吸着はシャドーと配置で共有（位置が一致する）', () => {
-    expect((src.match(/snapPostToHandrailEnds\(/g) ?? []).length).toBe(2);
+    const placement = read('lib/konva/placement/planePlacement.ts');
+    expect((placement.match(/snapPostToHandrailEnds\(/g) ?? []).length).toBe(2);
   });
 
   it('手摺・アンチは従来の handrailPreview、階段・単管は planePartPreview', () => {
-    expect(src).toMatch(/setHandrailPreview\(\{\s*x: previewPos\.x, y: previewPos\.y,/);
-    expect(src).toMatch(/setPlanePartPreview\(\{\s*kind: 'stair'/);
-    expect(src).toMatch(/setPlanePartPreview\(\{\s*kind: 'pipe'/);
+    const placement = read('lib/konva/placement/planePlacement.ts');
+    expect(placement).toMatch(/setHandrailPreview\(\{\s*x: previewPos\.x, y: previewPos\.y,/);
+    expect(placement).toMatch(/setPlanePartPreview\(\{\s*kind: 'stair'/);
+    expect(placement).toMatch(/setPlanePartPreview\(\{\s*kind: 'pipe'/);
   });
 
   it('武装が解けたらシャドーも消える', () => {

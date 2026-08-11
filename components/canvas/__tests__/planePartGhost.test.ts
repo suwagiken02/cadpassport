@@ -23,6 +23,8 @@ import {
 const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '../../../', p), 'utf8');
 const partSelector = read('components/toolbar/PartSelector.tsx');
 const planeLayer = read('components/canvas/PlanePartLayer.tsx');
+/** P-2-fix: 配置とシャドーの処理はここへ移した（コンポーネントの外）。 */
+const placement = read('lib/konva/placement/planePlacement.ts');
 
 /** PartSelector の onMove と同じ組み立て（階段は吸着後の位置に出す）。 */
 const stairGhostAt = (cursor: { x: number; y: number }, angleDeg: number, flip = false) => {
@@ -45,10 +47,10 @@ describe('ゴーストは手摺と同じ仕組みに乗っている', () => {
   });
 
   it('引き出し中も選んだだけの状態も、同じ updatePreview が更新する (= P-2)', () => {
-    expect(partSelector).toMatch(/const updatePreview = useCallback\(\(drag: PlacePayload/);
-    expect(partSelector).toMatch(/drag\.type === 'stair' \|\| drag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
-    // 呼び出しは 2 箇所（ドラッグ経路とクリック経路）。両方が同じ関数を通る。
-    expect((partSelector.match(/updatePreview\(/g) ?? []).length).toBe(2);
+    expect(placement).toMatch(/export function updatePlanePreview\(drag: PlacePayload, gridPos: Point \| null\)/);
+    expect(placement).toMatch(/drag\.type === 'stair' \|\| drag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
+    // ドラッグ経路もクリック経路も、この 1 本しか通らない
+    expect(partSelector).toMatch(/updatePlanePreview\(drag, gridAt\(clientX, clientY\)\)/);
   });
 
   it('描くのは PlanePartLayer（実物と同じ描画を通る）', () => {
@@ -180,11 +182,12 @@ describe('ゴーストが消える', () => {
   });
 
   it('ドラッグ終了・ゴミ箱・キャンバス外の 3 経路すべてで消している', () => {
-    expect((partSelector.match(/setPlanePartPreview\(null\)/g) ?? []).length).toBe(3);
+    expect(placement).toMatch(/if \(!gridPos\) \{ s\.setPlanePartPreview\(null\); return; \}/);
+    expect(placement).toMatch(/export function clearPlanePreviews[^]*?setPlanePartPreview\(null\)/);
   });
 
   it('キャンバスの外へ出たら消える', () => {
-    expect(partSelector).toMatch(/if \(!cr\) \{ useCanvasStore\.getState\(\)\.setPlanePartPreview\(null\); return; \}/);
+    expect(placement).toMatch(/if \(!gridPos\) \{ s\.setPlanePartPreview\(null\); return; \}/);
   });
 
   it('ゴーストが無ければ何も描かない', () => {
@@ -195,18 +198,18 @@ describe('ゴーストが消える', () => {
 
 describe('手摺・支柱・アンチのプレビューは従来どおり', () => {
   it('手摺は handrailPreview のまま（別の仕組みに移していない）', () => {
-    expect(partSelector).toMatch(/setHandrailPreview\(\{\s*x: previewPos\.x, y: previewPos\.y,/);
+    expect(placement).toMatch(/setHandrailPreview\(\{\s*x: previewPos\.x, y: previewPos\.y,/);
     expect(read('components/canvas/GridCanvas.tsx')).toMatch(/\{handrailPreview && \(\(\) => \{/);
   });
 
   it('支柱にもシャドーが出る (= P-2 で他の部材と揃えた)', () => {
-    expect(partSelector).toMatch(/drag\.type === 'post'[^]*?setPlanePartPreview\(\{ kind: 'post'/);
+    expect(placement).toMatch(/drag\.type === 'post'[^]*?setPlanePartPreview\(\{ kind: 'post'/);
     // 吸着は配置と共有（ゴーストの位置＝置かれる位置）
-    expect((partSelector.match(/snapPostToHandrailEnds\(/g) ?? []).length).toBe(2);
+    expect((placement.match(/snapPostToHandrailEnds\(/g) ?? []).length).toBe(2);
   });
 
   it('障害物は obstaclePreview のまま', () => {
-    expect(partSelector).toMatch(/setObstaclePreview\(\{/);
+    expect(placement).toMatch(/setObstaclePreview\(\{/);
   });
 
   it('階段・単管のゴーストは手摺のプレビューを潰さない（別の入れ物）', () => {
