@@ -145,11 +145,11 @@ describe('ドロップでデータが増える経路', () => {
   it('ドロップは階段を枡へ吸着して addStair を呼ぶ', () => {
     const src = read('components/toolbar/PartSelector.tsx');
     // P-1-fix10: 抽象格子ではなく、実在の手摺が作る枡を見る
-    expect(src).toMatch(/toolbarDrag\.type === 'stair'[^]*?snapStairToCell\(gridPos, toolbarDrag\.angleDeg, canvasData\.handrails\)[^]*?addStair\(/);
+    expect(src).toMatch(/drag\.type === 'stair'[^]*?snapStairToCell\(gridPos, drag\.angleDeg, canvasData\.handrails\)[^]*?addStair\(/);
   });
 
   it('ドロップは単管を置いた位置そのままで addPipe を呼ぶ', () => {
     const src = read('components/toolbar/PartSelector.tsx');
-    expect(src).toMatch(/toolbarDrag\.type === 'pipe'[^]*?addPipe\(\{[^]*?x: gridPos\.x, y: gridPos\.y/);
+    expect(src).toMatch(/drag\.type === 'pipe'[^]*?addPipe\(\{[^]*?x: gridPos\.x, y: gridPos\.y/);
   });
 });

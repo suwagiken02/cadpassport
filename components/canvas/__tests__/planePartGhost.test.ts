@@ -44,8 +44,11 @@ describe('ゴーストは手摺と同じ仕組みに乗っている', () => {
     expect(typeof useCanvasStore.getState().setPlanePartPreview).toBe('function');
   });
 
-  it('引き出し中に onMove が更新する', () => {
-    expect(partSelector).toMatch(/toolbarDrag\.type === 'stair' \|\| toolbarDrag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
+  it('引き出し中も選んだだけの状態も、同じ updatePreview が更新する (= P-2)', () => {
+    expect(partSelector).toMatch(/const updatePreview = useCallback\(\(drag: PlacePayload/);
+    expect(partSelector).toMatch(/drag\.type === 'stair' \|\| drag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
+    // 呼び出しは 2 箇所（ドラッグ経路とクリック経路）。両方が同じ関数を通る。
+    expect((partSelector.match(/updatePreview\(/g) ?? []).length).toBe(2);
   });
 
   it('描くのは PlanePartLayer（実物と同じ描画を通る）', () => {
@@ -196,8 +199,10 @@ describe('手摺・支柱・アンチのプレビューは従来どおり', () =
     expect(read('components/canvas/GridCanvas.tsx')).toMatch(/\{handrailPreview && \(\(\) => \{/);
   });
 
-  it('支柱はプレビュー無しのまま', () => {
-    expect(partSelector).toMatch(/toolbarDrag\.type === 'post'[^]*?支柱はプレビューなし/);
+  it('支柱にもシャドーが出る (= P-2 で他の部材と揃えた)', () => {
+    expect(partSelector).toMatch(/drag\.type === 'post'[^]*?setPlanePartPreview\(\{ kind: 'post'/);
+    // 吸着は配置と共有（ゴーストの位置＝置かれる位置）
+    expect((partSelector.match(/snapPostToHandrailEnds\(/g) ?? []).length).toBe(2);
   });
 
   it('障害物は obstaclePreview のまま', () => {

@@ -184,8 +184,17 @@ type CanvasStore = {
   planePartPreview:
     | { kind: 'stair'; stair: import('@/types').Stair }
     | { kind: 'pipe'; pipe: import('@/types').Pipe }
+    | { kind: 'post'; x: number; y: number }
     | null;
   setPlanePartPreview: (p: CanvasStore['planePartPreview']) => void;
+  /**
+   * 平面部材の武装 (= P-2)。パレットで選んでいる部材と、その寸法・向き。
+   * これがあると、シャドーがカーソルに追従し、キャンバスをクリックで置ける
+   * （立面の elevationAddTool と同じ役目）。位置は持たない＝ドラッグ中の
+   * toolbarDrag から位置を除いたもの。
+   */
+  planeAddTool: import('@/components/toolbar/placePayload').PlacePayload | null;
+  setPlaneAddTool: (p: CanvasStore['planeAddTool']) => void;
 
   // Obstacle drag preview
   obstaclePreview: { x: number; y: number; widthGrid: number; heightGrid: number; type: import('@/types').ObstacleType } | null;
@@ -669,6 +678,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     obstaclePreview: null,
     snapPoint: null,
     planePartPreview: null,
+    planeAddTool: null,
     memoDraft: null,
     memoDraftSource: 'memo',
     building2FDraft: null,
@@ -765,6 +775,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setSnapPoint: (p) => set({ snapPoint: p }),
   planePartPreview: null,
   setPlanePartPreview: (p) => set({ planePartPreview: p }),
+  planeAddTool: null,
+  setPlaneAddTool: (p) => set({ planeAddTool: p }),
 
   obstaclePreview: null,
   setObstaclePreview: (p) => set({ obstaclePreview: p }),
@@ -912,7 +924,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   /** 部材メニューの開閉。閉じるときは武装も解除する (= P-2)。 */
   togglePartSelector: () => {
     const open = !get().showPartSelector;
-    set(open ? { showPartSelector: true } : { showPartSelector: false, elevationAddTool: null });
+    set(open
+      ? { showPartSelector: true }
+      : {
+        showPartSelector: false,
+        elevationAddTool: null,
+        planeAddTool: null, planePartPreview: null, handrailPreview: null,
+      });
   },
   showSettingsPanel: true,
   toggleSettingsPanel: () => set({ showSettingsPanel: !get().showSettingsPanel }),
@@ -1690,6 +1708,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({
       partPaletteTab: t,
       ...(prev === 'elevation' ? { elevationAddTool: null, elevationEditSelectedId: null } : {}),
+      ...(prev === 'plane' ? { planeAddTool: null, planePartPreview: null, handrailPreview: null } : {}),
     });
   },
   lastElevationViewId: null,

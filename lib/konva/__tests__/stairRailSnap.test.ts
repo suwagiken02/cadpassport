@@ -245,7 +245,8 @@ describe('ゴーストの位置 = 置かれる位置', () => {
     const path = await import('path');
     const src = fs.readFileSync(
       path.resolve(__dirname, '../../../components/toolbar/PartSelector.tsx'), 'utf8');
-    expect((src.match(/snapStairToCell\(gridPos, toolbarDrag\.angleDeg, /g) ?? []).length).toBe(2);
+    // ゴースト(updatePreview)とドロップ(placeAt)の 2 箇所。どちらも同じ関数・同じ引数。
+    expect((src.match(/snapStairToCell\(gridPos, drag\.angleDeg, /g) ?? []).length).toBe(2);
     expect(src).not.toMatch(/snapStairToCellGrid\(/);
   });
 });

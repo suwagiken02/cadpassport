@@ -17,7 +17,7 @@
 // ============================================================
 import React from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Layer, Line, Rect, Text, Arrow } from 'react-konva';
+import { Layer, Line, Rect, Text, Arrow, Circle } from 'react-konva';
 import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
@@ -33,6 +33,8 @@ const STAIR_ARROW = PLANE_PART_COLORS.stairArrow;
 const PIPE_COLOR = PLANE_PART_COLORS.pipe;
 const SELECT_COLOR = '#FF6B35';
 
+/** 支柱のゴーストの色（ScaffoldLayer の支柱と同じ）。 */
+const POST_GHOST_COLOR = '#2c2c2a';
 /** ゴーストの見え方。手摺のプレビュー（opacity 0.4 / dash [8,4]）に揃える。 */
 const GHOST_OPACITY = 0.4;
 const GHOST_DASH = [8, 4];
@@ -219,6 +221,15 @@ export default function PlanePartLayer() {
       )}
       {preview?.kind === 'pipe' && (
         <PipeView pipe={preview.pipe} S={S} zoom={zoom} ghost />
+      )}
+      {/* 支柱は ScaffoldLayer と同じ丸。吸着後の位置に出る (= P-2)。 */}
+      {preview?.kind === 'post' && (
+        <Circle
+          x={S.sx(preview.x)} y={S.sy(preview.y)} radius={64 * zoom}
+          fill={POST_GHOST_COLOR} opacity={GHOST_OPACITY}
+          stroke={POST_GHOST_COLOR} strokeWidth={2} dash={GHOST_DASH}
+          listening={false}
+        />
       )}
     </Layer>
   );

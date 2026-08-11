@@ -452,3 +452,22 @@ export function snapToMagnetPin(
     pinId: bestPin.id,
   };
 }
+
+/**
+ * 支柱を手摺の端点へ吸着させる (= P-2)。
+ * 半径内でいちばん近い端点。無ければカーソル位置のまま。
+ * 配置とシャドーが同じ位置になるよう、両方がこの 1 本を通る。
+ */
+export const snapPostToHandrailEnds = (
+  gridPos: Point, handrails: Handrail[], snapRadius: number,
+): Point => {
+  let best: Point = gridPos;
+  let bestDist = snapRadius;
+  for (const h of handrails) {
+    for (const p of getHandrailEndpoints(h)) {
+      const d = Math.hypot(p.x - gridPos.x, p.y - gridPos.y);
+      if (d < bestDist) { bestDist = d; best = { x: p.x, y: p.y }; }
+    }
+  }
+  return best;
+};

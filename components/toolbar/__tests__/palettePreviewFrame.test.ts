@@ -180,8 +180,8 @@ describe('パレットの選択状態がドラッグに乗る', () => {
   });
 
   it('キャンバス側のドロップは階段・単管の種別を知っている', () => {
-    expect(src).toMatch(/toolbarDrag\.type === 'stair'[^]*?addStair\(/);
-    expect(src).toMatch(/toolbarDrag\.type === 'pipe'[^]*?addPipe\(/);
+    expect(src).toMatch(/drag\.type === 'stair'[^]*?addStair\(/);
+    expect(src).toMatch(/drag\.type === 'pipe'[^]*?addPipe\(/);
   });
 
   it('単管の任意長さの入力欄が、長さの並びにある', () => {
