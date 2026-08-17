@@ -110,11 +110,14 @@ describe('シャドーが出る', () => {
     expect((placement.match(/snapPostToHandrailEnds\(/g) ?? []).length).toBe(2);
   });
 
-  it('手摺・アンチは従来の handrailPreview、階段・単管は planePartPreview', () => {
+  // P-3: アンチは handrailPreview（手摺の細線）への相乗りをやめ、実物と同じ板の
+  //   ゴーストを planePartPreview に出すようにした。手摺だけは従来のまま。
+  it('手摺は従来の handrailPreview、支柱・アンチ・階段・単管は planePartPreview', () => {
     const placement = read('lib/konva/placement/planePlacement.ts');
-    expect(placement).toMatch(/setHandrailPreview\(\{\s*x: previewPos\.x, y: previewPos\.y,/);
-    expect(placement).toMatch(/setPlanePartPreview\(\{\s*kind: 'stair'/);
-    expect(placement).toMatch(/setPlanePartPreview\(\{\s*kind: 'pipe'/);
+    expect(placement).toMatch(/setHandrailPreview\(\{\s*x: at\.x, y: at\.y,/);
+    for (const kind of ['post', 'anti', 'stair', 'pipe']) {
+      expect(placement, kind).toMatch(new RegExp(`setPlanePartPreview\\(\\{\\s*kind: '${kind}'`));
+    }
   });
 
   it('武装が解けたらシャドーも消える', () => {

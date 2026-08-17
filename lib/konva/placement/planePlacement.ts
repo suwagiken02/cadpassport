@@ -30,88 +30,90 @@ const SNAP_PX = 80;
 
 /** シャドー（置かれる姿）の更新。gridPos が null＝キャンバスの外。 */
 export function updatePlanePreview(drag: PlacePayload, gridPos: Point | null): void {
+  // P-3: ゴーストの入れ物は 3 つ（handrailPreview / planePartPreview / obstaclePreview）
+  //   あるのに、分岐ごとに「自分が使う入れ物」しか消していなかった。そのため部材を
+  //   持ち替えると**前の部材のゴーストがキャンバスに残り**、新しい部材のゴーストが
+  //   出ていないように見えていた（支柱→アンチ、階段→アンチ など）。
+  //   毎回**全部消してから 1 つだけ立てる**ことで、同じ取りこぼしが起こらなくなる。
+  clearPlanePreviews();
+  if (!gridPos) return;
+
   const s = useCanvasStore.getState();
-    if (drag.type === 'post') {
-      // P-2: 支柱にもシャドーを出す（他の部材と揃える）。吸着後の位置に出るので、
-      //   どの手摺の端に付くかが置く前に分かる。
-      s.setHandrailPreview(null);
-      s.setSnapPoint(null);
-      if (!gridPos) { s.setPlanePartPreview(null); return; }
-      const { zoom, canvasData: cv } = s;
-      const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-      const at = snapPostToHandrailEnds(gridPos, cv.handrails, snapRadius);
-      s.setPlanePartPreview({ kind: 'post', x: at.x, y: at.y });
-      return;
-    }
+  const { zoom, canvasData } = s;
+  const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
 
-    if (drag.type === 'obstacle') {
-      s.setHandrailPreview(null);
-      s.setSnapPoint(null);
-      if (gridPos) {
-        const { zoom, canvasData } = s;
-        const wg = mmToGrid(drag.widthMm);
-        const hg = mmToGrid(drag.heightMm);
-        // 壁スナップを試行。成功ならその位置、失敗ならカーソル中心に配置
-        const snapped = snapObstacleToWall(gridPos, wg, hg, canvasData.buildings);
-        s.setObstaclePreview({
-          x: snapped ? snapped.x : gridPos.x - Math.round(wg / 2),
-          y: snapped ? snapped.y : gridPos.y - Math.round(hg / 2),
-          widthGrid: wg, heightGrid: hg,
-          type: drag.obstacleType,
-        });
-      } else {
-        s.setObstaclePreview(null);
-      }
-      return;
-    }
+  // P-2: 支柱にもシャドーを出す（他の部材と揃える）。吸着後の位置に出るので、
+  //   どの手摺の端に付くかが置く前に分かる。
+  if (drag.type === 'post') {
+    const at = snapPostToHandrailEnds(gridPos, canvasData.handrails, snapRadius);
+    s.setPlanePartPreview({ kind: 'post', x: at.x, y: at.y });
+    return;
+  }
 
-    // P-1-fix8: 階段・単管も、置かれる姿をキャンバスに出す（手摺と同じ考え方）。
-    //   札だけでは「どこにどう置けるか」が離すまで分からない、が実機の指摘。
-    //   階段は**吸着後**の位置に出す＝どの区画に納まるかが置く前に分かる。
-    if (drag.type === 'stair' || drag.type === 'pipe') {
-      s.setHandrailPreview(null);
-      s.setSnapPoint(null);
-      if (!gridPos) { s.setPlanePartPreview(null); return; }
-      const { zoom, canvasData: cv } = s;
-      if (drag.type === 'stair') {
-        // P-1-fix11: 辺が近くの手摺に沿う位置へ。ゴーストと配置は同じ関数を通す。
-        const at = snapStairToCell(gridPos, drag.angleDeg, cv.handrails);
-        s.setPlanePartPreview({
-          kind: 'stair',
-          stair: {
-            id: 'preview', x: at.x, y: at.y,
-            angleDeg: drag.angleDeg, flip: drag.flip,
-          },
-        });
-      } else {
-        s.setPlanePartPreview({
-          kind: 'pipe',
-          pipe: {
-            id: 'preview', x: gridPos.x, y: gridPos.y,
-            lengthMm: drag.lengthMm, angleDeg: drag.angleDeg,
-          },
-        });
-      }
-      return;
-    }
+  if (drag.type === 'obstacle') {
+    const wg = mmToGrid(drag.widthMm);
+    const hg = mmToGrid(drag.heightMm);
+    // 壁スナップを試行。成功ならその位置、失敗ならカーソル中心に配置
+    const snapped = snapObstacleToWall(gridPos, wg, hg, canvasData.buildings);
+    s.setObstaclePreview({
+      x: snapped ? snapped.x : gridPos.x - Math.round(wg / 2),
+      y: snapped ? snapped.y : gridPos.y - Math.round(hg / 2),
+      widthGrid: wg, heightGrid: hg,
+      type: drag.obstacleType,
+    });
+    return;
+  }
 
-    if (gridPos) {
-      const { zoom, canvasData } = s;
-      const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-      const result = snapHandrailPlacement(
-        gridPos, drag.lengthMm as HandrailLengthMm, drag.direction,
-        canvasData.handrails, snapRadius, canvasData.antis
-      );
-      const previewPos = result ? result.snappedStart : gridPos;
-      s.setSnapPoint(result ? result.snapIndicator : null);
-      s.setHandrailPreview({
-        x: previewPos.x, y: previewPos.y,
-        lengthMm: drag.lengthMm, direction: drag.direction,
-      });
-    } else {
-      s.setHandrailPreview(null);
-      s.setSnapPoint(null);
-    }
+  // P-1-fix8: 階段・単管も、置かれる姿をキャンバスに出す（手摺と同じ考え方）。
+  //   札だけでは「どこにどう置けるか」が離すまで分からない、が実機の指摘。
+  //   階段は**吸着後**の位置に出す＝どの区画に納まるかが置く前に分かる。
+  if (drag.type === 'stair') {
+    // P-1-fix11: 辺が近くの手摺に沿う位置へ。ゴーストと配置は同じ関数を通す。
+    const at = snapStairToCell(gridPos, drag.angleDeg, canvasData.handrails);
+    s.setPlanePartPreview({
+      kind: 'stair',
+      stair: { id: 'preview', x: at.x, y: at.y, angleDeg: drag.angleDeg, flip: drag.flip },
+    });
+    return;
+  }
+
+  if (drag.type === 'pipe') {
+    s.setPlanePartPreview({
+      kind: 'pipe',
+      pipe: {
+        id: 'preview', x: gridPos.x, y: gridPos.y,
+        lengthMm: drag.lengthMm, angleDeg: drag.angleDeg,
+      },
+    });
+    return;
+  }
+
+  // 手摺・アンチ: 吸着は同じ 1 本（snapHandrailPlacement）。placePlanePart と
+  //   **同じ関数・同じ引数**なので、ゴーストの位置と置かれる位置は必ず一致する。
+  const result = snapHandrailPlacement(
+    gridPos, drag.lengthMm as HandrailLengthMm, drag.direction,
+    canvasData.handrails, snapRadius, canvasData.antis
+  );
+  const at = result ? result.snappedStart : gridPos;
+  s.setSnapPoint(result ? result.snapIndicator : null);
+
+  if (drag.type === 'anti') {
+    // P-3: アンチは手摺の細線ではなく**アンチの板**でゴーストを出す。
+    //   吸着の計算は上の 1 本のまま＝置かれる位置は 1 ミリも変わらない。
+    s.setPlanePartPreview({
+      kind: 'anti',
+      anti: {
+        x: at.x, y: at.y,
+        width: drag.antiWidth, lengthMm: drag.lengthMm, direction: drag.direction,
+      },
+    });
+    return;
+  }
+
+  s.setHandrailPreview({
+    x: at.x, y: at.y,
+    lengthMm: drag.lengthMm, direction: drag.direction,
+  });
 }
 
 /** シャドーを全部消す。 */

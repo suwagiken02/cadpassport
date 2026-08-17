@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { updatePlanePreview } from '@/lib/konva/placement/planePlacement';
 import {
   pipeEndpointsGrid, snapStairToCellGrid, stairArrowGrid, stairCornersGrid, stairTreadLinesGrid,
 } from '@/lib/konva/planeParts';
@@ -48,7 +49,10 @@ describe('ゴーストは手摺と同じ仕組みに乗っている', () => {
 
   it('引き出し中も選んだだけの状態も、同じ updatePreview が更新する (= P-2)', () => {
     expect(placement).toMatch(/export function updatePlanePreview\(drag: PlacePayload, gridPos: Point \| null\)/);
-    expect(placement).toMatch(/drag\.type === 'stair' \|\| drag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
+    // P-3: 階段・単管はそれぞれの分岐になった（アンチを足すときに 1 分岐 1 部材へ整理）。
+    //   どちらも planePartPreview に入ることは変わらない。
+    expect(placement).toMatch(/drag\.type === 'stair'[^]*?setPlanePartPreview\(\{/);
+    expect(placement).toMatch(/drag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
     // ドラッグ経路もクリック経路も、この 1 本しか通らない
     expect(partSelector).toMatch(/updatePlanePreview\(drag, gridAt\(clientX, clientY\)\)/);
   });
@@ -182,12 +186,15 @@ describe('ゴーストが消える', () => {
   });
 
   it('ドラッグ終了・ゴミ箱・キャンバス外の 3 経路すべてで消している', () => {
-    expect(placement).toMatch(/if \(!gridPos\) \{ s\.setPlanePartPreview\(null\); return; \}/);
+    // P-3: 入口で必ず全部消してから 1 つだけ立てる形にした（持ち替えの残りを防ぐ）。
+    expect(placement).toMatch(/export function updatePlanePreview[^]*?clearPlanePreviews\(\);\s*\n\s*if \(!gridPos\) return;/);
     expect(placement).toMatch(/export function clearPlanePreviews[^]*?setPlanePartPreview\(null\)/);
   });
 
   it('キャンバスの外へ出たら消える', () => {
-    expect(placement).toMatch(/if \(!gridPos\) \{ s\.setPlanePartPreview\(null\); return; \}/);
+    useCanvasStore.getState().setPlanePartPreview(stairGhostAt({ x: 0, y: 0 }, 0));
+    updatePlanePreview({ type: 'stair', angleDeg: 0, flip: false }, null);
+    expect(useCanvasStore.getState().planePartPreview).toBeNull();
   });
 
   it('ゴーストが無ければ何も描かない', () => {
@@ -198,7 +205,7 @@ describe('ゴーストが消える', () => {
 
 describe('手摺・支柱・アンチのプレビューは従来どおり', () => {
   it('手摺は handrailPreview のまま（別の仕組みに移していない）', () => {
-    expect(placement).toMatch(/setHandrailPreview\(\{\s*x: previewPos\.x, y: previewPos\.y,/);
+    expect(placement).toMatch(/setHandrailPreview\(\{\s*x: at\.x, y: at\.y,/);
     expect(read('components/canvas/GridCanvas.tsx')).toMatch(/\{handrailPreview && \(\(\) => \{/);
   });
 

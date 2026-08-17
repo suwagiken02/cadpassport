@@ -24,6 +24,10 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import {
   PLANE_PART_COLORS, pipeEndpointsGrid, stairArrowGrid, stairFootprintGrid, stairTreadLinesGrid,
 } from '@/lib/konva/planeParts';
+import {
+  ANTI_COLORS, ANTI_CORNER_RADIUS, antiFill, antiRectGrid, antiSeamGrid,
+  antiStroke, antiStrokeWidth, type AntiShape,
+} from '@/lib/konva/antiShape';
 import type { Pipe, Stair } from '@/types';
 
 /** 色は planeParts.ts（pure）が唯一の定義。パレットの姿図と必ず同じ絵になる。 */
@@ -137,6 +141,35 @@ function PipeView({
   );
 }
 
+/**
+ * アンチのゴースト (= P-3)。実物（ScaffoldLayer）とまったく同じ
+ * antiShape.ts の関数を通すので、「シャドーと置いた結果が違う」が起こらない。
+ * ゴーストなので触れない（listening なし）。
+ */
+function AntiGhostView({ anti, S, zoom }: { anti: AntiShape; S: ToScreen; zoom: number }) {
+  const { w, h } = antiRectGrid(anti);
+  const seam = antiSeamGrid(anti);
+  const gridPx = INITIAL_GRID_PX * zoom;
+  return (
+    <>
+      <Rect
+        x={S.sx(anti.x)} y={S.sy(anti.y)}
+        width={w * gridPx} height={h * gridPx}
+        fill={antiFill(anti)} opacity={GHOST_OPACITY}
+        cornerRadius={ANTI_CORNER_RADIUS}
+        stroke={antiStroke(anti)} strokeWidth={antiStrokeWidth(zoom, false)}
+        dash={GHOST_DASH}
+        listening={false}
+      />
+      <Line
+        points={[S.sx(seam.x1), S.sy(seam.y1), S.sx(seam.x2), S.sy(seam.y2)]}
+        stroke={ANTI_COLORS.seam} strokeWidth={0.5} dash={[3, 3]}
+        opacity={GHOST_OPACITY} listening={false}
+      />
+    </>
+  );
+}
+
 export default function PlanePartLayer() {
   const canvasData = useCanvasStore((s) => s.canvasData);
   const zoom = useCanvasStore((s) => s.zoom);
@@ -221,6 +254,10 @@ export default function PlanePartLayer() {
       )}
       {preview?.kind === 'pipe' && (
         <PipeView pipe={preview.pipe} S={S} zoom={zoom} ghost />
+      )}
+      {/* アンチは ScaffoldLayer と同じ板。吸着後の位置に出る (= P-3)。 */}
+      {preview?.kind === 'anti' && (
+        <AntiGhostView anti={preview.anti} S={S} zoom={zoom} />
       )}
       {/* 支柱は ScaffoldLayer と同じ丸。吸着後の位置に出る (= P-2)。 */}
       {preview?.kind === 'post' && (

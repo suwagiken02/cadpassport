@@ -7,6 +7,10 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
 import { getHandrailEndpoints } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
+import {
+  ANTI_COLORS, ANTI_CORNER_RADIUS, ANTI_OPACITY,
+  antiFill, antiRectGrid, antiSeamGrid, antiStroke, antiStrokeWidth,
+} from '@/lib/konva/antiShape';
 import { HandrailLengthMm } from '@/types';
 
 const LINE_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
@@ -80,8 +84,10 @@ export default function ScaffoldLayer() {
     <Layer>
       {/* アンチ（踏板） */}
       {canvasData.antis.map((anti) => {
-        const w = anti.direction === 'horizontal' ? mmToGrid(anti.lengthMm) : mmToGrid(anti.width);
-        const h = anti.direction === 'horizontal' ? mmToGrid(anti.width) : mmToGrid(anti.lengthMm);
+        // P-3: 外形・色は lib/konva/antiShape.ts が唯一の定義。配置シャドー
+        //   （PlanePartLayer のゴースト）とまったく同じ関数を通す。
+        const { w, h } = antiRectGrid(anti);
+        const seam = antiSeamGrid(anti);
         const isSelected = effectiveSelectedIds.includes(anti.id);
 
         return (
@@ -91,11 +97,11 @@ export default function ScaffoldLayer() {
               y={anti.y * gridPx + panY}
               width={w * gridPx}
               height={h * gridPx}
-              fill={anti.width === 400 ? '#F59E0B' : '#FCD34D'}
-              opacity={0.85}
-              cornerRadius={2}
-              stroke={isSelected ? '#FF6B35' : (anti.width === 400 ? '#B45309' : '#A16207')}
-              strokeWidth={(isSelected ? 16 : 12) * zoom}
+              fill={antiFill(anti)}
+              opacity={ANTI_OPACITY}
+              cornerRadius={ANTI_CORNER_RADIUS}
+              stroke={isSelected ? ANTI_COLORS.selected : antiStroke(anti)}
+              strokeWidth={antiStrokeWidth(zoom, isSelected)}
               listening={selectListenParts || mode === 'erase' || mode === 'move-select'}
               id={anti.id}
               draggable={mode === 'select'}
@@ -116,12 +122,10 @@ export default function ScaffoldLayer() {
             {/* 内側の破線（境界線） */}
             <Line
               points={[
-                (anti.x + 1) * gridPx + panX,
-                (anti.y + (anti.direction === 'horizontal' ? h / 2 : 1)) * gridPx + panY,
-                (anti.x + w - 1) * gridPx + panX,
-                (anti.y + (anti.direction === 'horizontal' ? h / 2 : h - 1)) * gridPx + panY,
+                seam.x1 * gridPx + panX, seam.y1 * gridPx + panY,
+                seam.x2 * gridPx + panX, seam.y2 * gridPx + panY,
               ]}
-              stroke="#b8860b"
+              stroke={ANTI_COLORS.seam}
               strokeWidth={0.5}
               dash={[3, 3]}
               listening={false}

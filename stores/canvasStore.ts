@@ -185,6 +185,8 @@ type CanvasStore = {
     | { kind: 'stair'; stair: import('@/types').Stair }
     | { kind: 'pipe'; pipe: import('@/types').Pipe }
     | { kind: 'post'; x: number; y: number }
+    /** P-3: アンチも実物と同じ姿でゴーストを出す（従来は手摺の細線に相乗りしていた）。 */
+    | { kind: 'anti'; anti: import('@/lib/konva/antiShape').AntiShape }
     | null;
   setPlanePartPreview: (p: CanvasStore['planePartPreview']) => void;
   /**
