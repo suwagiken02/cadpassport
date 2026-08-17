@@ -93,9 +93,12 @@ describe('ドラッグでもクリックでも同じ処理を通る', () => {
     expect(src).toMatch(/if \(Math\.hypot\(e\.clientX - d\.x, e\.clientY - d\.y\) > TAP_SLOP_PX\) return;/);
   });
 
-  it('キャンバスの外で押した／離した操作では置かない', () => {
-    expect(src).toMatch(/if \(!d \|\| !d\.onCanvas\) return;/);
-    expect(src).toMatch(/if \(!canvasRectAt\(e\.clientX, e\.clientY\)\) return;/);
+  // P-3 (D): キャンバスの外だけでなく、キャンバスに重なって浮いている
+  //   パレットの上での操作も受け付けない。判定は placementGridAt 1 本。
+  it('キャンバスの外・パレットの上で押した操作では置かない', () => {
+    expect(src).toMatch(/if \(!d \|\| !d\.placeable\) return;/);
+    expect(src).toMatch(/placeable: canPlaceAt\(e\.clientX, e\.clientY\)/);
+    expect(src).toMatch(/placementGridAt\(clientX, clientY, canvasRect\(\), paletteRects\(\)\) !== null/);
   });
 });
 

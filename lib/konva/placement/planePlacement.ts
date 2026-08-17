@@ -16,7 +16,7 @@
 // ============================================================
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
+import { INITIAL_GRID_PX, mmToGrid, screenToGrid } from '@/lib/konva/gridUtils';
 import {
   snapHandrailPlacement, snapObstacleToWall, snapToMagnetPin, snapPostToHandrailEnds,
 } from '@/lib/konva/snapUtils';
@@ -27,6 +27,60 @@ import type { HandrailLengthMm, Point } from '@/types';
 
 /** 手摺の端点へ吸着する画面距離(px)。 */
 const SNAP_PX = 80;
+
+// ============================================================
+// 受付範囲 (= P-3 D)
+//
+// パレットは**キャンバスの上に浮いている**。キャンバスの矩形に入っているか
+// だけを見ていたため、武装したあとにパレットの「┃縦」「向き」「角度」などを
+// 押すと、その pointerup が配置として通り、パネルの下（見えない場所）に部材が
+// 1 本置かれていた。引き出し経路はゴミ箱判定でパレットを除いていたのに、
+// クリック経路だけ除外が無かった＝経路で挙動が違う状態。
+//
+// 判定をここ（pure）に置いて、画面の矩形さえ渡せばテストから叩けるようにする。
+// ============================================================
+
+/** 画面上の矩形（DOMRect をそのまま渡せる形）。 */
+export type ScreenRect = { left: number; top: number; right: number; bottom: number };
+
+export const isInRect = (x: number, y: number, r: ScreenRect): boolean =>
+  x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+
+export const isInAnyRect = (x: number, y: number, rects: ScreenRect[]): boolean =>
+  rects.some((r) => isInRect(x, y, r));
+
+/**
+ * その画面座標が配置を受け付けるなら、キャンバスのグリッド座標。
+ * キャンバスの外、またはパレットの上なら null。
+ */
+export function placementGridAt(
+  clientX: number, clientY: number,
+  canvasRect: ScreenRect | null, blockedRects: ScreenRect[],
+): Point | null {
+  if (!canvasRect || !isInRect(clientX, clientY, canvasRect)) return null;
+  if (isInAnyRect(clientX, clientY, blockedRects)) return null;
+  const { zoom, panX, panY } = useCanvasStore.getState();
+  return screenToGrid(clientX - canvasRect.left, clientY - canvasRect.top, panX, panY, zoom);
+}
+
+/** 画面座標でのシャドー更新。受け付けない場所ならシャドーを消す。 */
+export function updatePlanePreviewAtClient(
+  drag: PlacePayload, clientX: number, clientY: number,
+  canvasRect: ScreenRect | null, blockedRects: ScreenRect[],
+): void {
+  updatePlanePreview(drag, placementGridAt(clientX, clientY, canvasRect, blockedRects));
+}
+
+/** 画面座標での配置。受け付けない場所なら何もしない。戻り値は置いたかどうか。 */
+export function placePlanePartAtClient(
+  drag: PlacePayload, clientX: number, clientY: number,
+  canvasRect: ScreenRect | null, blockedRects: ScreenRect[],
+): boolean {
+  const gridPos = placementGridAt(clientX, clientY, canvasRect, blockedRects);
+  if (!gridPos) return false;
+  placePlanePart(drag, gridPos);
+  return true;
+}
 
 /** シャドー（置かれる姿）の更新。gridPos が null＝キャンバスの外。 */
 export function updatePlanePreview(drag: PlacePayload, gridPos: Point | null): void {

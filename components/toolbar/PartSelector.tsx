@@ -8,7 +8,7 @@ import ElevationPartActions from '@/components/elevation/ElevationPartActions';
 import FloatingPanel from '@/components/ui/FloatingPanel';
 import { useHandrailSettingsStore } from '@/stores/handrailSettingsStore';
 import { HandrailLengthMm, HandrailDirection, AntiWidth, ObstacleType, Point } from '@/types';
-import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
+import { INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
 import { snapHandrailPlacement, snapToHandrail, getHandrailEndpoints, snapObstacleToWall, snapToMagnetPin, snapPostToHandrailEnds } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import {
@@ -19,7 +19,8 @@ import {
 import NumInput from '@/components/ui/NumInput';
 import { toPlacePayload, type PlacePayload, type ToolbarDrag } from './placePayload';
 import {
-  clearPlanePreviews, placePlanePart, updatePlanePreview,
+  clearPlanePreviews, isInAnyRect, placePlanePartAtClient, placementGridAt,
+  updatePlanePreviewAtClient, type ScreenRect,
 } from '@/lib/konva/placement/planePlacement';
 // E-8-v3c-fix4: 角度プリセットは立面パレットと共通（lib/konva/placement/anglePresets）。
 import { ANGLE_PRESETS, PIPE_ANGLE_PRESETS, angleToDeg, getAnglePreviewPoints } from '@/lib/konva/placement/anglePresets';
@@ -305,58 +306,49 @@ export default function PartSelector() {
     }, [selectedObstacleType, obsWidthMm, obsHeightMm, obsRotation]
   );
 
+  /**
+   * パレットが画面で占めている矩形 (= P-3 D)。
+   * 「ここへドロップ＝削除」と「ここでは配置しない」は同じ範囲なので、
+   * 判定を 1 本にして経路ごとに食い違わないようにする。
+   * 表示されていないパネル（PC での モバイルバー等）は幅 0 になるので除く。
+   */
+  const paletteRects = useCallback((): ScreenRect[] => (
+    [panelRef.current, mobilePanelRef.current, trashRef.current]
+      .map((el) => el?.getBoundingClientRect())
+      .filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
+  ), []);
+
   // --- 削除判定: パレットパネル全体にドロップで削除 ---
-  const isOverTrash = useCallback((x: number, y: number): boolean => {
-    // PC: フローティングパネル全体
-    if (panelRef.current) {
-      const rect = panelRef.current.getBoundingClientRect();
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
-    }
-    // モバイル: 固定パレット全体
-    if (mobilePanelRef.current) {
-      const rect = mobilePanelRef.current.getBoundingClientRect();
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
-    }
-    // フォールバック: 旧ゴミ箱エリア
-    if (trashRef.current) {
-      const rect = trashRef.current.getBoundingClientRect();
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
-    }
-    return false;
-  }, []);
+  const isOverTrash = useCallback(
+    (x: number, y: number): boolean => isInAnyRect(x, y, paletteRects()),
+    [paletteRects],
+  );
 
   // === 配置の共通処理 (= P-2) ===
   // ドラッグ&ドロップでも、選んでおいてクリックでも、**同じ関数**を通す。
   // 片方だけ挙動が違う／片方だけ直し忘れる、を構造で防ぐ。
 
-  /** キャンバスの矩形。その座標がキャンバスの外なら null。 */
-  const canvasRectAt = useCallback((clientX: number, clientY: number): DOMRect | null => {
+  /** キャンバスの矩形。無ければ null。 */
+  const canvasRect = useCallback((): ScreenRect | null => {
     const el = document.querySelector('.konvajs-content');
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) return rect;
-    return null;
+    return el ? el.getBoundingClientRect() : null;
   }, []);
 
-  /** クライアント座標 → キャンバスのグリッド座標。外なら null。 */
-  const gridAt = useCallback((clientX: number, clientY: number): Point | null => {
-    const rect = canvasRectAt(clientX, clientY);
-    if (!rect) return null;
-    const { zoom, panX, panY } = useCanvasStore.getState();
-    return screenToGrid(clientX - rect.left, clientY - rect.top, panX, panY, zoom);
-  }, [canvasRectAt]);
-
   const updatePreview = useCallback((drag: PlacePayload, clientX: number, clientY: number) => {
-    updatePlanePreview(drag, gridAt(clientX, clientY));
-  }, [gridAt]);
+    updatePlanePreviewAtClient(drag, clientX, clientY, canvasRect(), paletteRects());
+  }, [canvasRect, paletteRects]);
 
   const clearPreviews = useCallback(() => clearPlanePreviews(), []);
 
-  /** その位置へ置く。キャンバスの外なら何もしない。 */
+  /** その位置へ置く。キャンバスの外・パレットの上なら何もしない。 */
   const placeAt = useCallback((drag: PlacePayload, clientX: number, clientY: number) => {
-    const gridPos = gridAt(clientX, clientY);
-    if (gridPos) placePlanePart(drag, gridPos);
-  }, [gridAt]);
+    placePlanePartAtClient(drag, clientX, clientY, canvasRect(), paletteRects());
+  }, [canvasRect, paletteRects]);
+
+  /** そこは配置を受け付けるか（押した場所の判定用・置く前の下見）。 */
+  const canPlaceAt = useCallback((clientX: number, clientY: number): boolean => (
+    placementGridAt(clientX, clientY, canvasRect(), paletteRects()) !== null
+  ), [canvasRect, paletteRects]);
 
   // --- パレットから引き出す（ドラッグ&ドロップ・従来の置き方） ---
   useEffect(() => {
@@ -390,17 +382,20 @@ export default function PartSelector() {
   // --- 選んでおいてクリックで置く（立面と同じ操作感・P-2） ---
   useEffect(() => {
     if (!planeAddTool || toolbarDrag) return;
-    let down: { x: number; y: number; onCanvas: boolean } | null = null;
+    let down: { x: number; y: number; placeable: boolean } | null = null;
     const onMove = (e: PointerEvent) => updatePreview(planeAddTool, e.clientX, e.clientY);
     const onDown = (e: PointerEvent) => {
-      down = { x: e.clientX, y: e.clientY, onCanvas: !!canvasRectAt(e.clientX, e.clientY) };
+      down = { x: e.clientX, y: e.clientY, placeable: canPlaceAt(e.clientX, e.clientY) };
     };
     const onUp = (e: PointerEvent) => {
       const d = down; down = null;
-      if (!d || !d.onCanvas) return;                       // パレット等での操作は置かない
+      // パレットの上・キャンバスの外での操作は置かない (= P-3 D)。
+      //   パレットはキャンバスに重なって浮いているので、キャンバスの矩形だけを
+      //   見ていると「┃縦」などを押しただけでパネルの下に部材が置かれていた。
+      if (!d || !d.placeable) return;
       // 図面のパン・ピンチと区別する（押した場所から動いていたら配置ではない）
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_SLOP_PX) return;
-      if (!canvasRectAt(e.clientX, e.clientY)) return;
+      // 離した場所も受付範囲かは placeAt の中で再判定される
       placeAt(planeAddTool, e.clientX, e.clientY);
       setTimeout(() => useCanvasStore.getState().setSnapPoint(null), 500);
     };
@@ -412,7 +407,7 @@ export default function PartSelector() {
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [planeAddTool, toolbarDrag, updatePreview, placeAt, canvasRectAt]);
+  }, [planeAddTool, toolbarDrag, updatePreview, placeAt, canPlaceAt]);
 
   // 武装が解けたらシャドーも消す。
   useEffect(() => {

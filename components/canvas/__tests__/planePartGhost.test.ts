@@ -54,7 +54,9 @@ describe('ゴーストは手摺と同じ仕組みに乗っている', () => {
     expect(placement).toMatch(/drag\.type === 'stair'[^]*?setPlanePartPreview\(\{/);
     expect(placement).toMatch(/drag\.type === 'pipe'[^]*?setPlanePartPreview\(\{/);
     // ドラッグ経路もクリック経路も、この 1 本しか通らない
-    expect(partSelector).toMatch(/updatePlanePreview\(drag, gridAt\(clientX, clientY\)\)/);
+    expect(partSelector).toMatch(
+      /updatePlanePreviewAtClient\(drag, clientX, clientY, canvasRect\(\), paletteRects\(\)\)/,
+    );
   });
 
   it('描くのは PlanePartLayer（実物と同じ描画を通る）', () => {

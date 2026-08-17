@@ -568,26 +568,13 @@ export function useCanvasInteraction() {
         }
       }
 
-      // post モード: クリックで支柱配置（手摺端部にスナップ成功時のみ配置）
-      if (s.mode === 'post') {
-        const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * s.zoom)), 5);
-        let bestDist = snapRadius;
-        let snapped: { x: number; y: number } | null = null;
-        for (const h of s.canvasData.handrails) {
-          const [p1, p2] = getHandrailEndpoints(h);
-          for (const p of [p1, p2]) {
-            const d = Math.hypot(p.x - rawPos.x, p.y - rawPos.y);
-            if (d < bestDist) {
-              bestDist = d;
-              snapped = { x: p.x, y: p.y };
-            }
-          }
-        }
-        if (snapped) {
-          s.addPost({ id: uuidv4(), x: snapped.x, y: snapped.y });
-        }
-        return;
-      }
+      // P-3 (C): post モードの旧クリック配置はここにあったが撤去した。
+      //   P-2 でパレットの武装＋クリック配置が入ったあとも残っていたため、
+      //   支柱で武装した状態で手摺端の近くをクリックすると
+      //   **旧経路(pointerdown) と新経路(pointerup) で 2 本**入っていた
+      //   （同じ座標に重なるので見た目は 1 本。Undo 1 回では 1 本残る）。
+      //   吸着は新経路が同じ snapPostToHandrailEnds を通るので失われない。
+      //   手摺・アンチ・階段・単管に旧経路は無く、支柱だけが二重だった。
       // memo モード
       if (s.mode === 'memo') {
         if (s.memoDraft) {
