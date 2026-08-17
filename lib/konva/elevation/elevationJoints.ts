@@ -80,9 +80,15 @@ export function partJoints(part: ElevationPart, sg: Scaffold | undefined): Joint
         ...postKomaMm(part, sg).map((h) => at(r.x0Mm, h, 'pocket')),  // コマ（メス）
       ];
     }
-    case 'jack':
+    case 'jack': {
       // ジャッキは足元の部材。上端が支柱を受ける。
-      return sg ? [at(r.x0Mm, sg.jackTopMm, 'cup')] : [];
+      // E-8-v5b: 足場が無くても（freeParts でも）受け口を出す。ジャッキの levelMm は
+      //   **上端**（partPivotMm と同じ扱い）。ここが sg 頼みだったため、キャンバス直下の
+      //   ジャッキは接合点ゼロ＝支柱のホゾが乗らなかった（ホゾ⇔受けの片方が欠けていた）。
+      //   sg があるときは従来どおり足場の皿高さを使う＝立面ビュー内の挙動は変わらない。
+      const topMm = sg ? sg.jackTopMm : part.levelMm;
+      return topMm == null ? [] : [at(r.x0Mm, topMm, 'cup')];
+    }
     case 'brace': {
       // 筋交はスパンの対角。上端と下端で高さが違う。
       const topMm = part.levelMm ?? sg?.topRailMm ?? 0;

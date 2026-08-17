@@ -28,16 +28,10 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
 import { canPlaceFreePart } from '@/lib/konva/elevation/placementGate';
 import {
-  GRID_MM, movePart, type ElevationPart,
-} from '@/lib/konva/elevation/elevationParts';
-import { snapJoint } from '@/lib/konva/elevation/elevationJoints';
-import {
-  freePartsToPrimitives, newFreePart, nextFreePartId, type FreePart,
-} from '@/lib/konva/freeParts';
+  freePartDraftAt, moveFreePartBy, placeFreePartAt,
+} from '@/lib/konva/placement/freePartPlacement';
+import { freePartsToPrimitives } from '@/lib/konva/freeParts';
 import { groupByPartId, renderPrimLocal } from './ElevationViewLayer';
-
-/** 接合点へ吸着する画面距離(px)。立面と同じ値（同じ操作感にする）。 */
-const JOINT_SNAP_PX = 22;
 /** ドラッグと判定するまでの移動量(px)。指のタップのぶれより大きく。 */
 const EDIT_DRAG_PX = 10;
 
@@ -97,28 +91,13 @@ export default function FreePartLayer() {
     x: (pt.x - panX) / gridPx, y: (pt.y - panY) / gridPx,
   });
 
-  /** 置こうとしている部材（シャドー兼、確定時の実体）。接合が近ければ吸着する。 */
-  const draftAt = (atGrid: { x: number; y: number }): FreePart | null => {
-    if (!addTool || addTool === 'text') return null;
-    const isPost = addTool === 'post' || addTool === 'postExt';
-    const draft = newFreePart(addTool, 'draft', atGrid, {
-      komaCount: isPost ? addSize : undefined,
-      sizeMm: isPost ? undefined : addSize,
-      flip: addFlip,
-      angleDeg: addAngle,
-    });
-    const snap = snapJoint(draft, parts, undefined, { dxMm: 0, dyMm: 0 }, {
-      pxPerMm: gridPx / GRID_MM, tolPx: JOINT_SNAP_PX,
-    });
-    return (snap.dxMm || snap.dyMm) ? movePart(draft, undefined, snap) : draft;
-  };
-
-  const placeAtScreen = (pt: { x: number; y: number }) => {
-    if (!addTool || addTool === 'text') return;
-    const draft = draftAt(toGrid(pt));
-    if (!draft) return;
-    useCanvasStore.getState().addFreePart({ ...draft, id: nextFreePartId(parts, addTool) });
-  };
+  /**
+   * 置く・動かす・接合吸着は lib/konva/placement/freePartPlacement.ts が 1 本で持つ
+   * (= E-8-v5b)。渡すのは「どこへ」だけで、選んでいる部材・寸法・既存の部材・ズームは
+   * すべてストアから読む。コンポーネントの古い値を掴む事故（P-2-fix と同型）が
+   * 構造的に起こらず、シャドーと確定がまったく同じ関数を通るので位置も必ず一致する。
+   */
+  const placeAtScreen = (pt: { x: number; y: number }) => { placeFreePartAt(toGrid(pt)); };
 
   /**
    * パレットから指で引き出して離したとき (= E-8-v3c と同じ受け口)。
@@ -133,21 +112,6 @@ export default function FreePartLayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropAt, placing]);
 
-  /** ドラッグ量(グリッド) → 吸着込みの移動量(mm)。 */
-  const dragMove = (part: ElevationPart, d: { x: number; y: number }) => {
-    const move = { dxMm: d.x * GRID_MM, dyMm: -d.y * GRID_MM };
-    const snap = snapJoint(part, parts, undefined, move, {
-      pxPerMm: gridPx / GRID_MM, tolPx: JOINT_SNAP_PX,
-    });
-    return { dxMm: move.dxMm + snap.dxMm, dyMm: move.dyMm + snap.dyMm };
-  };
-
-  const dropPart = (part: ElevationPart, d: { x: number; y: number }) => {
-    const move = dragMove(part, d);
-    if (Math.abs(move.dxMm) < 1e-6 && Math.abs(move.dyMm) < 1e-6) return;
-    useCanvasStore.getState().setFreePart(part.id, movePart(part, undefined, move));
-  };
-
   /** タップ: 消去ツール中は削除、そうでなければ既存の選択経路（selectedIds）へ乗せる。 */
   const onPartTap = (id: string) => {
     const st = useCanvasStore.getState();
@@ -155,18 +119,24 @@ export default function FreePartLayer() {
     st.setSelectedIds([id]);
   };
 
-  const draftPreview = (() => {
-    if (!placing || !hoverScreen) return null;
-    const draft = draftAt(toGrid(hoverScreen));
-    if (!draft) return null;
-    return (
-      <Group opacity={0.45} listening={false}>
-        {freePartsToPrimitives([draft]).map((p, k) => renderPrimLocal(p, `draft-${k}`, gridPx, {
-          selected: false, overridden: false, interactive: false,
-        }))}
-      </Group>
-    );
-  })();
+  /**
+   * シャドー（置かれる姿）。確定と同じ freePartDraftAt を通す。
+   * 中身はストアから読むので、パレットで寸法や向きを変えたときに描き直せるよう、
+   * 依存にはその値を並べておく（指を動かさなくても姿が変わる）。
+   */
+  const draftPart = useMemo(
+    () => (placing && hoverScreen ? freePartDraftAt(toGrid(hoverScreen)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [placing, hoverScreen, addTool, addSize, addFlip, addAngle, parts, zoom, panX, panY],
+  );
+
+  const draftPreview = draftPart && (
+    <Group opacity={0.45} listening={false}>
+      {freePartsToPrimitives([draftPart]).map((p, k) => renderPrimLocal(p, `draft-${k}`, gridPx, {
+        selected: false, overridden: false, interactive: false,
+      }))}
+    </Group>
+  );
 
   // 部材も置き場所も無いなら何も出さない（従来どおりのキャンバス）。
   if (parts.length === 0 && !placing) return null;
@@ -216,7 +186,7 @@ export default function FreePartLayer() {
               onDragEnd={(e) => {
                 const d = e.target.position();
                 e.target.position({ x: 0, y: 0 });
-                if (part) dropPart(part, d);
+                moveFreePartBy(id, d);
               }}
               onClick={() => onPartTap(id)}
               onTap={() => onPartTap(id)}
