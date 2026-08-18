@@ -23,6 +23,8 @@ import {
 
 /** DXF 本体の文字列を組み立てる（pure・DOM に触らない）。 */
 export const buildDxf = (canvasData: CanvasData): string => {
+  // S-1: 敷地境界線。無い図面では 1 バイトも出力を変えない。
+  const sitePolygons = canvasData.sitePolygons ?? [];
   // DXFファイルを手動構築（dxf-writerのAPIに依存）
   let dxf = '';
 
@@ -47,6 +49,9 @@ export const buildDxf = (canvasData: CanvasData): string => {
     { name: 'PIPE', color: 9 },
     // E-8-v5a: キャンバス直下の手動部材。
     { name: 'FREEPART', color: 6 },
+    // S-1: 敷地境界線。**敷地があるときだけ**定義を出す。
+    //   敷地を使っていない既存の図面は、出力がバイト単位で完全に不変になる。
+    ...(sitePolygons.length > 0 ? [{ name: 'SITE', color: 1 }] : []),
   ];
 
   layers.forEach((layer) => {
@@ -68,6 +73,17 @@ export const buildDxf = (canvasData: CanvasData): string => {
   canvasData.buildings.forEach((b) => {
     dxf += '0\nLWPOLYLINE\n8\nBUILDING\n90\n' + b.points.length + '\n70\n1\n';
     b.points.forEach((p) => {
+      dxf += `10\n${gridToMm(p.x)}\n20\n${gridToMm(p.y)}\n`;
+    });
+  });
+
+  // 敷地境界線（ポリライン）(= S-1)
+  //   建物とまったく同じ粒度。閉じた外形なので LINE に割らず 1 本のポリラインで出す。
+  //   線種は CONTINUOUS のまま（DXF に LTYPE テーブルを持っていない）。受け取り側の CAD で
+  //   SITE レイヤーに一点鎖線を当ててもらう前提。
+  sitePolygons.forEach((s) => {
+    dxf += '0\nLWPOLYLINE\n8\nSITE\n90\n' + s.points.length + '\n70\n1\n';
+    s.points.forEach((p) => {
       dxf += `10\n${gridToMm(p.x)}\n20\n${gridToMm(p.y)}\n`;
     });
   });
