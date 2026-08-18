@@ -53,7 +53,11 @@ export default function MoveSelectRangePanel() {
         ...(canvasData.freeParts ?? []).map(p => p.id),
       );
     }
-    if (categories.building) ids.push(...canvasData.buildings.map(b => b.id));
+    if (categories.building) {
+      ids.push(...canvasData.buildings.map(b => b.id));
+      // S-1: 敷地は「建物」カテゴリに含める（躯体まわりで、選択ロックも建物側に従う）。
+      ids.push(...(canvasData.sitePolygons ?? []).map(s => s.id));
+    }
     if (categories.obstacle) ids.push(...canvasData.obstacles.map(o => o.id));
     if (categories.memo) ids.push(...canvasData.memos.map(m => m.id));
     setMoveSelectIds(ids);

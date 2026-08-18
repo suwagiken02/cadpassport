@@ -1109,6 +1109,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       memos: backup.memos.map(m =>
         cats.memo && sel.has(m.id) ? { ...m, x: m.x + dx, y: m.y + dy } : m
       ),
+      // S-1: 敷地は「建物」カテゴリとして扱う（躯体まわりで、選択ロックも建物側に従う）。
+      //   建物と同じく外形の全頂点をずらす。
+      sitePolygons: (backup.sitePolygons ?? []).map(sp =>
+        cats.building && sel.has(sp.id)
+          ? { ...sp, points: sp.points.map(p => ({ x: p.x + dx, y: p.y + dy })) }
+          : sp
+      ),
     };
 
     set({

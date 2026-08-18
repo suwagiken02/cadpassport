@@ -19,6 +19,8 @@ export function computeContentBounds(cv: CanvasData): GridBounds | null {
   };
 
   for (const b of cv.buildings) for (const p of b.points) see(p.x, p.y);
+  // S-1: 敷地は建物の外側に広がるので、ここを見落とすと PDF/画像の枠から切れる。
+  for (const sp of cv.sitePolygons ?? []) for (const p of sp.points) see(p.x, p.y);
   for (const o of cv.obstacles) {
     see(o.x, o.y); see(o.x + (o.width ?? 0), o.y + (o.height ?? 0));
     if (o.points) for (const p of o.points) see(p.x, p.y);

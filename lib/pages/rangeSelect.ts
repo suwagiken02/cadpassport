@@ -31,6 +31,8 @@ export function collectIdsInRect(canvasData: CanvasData, rect: SelectRect): stri
   const ids: string[] = [];
 
   for (const b of canvasData.buildings) if (b.points.some(inRect)) ids.push(b.id);
+  // S-1: 敷地境界線は建物と同じ判定（外形の頂点がひとつでも入っていれば拾う）。
+  for (const sp of canvasData.sitePolygons ?? []) if (sp.points.some(inRect)) ids.push(sp.id);
   for (const o of canvasData.obstacles) {
     const center = { x: o.x + (o.width ?? 0) / 2, y: o.y + (o.height ?? 0) / 2 };
     if (inRect(center) || (o.points && o.points.some(inRect))) ids.push(o.id);

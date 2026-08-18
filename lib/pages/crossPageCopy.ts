@@ -11,7 +11,7 @@
 // ============================================================
 import type {
   CanvasData, BuildingShape, RoofOverhang, Roof, Obstacle, Handrail, Post, Anti, Memo,
-  HeightMarker, RidgeLine, ElevationView, MagnetPin, Point, Stair, Pipe,
+  HeightMarker, RidgeLine, ElevationView, MagnetPin, Point, Stair, Pipe, SitePolygon,
 } from '@/types';
 import { freePartAnchorGrid, moveFreePart, type FreePart } from '@/lib/konva/freeParts';
 import { v4 as uuidv4 } from 'uuid';
@@ -34,13 +34,15 @@ export type CrossPagePayload = {
   pipes: Pipe[];
   /** キャンバス直下の手動部材 (= E-8-v5a)。 */
   freeParts: FreePart[];
+  /** 敷地境界線 (= S-1)。建物と同じく外形の全頂点をオフセットする。 */
+  sitePolygons: SitePolygon[];
 };
 
 function emptyPayload(): CrossPagePayload {
   return {
     buildings: [], roofOverhangs: [], roofs: [], obstacles: [], handrails: [], posts: [],
     antis: [], memos: [], heightMarkers: [], ridgeLines: [], elevationViews: [], magnetPins: [],
-    stairs: [], pipes: [], freeParts: [],
+    stairs: [], pipes: [], freeParts: [], sitePolygons: [],
   };
 }
 
@@ -102,6 +104,7 @@ export function collectSelectionSubset(
   pushSelected(canvasData.stairs ?? [], subset.stairs);
   pushSelected(canvasData.pipes ?? [], subset.pipes);
   pushSelected(canvasData.freeParts ?? [], subset.freeParts);
+  pushSelected(canvasData.sitePolygons ?? [], subset.sitePolygons);
 
   return { subset, sourceIds, origin: subsetOrigin(subset) };
 }
@@ -111,6 +114,7 @@ function subsetOrigin(s: CrossPagePayload): Point {
   let minX = Infinity, minY = Infinity;
   const see = (x: number, y: number) => { if (x < minX) minX = x; if (y < minY) minY = y; };
   for (const b of s.buildings) for (const p of b.points) see(p.x, p.y);
+  for (const sp of s.sitePolygons) for (const p of sp.points) see(p.x, p.y);
   for (const o of s.obstacles) { see(o.x, o.y); if (o.points) for (const p of o.points) see(p.x, p.y); }
   for (const h of s.handrails) see(h.x, h.y);
   for (const p of s.posts) see(p.x, p.y);
@@ -142,6 +146,10 @@ export function instantiateSubset(
     const id = genId();
     buildingIdMap.set(b.id, id);
     out.buildings.push({ ...clone(b), id, points: b.points.map(off) });
+  }
+  // S-1: 敷地は建物に紐づかないので、外形をずらして採番するだけ。
+  for (const sp of subset.sitePolygons) {
+    out.sitePolygons.push({ ...clone(sp), id: genId(), points: sp.points.map(off) });
   }
   for (const r of subset.roofOverhangs) {
     out.roofOverhangs.push({ ...clone(r), id: genId(), buildingId: buildingIdMap.get(r.buildingId) ?? r.buildingId });
@@ -177,7 +185,7 @@ export function payloadIds(p: CrossPagePayload): string[] {
   return [
     ...p.buildings, ...p.roofOverhangs, ...p.roofs, ...p.obstacles, ...p.handrails, ...p.posts,
     ...p.antis, ...p.memos, ...p.heightMarkers, ...p.ridgeLines, ...p.elevationViews, ...p.magnetPins,
-    ...p.stairs, ...p.pipes, ...p.freeParts,
+    ...p.stairs, ...p.pipes, ...p.freeParts, ...p.sitePolygons,
   ].map((o) => o.id);
 }
 
@@ -213,6 +221,7 @@ export function mergePayloadIntoCanvas(canvasData: CanvasData, payload: CrossPag
     stairs: [...(canvasData.stairs ?? []), ...payload.stairs],
     pipes: [...(canvasData.pipes ?? []), ...payload.pipes],
     freeParts: [...(canvasData.freeParts ?? []), ...payload.freeParts],
+    sitePolygons: [...(canvasData.sitePolygons ?? []), ...payload.sitePolygons],
   };
 }
 

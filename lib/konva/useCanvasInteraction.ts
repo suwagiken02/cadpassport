@@ -28,6 +28,8 @@ function getCategoryFromId(id: string, canvasData: CanvasData): MoveSelectCat | 
   if ((canvasData.pipes ?? []).some(p => p.id === id)) return 'scaffold';
   if ((canvasData.freeParts ?? []).some(p => p.id === id)) return 'scaffold';
   if (canvasData.buildings.some(b => b.id === id)) return 'building';
+  // S-1: 敷地は躯体まわりなので「建物」カテゴリで扱う。
+  if ((canvasData.sitePolygons ?? []).some(s => s.id === id)) return 'building';
   if (canvasData.obstacles.some(o => o.id === id)) return 'obstacle';
   if (canvasData.memos.some(m => m.id === id)) return 'memo';
   return null;
