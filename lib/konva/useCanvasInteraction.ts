@@ -688,6 +688,15 @@ export function useCanvasInteraction() {
         return;
       }
 
+      // S-7: 敷地の起点を選んでいる間だけ、ポインタ位置を覚えておく（建物からの距離ガイド用）。
+      //   起点を打つ前（directionPoints が空）だけ。打った後は方向入力に移るので更新しない。
+      //   計測ツールと同じくマウスの移動で更新する＝タッチでは指を置くまで動かない。
+      //   ここでは覚えるだけで return しないので、以降の処理は従来どおり通る。
+      if (s.mode === 'building' && s.buildingInputMethod === 'direction'
+        && s.pendingTargetType === 'site' && s.directionPoints.length === 0) {
+        s.setSiteStartCursor(toGrid(stage, clientPos));
+      }
+
       // 寸法計測モード
       if (s.isMeasuring && s.measurePoint1) {
         const raw = toGrid(stage, clientPos);

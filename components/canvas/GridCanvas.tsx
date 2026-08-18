@@ -12,6 +12,7 @@ import {
   ZOOM_MAX,
 } from '@/lib/konva/gridUtils';
 import SiteLayer from './SiteLayer';
+import SiteStartGuideLayer from './SiteStartGuideLayer';
 import BuildingLayer from './BuildingLayer';
 import ScaffoldLayer from './ScaffoldLayer';
 import PlanePartLayer from './PlanePartLayer';
@@ -691,6 +692,9 @@ export default function GridCanvas({ width, height }: Props) {
 
       {/* マグネットピン: 仮位置プレビュー（破線 + 半透明待ち針） */}
       <PinDraftLayer />
+
+      {/* S-7: 敷地の起点を選んでいる間だけ、建物からの距離を出す */}
+      <SiteStartGuideLayer />
 
       {/* マグネットピン: 十字方向パッド（anchor 選択中のみ表示） */}
       <PinDirectionPad />

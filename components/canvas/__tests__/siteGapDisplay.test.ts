@@ -4,7 +4,7 @@
 // ・選んだら出る／選択を外したら消える
 // ・頂点を動かせば数値も追従する
 // ・建物が無ければ何も出ない（落ちない）
-// ・S-5 の「ドラッグ中だけの赤いガイド」は従来どおり（変えていない）
+// ・S-7 で頂点ドラッグ中の赤いガイドは外したので、ここは青だけになる
 // ============================================================
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
@@ -159,7 +159,7 @@ describe('建物が無い図面', () => {
     expect(shownGaps()).toHaveLength(0);
   });
 
-  it('つまみと S-5 のガイドの経路は生きたまま', () => {
+  it('つまみの経路は生きたまま', () => {
     st().pushHistory();
     st().setSitePolygonPoint('site:1', 0, { x: -150, y: -150 });
     expect(st().canvasData.sitePolygons![0].points[0]).toEqual({ x: -150, y: -150 });
@@ -184,17 +184,16 @@ describe('重くしないための作り', () => {
 });
 
 // ============================================================
-describe('見た目（S-5 より控えめ）', () => {
-  it('S-5 の赤とは別の色・細い線・小さい字', () => {
+describe('見た目（控えめに）', () => {
+  it('落ち着いた色・細い線・小さい字', () => {
     expect(siteLayer).toMatch(/const GAP_COLOR = '#2563EB';/);
     expect(siteLayer).toMatch(/const GAP_DASH = \[4, 4\];/);
     expect(siteLayer).toMatch(/const GAP_FONT = 11;/);
-    // S-5 は 13px 太字の赤のまま
-    expect(siteLayer).toMatch(/const GUIDE_COLOR = '#EF4444';/);
-    expect(siteLayer).toMatch(/fontSize=\{13\} fontFamily="monospace" fontStyle="bold"/);
+    // S-7: 赤いガイドは頂点ドラッグから外したので、この層には赤が無い
+    expect(siteLayer).not.toMatch(/#EF4444/);
   });
 
-  it('常時表示の線は S-5 より細い', () => {
+  it('常時表示の線は細い', () => {
     const gap = siteLayer.slice(siteLayer.indexOf('{editable && gaps.map'), siteLayer.indexOf('{/* S-4:'));
     expect(gap).toMatch(/strokeWidth=\{1\}/);
     expect(gap).toMatch(/opacity=\{0\.75\}/);
@@ -206,17 +205,17 @@ describe('見た目（S-5 より控えめ）', () => {
     expect(gap).not.toMatch(/draggable|onClick|onTap/);
   });
 
-  it('S-5 のガイドより下に描く（赤が主役）', () => {
+  it('つまみより下に描く（つまみが掴みやすいまま）', () => {
     expect(siteLayer.indexOf('{editable && gaps.map'))
-      .toBeLessThan(siteLayer.indexOf('{drag && guide &&'));
+      .toBeLessThan(siteLayer.indexOf('{/* S-4:'));
   });
 });
 
 // ============================================================
-describe('S-5 の挙動は変えていない', () => {
-  it('ドラッグ中だけの赤いガイドはそのまま', () => {
-    expect(siteLayer).toMatch(/const guide = drag \? nearestBuildingCornerGuide\(drag\.point, buildingCorners\) : null;/);
-    expect(siteLayer).toMatch(/\{drag && guide && \(\(\) => \{/);
+describe('つまみ側の挙動は変えていない', () => {
+  it('S-7: 頂点ドラッグ中の赤いガイドは外した（青だけになる）', () => {
+    expect(siteLayer).not.toMatch(/nearestBuildingCornerGuide/);
+    expect(siteLayer).not.toMatch(/\{drag && guide/);
   });
 
   it('つまみのドラッグ・確定・吸着の配線もそのまま', () => {

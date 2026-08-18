@@ -27,16 +27,12 @@ import {
   SITE_SELECT_COLOR, SITE_VERTEX_FILL, SITE_VERTEX_HIT, SITE_VERTEX_R, SITE_VERTEX_SNAP_PX,
   siteDash, siteStrokeColor, siteStrokeWidth, snapSiteVertex,
 } from '@/lib/konva/siteShape';
-import { buildingCornersGrid, nearestBuildingCornerGuide } from '@/lib/konva/siteVertexGuide';
+import { buildingCornersGrid } from '@/lib/konva/siteVertexGuide';
 import { gapGuides } from '@/lib/konva/siteGapGuides';
 import type { Point } from '@/types';
 
 /** ドラッグ中の頂点（確定するまではストアへ書かず、ここで見せるだけ）。 */
 type VertexDrag = { id: string; index: number; point: Point };
-
-/** 距離ガイドの色。計測ツールと同じ赤にそろえる (= S-5)。 */
-const GUIDE_COLOR = '#EF4444';
-const GUIDE_DASH = [6, 4];
 
 /**
  * すき間の常時表示 (= S-6)。S-5 の赤いガイドが主役なので、こちらは控えめにする
@@ -126,12 +122,6 @@ export default function SiteLayer() {
     ...sites.filter((s) => s.id !== id).flatMap((s) => s.points),
   ];
 
-  /**
-   * ドラッグ中だけ出す距離ガイド (= S-5)。
-   * いちばん近い建物の角までの X / Y 距離。建物が無ければ null（何も出さない）。
-   */
-  const guide = drag ? nearestBuildingCornerGuide(drag.point, buildingCorners) : null;
-
   return (
     <Layer>
       {sites.map((site) => {
@@ -218,42 +208,6 @@ export default function SiteLayer() {
           />
         ))
       ))}
-
-      {/* S-5: ドラッグ中だけ、いちばん近い建物の角までの X / Y 距離を出す。
-          離せば消える（drag が null になる）。見た目は計測ツールに合わせた赤の破線。 */}
-      {drag && guide && (() => {
-        const p = drag.point;
-        const cx = sx(guide.corner.x);
-        const cy = sy(guide.corner.y);
-        const px = sx(p.x);
-        const py = sy(p.y);
-        const xLabel = `${guide.dxMm}mm`;
-        const yLabel = `${guide.dyMm}mm`;
-        // 数値は指に隠れないよう、脚の中点から外へずらす。
-        //   X は上へ 18px、Y は L の外側（頂点から見て角と反対側）へ 14px。
-        const ySide = p.x >= guide.corner.x ? 1 : -1;
-        return (
-          <React.Fragment key="site-vertex-guide">
-            {/* 水平の補助線（角 → 頂点の真上/真下） */}
-            <Line points={[cx, cy, px, cy]} stroke={GUIDE_COLOR} strokeWidth={1.5}
-              dash={GUIDE_DASH} opacity={0.9} listening={false} />
-            {/* 垂直の補助線（そこから頂点まで） */}
-            <Line points={[px, cy, px, py]} stroke={GUIDE_COLOR} strokeWidth={1.5}
-              dash={GUIDE_DASH} opacity={0.9} listening={false} />
-            {/* 相手の建物角 */}
-            <Circle x={cx} y={cy} radius={5} fill={GUIDE_COLOR} listening={false} />
-            <Circle x={cx} y={cy} radius={2} fill="#FFFFFF" listening={false} />
-            {/* X 距離 */}
-            <Text x={(cx + px) / 2} y={cy - 18} text={xLabel}
-              fontSize={13} fontFamily="monospace" fontStyle="bold" fill={GUIDE_COLOR}
-              offsetX={(xLabel.length * 7.5) / 2} listening={false} />
-            {/* Y 距離 */}
-            <Text x={px + ySide * 14} y={(cy + py) / 2 - 7} text={yLabel}
-              fontSize={13} fontFamily="monospace" fontStyle="bold" fill={GUIDE_COLOR}
-              offsetX={ySide > 0 ? 0 : yLabel.length * 7.5} listening={false} />
-          </React.Fragment>
-        );
-      })()}
     </Layer>
   );
 }

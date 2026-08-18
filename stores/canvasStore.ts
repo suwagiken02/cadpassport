@@ -316,6 +316,13 @@ type CanvasStore = {
   setShowBuildingModal: (show: boolean) => void;
   showBuilding2FModal: boolean;
   setShowBuilding2FModal: (show: boolean) => void;
+  /**
+   * S-7: 敷地の起点を選んでいる間のポインタ位置（グリッド）。
+   * 建物からの距離ガイドを出すためだけに持つ。マウスの移動でだけ更新される
+   * （タッチは指を置くまで位置が取れないので、既存の計測ツールと同じ扱い）。
+   */
+  siteStartCursor: import('@/types').Point | null;
+  setSiteStartCursor: (p: import('@/types').Point | null) => void;
   /** S-4: 敷地の入口（「手で描く／自動生成」を選ばせる小さいモーダル）。 */
   showSiteModal: boolean;
   setShowSiteModal: (show: boolean) => void;
@@ -822,6 +829,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   removeLastDirectionPoint: () => set((s) => ({ directionPoints: s.directionPoints.slice(0, -1) })),
   clearDirectionPoints: () => set({
     directionPoints: [], directionPointsHistory: [],
+    // S-7: 起点選びのガイドもここで消す（描き終わり・中断のどちらでも通る）。
+    siteStartCursor: null,
     directionCursor: null, noWallMode: false,
   }),
   setDirectionPoints: (points) => set({ directionPoints: points }),
@@ -943,6 +952,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setShowElevation: (show) => set({ showElevation: show }),
   showBuilding2FModal: false,
   setShowBuilding2FModal: (show) => set({ showBuilding2FModal: show }),
+  siteStartCursor: null,
+  setSiteStartCursor: (p) => set({ siteStartCursor: p }),
   showSiteModal: false,
   setShowSiteModal: (show) => set({ showSiteModal: show }),
   showSettings: false,
