@@ -6,8 +6,8 @@
 //
 //   1. 建物の各**出隅**（外に凸の角）から、外向きに水平・垂直へ伸ばして
 //      最初にぶつかる敷地の辺までの距離
-//   2. 敷地の**入隅**（凹んだ頂点）から、水平に伸ばして最初にぶつかる
-//      建物の壁までの距離
+//   2. 敷地の**入隅**（凹んだ頂点）から、水平・垂直に伸ばして最初にぶつかる
+//      建物の壁までの距離 (= 垂直は S-6-fix1 で追加)
 //
 // ぶつからない方向は出さない（敷地の外へ出てしまう向きなど）。
 //
@@ -153,27 +153,32 @@ export function buildingCornerGuides(
 }
 
 /**
- * 敷地の入隅 → 建物の壁（水平）。
- * どちら向きに伸ばすかは決め打ちにせず、左右どちらも見て**近い方**を採る
+ * 敷地の入隅 → 建物の壁（水平・垂直）(= S-6-fix1 で垂直を追加)。
+ * どちら向きに伸ばすかは決め打ちにせず、両側を見て**近い方**を採る
  * （建物が右にある入隅も左にある入隅もあるため。無い側は当たらないので出ない）。
+ * 縦も同じルール。当たらない軸はその軸だけ出さない。
  */
 export function siteConcaveGuides(
   sites: { points: Point[] }[], buildingSegments: Segment[],
 ): GapGuide[] {
   if (buildingSegments.length === 0) return [];
+  const along = (axis: 'x' | 'y', from: Point, p: Point) =>
+    Math.abs(axis === 'x' ? p.x - from.x : p.y - from.y);
   const out: GapGuide[] = [];
   for (const s of sites) {
     if (s.points.length < 3) continue;
     const convex = convexFlags(s.points);
     s.points.forEach((v, i) => {
       if (convex[i]) return;                       // 入隅（凹）だけ
-      let best: Point | null = null;
-      for (const sign of [1, -1] as const) {
-        const hit = rayFirstHit(v, 'x', sign, buildingSegments);
-        if (!hit) continue;
-        if (!best || Math.abs(hit.x - v.x) < Math.abs(best.x - v.x)) best = hit;
+      for (const axis of ['x', 'y'] as const) {
+        let best: Point | null = null;
+        for (const sign of [1, -1] as const) {
+          const hit = rayFirstHit(v, axis, sign, buildingSegments);
+          if (!hit) continue;
+          if (!best || along(axis, v, hit) < along(axis, v, best)) best = hit;
+        }
+        if (best) out.push({ kind: 'site', axis, from: v, to: best, mm: mmOf(v, best) });
       }
-      if (best) out.push({ kind: 'site', axis: 'x', from: v, to: best, mm: mmOf(v, best) });
     });
   }
   return out;

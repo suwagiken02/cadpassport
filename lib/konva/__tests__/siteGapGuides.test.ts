@@ -240,6 +240,89 @@ describe('敷地の入隅から建物まで（当たる配置）', () => {
     const gs = siteConcaveGuides([site], polygonSegments(building.points));
     for (const g of gs) expect(g.to.x).toBeLessThan(g.from.x);
   });
+
+  it('縦に当たらない切り欠きでは、縦は出さない（水平だけ）', () => {
+    // 切り欠きの奥は y 30〜70 なので、真上・真下に伸ばしても建物(x 0〜100)には当たらない
+    const gs = siteConcaveGuides([site], polygonSegments(building.points));
+    expect(gs.every((g) => g.axis === 'x')).toBe(true);
+  });
+});
+
+// ============================================================
+describe('敷地の入隅から建物まで・垂直 (= S-6-fix1)', () => {
+  const building = { points: rect(0, 0, 100, 100) };
+  // 建物の下側から上へ食い込む切り欠きを持つ敷地（水平の例を 90° 回したもの）
+  const site = {
+    points: [
+      { x: -200, y: -200 }, { x: 400, y: -200 }, { x: 400, y: 300 },
+      { x: 70, y: 300 }, { x: 70, y: 200 }, { x: 30, y: 200 },
+      { x: 30, y: 300 }, { x: -200, y: 300 },
+    ],
+  };
+
+  it('入隅は 2 つ', () => {
+    expect(convexFlags(site.points).filter((c) => !c)).toHaveLength(2);
+  });
+
+  it('入隅から上へ伸ばして建物の下壁に当たる', () => {
+    const gs = siteConcaveGuides([site], polygonSegments(building.points));
+    expect(gs).toHaveLength(2);
+    for (const g of gs) {
+      expect(g.axis).toBe('y');
+      expect(g.kind).toBe('site');
+      expect(g.to.y).toBe(100);          // 建物の下壁
+      expect(g.mm).toBe(1000);           // 200 - 100 = 100 グリッド = 1000mm
+    }
+  });
+
+  it('近い方の向きを採る（上下どちらも見る）', () => {
+    const gs = siteConcaveGuides([site], polygonSegments(building.points));
+    for (const g of gs) expect(g.to.y).toBeLessThan(g.from.y);
+  });
+
+  it('横に当たらない切り欠きでは、横は出さない（垂直だけ）', () => {
+    // 切り欠きの奥は x 30〜70 なので、真横に伸ばしても建物(y 0〜100)には当たらない
+    const gs = siteConcaveGuides([site], polygonSegments(building.points));
+    expect(gs.every((g) => g.axis === 'y')).toBe(true);
+  });
+
+  it('横向きと縦向きの切り欠きが両方あれば、水平・垂直が同時に出る', () => {
+    // 右から食い込む切り欠き（y 30〜70）と、下から食い込む切り欠き（x 30〜70）
+    const both = {
+      points: [
+        { x: -200, y: -200 }, { x: 400, y: -200 },
+        { x: 400, y: 30 }, { x: 200, y: 30 }, { x: 200, y: 70 }, { x: 400, y: 70 },
+        { x: 400, y: 300 }, { x: 70, y: 300 }, { x: 70, y: 200 }, { x: 30, y: 200 },
+        { x: 30, y: 300 }, { x: -200, y: 300 },
+      ],
+    };
+    const gs = siteConcaveGuides([both], polygonSegments(building.points));
+    expect(gs.filter((g) => g.axis === 'x')).toHaveLength(2);
+    expect(gs.filter((g) => g.axis === 'y')).toHaveLength(2);
+    for (const g of gs) expect(g.mm).toBe(1000);
+  });
+
+  it('1 つの入隅から出るのは、当たった軸だけ（両方当たる配置は敷地の外側では起きない）', () => {
+    // 水平の切り欠きの奥（200,30）からは、真上・真下に伸ばしても建物(x 0〜100)に当たらない
+    const sideNotch = {
+      points: [
+        { x: -200, y: -200 }, { x: 400, y: -200 }, { x: 400, y: 30 },
+        { x: 200, y: 30 }, { x: 200, y: 70 }, { x: 400, y: 70 },
+        { x: 400, y: 300 }, { x: -200, y: 300 },
+      ],
+    };
+    const gs = siteConcaveGuides([sideNotch], polygonSegments(building.points));
+    expect(gs.filter((g) => g.from.x === 200 && g.from.y === 30).map((g) => g.axis)).toEqual(['x']);
+  });
+
+  it('建物が無ければ何も出ない', () => {
+    expect(siteConcaveGuides([site], [])).toEqual([]);
+  });
+
+  it('入隅がまったく無い敷地では何も出ない', () => {
+    expect(siteConcaveGuides([{ points: rect(-200, -200, 600, 600) }],
+      polygonSegments(building.points))).toEqual([]);
+  });
 });
 
 // ============================================================
