@@ -11,6 +11,7 @@ import {
   ZOOM_MIN,
   ZOOM_MAX,
 } from '@/lib/konva/gridUtils';
+import SiteLayer from './SiteLayer';
 import BuildingLayer from './BuildingLayer';
 import ScaffoldLayer from './ScaffoldLayer';
 import PlanePartLayer from './PlanePartLayer';
@@ -636,6 +637,9 @@ export default function GridCanvas({ width, height }: Props) {
         {gridLines()}
         {gridGuideLines()}
       </Layer>
+
+      {/* 敷地境界線（S-1・建物より下＝下地） */}
+      <SiteLayer />
 
       {/* 建物レイヤー（グリッドの上） */}
       <BuildingLayer />
