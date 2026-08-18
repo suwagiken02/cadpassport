@@ -41,6 +41,8 @@ import { carryOverElevationView, mergeElevationViews } from '@/lib/konva/elevati
 import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas';
 import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
 import { moveFreePart } from '@/lib/konva/freeParts';
+import { buildingsSitePolygons } from '@/lib/konva/siteAutoGenerate';
+import { v4 as uuidv4 } from 'uuid';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
  *  version は分岐に使わず記録のみ（旧データも normalize 時に '2.0' へ押し上げる）。 */
@@ -314,6 +316,9 @@ type CanvasStore = {
   setShowBuildingModal: (show: boolean) => void;
   showBuilding2FModal: boolean;
   setShowBuilding2FModal: (show: boolean) => void;
+  /** S-3: 敷地の自動生成（距離を訊く小さいモーダル）。 */
+  showSiteAutoModal: boolean;
+  setShowSiteAutoModal: (show: boolean) => void;
   /** 電卓モーダル表示（ツールバー「電卓」ボタン） */
   showCalculator: boolean;
   setShowCalculator: (show: boolean) => void;
@@ -452,6 +457,11 @@ type CanvasStore = {
   setFreePart: (id: string, next: import('@/lib/konva/freeParts').FreePart) => void;
   // S-1: 敷地境界線（建物とは別の入れ物）
   addSitePolygon: (s: import('@/types').SitePolygon) => void;
+  /**
+   * S-3: 建物の外周を distanceMm だけ外へ広げた敷地を足す。戻り値は足した枚数。
+   * 手描きの敷地と同じ配列へ同じ形で入れるだけ（自動生成の目印は持たせない）。
+   */
+  generateSitePolygons: (distanceMm: number) => number;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -927,6 +937,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setShowElevation: (show) => set({ showElevation: show }),
   showBuilding2FModal: false,
   setShowBuilding2FModal: (show) => set({ showBuilding2FModal: show }),
+  showSiteAutoModal: false,
+  setShowSiteAutoModal: (show) => set({ showSiteAutoModal: show }),
   showSettings: false,
   setShowSettings: (show) => set({ showSettings: show }),
   showPartSelector: false,
@@ -1400,6 +1412,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       canvasData: { ...canvasData, sitePolygons: [...(canvasData.sitePolygons ?? []), s] },
       isDirty: true,
     });
+  },
+  // S-3: 建物の外周から一定距離の敷地を作る。
+  //   置き換えではなく**追記**する（配列なので手描きの敷地と共存できる。要らなければ
+  //   消去モードで消せる）。id も形も手描きとまったく同じ＝自動生成の目印は持たない。
+  generateSitePolygons: (distanceMm) => {
+    const { canvasData, pushHistory } = get();
+    const rings = buildingsSitePolygons(canvasData.buildings, distanceMm);
+    if (rings.length === 0) return 0;
+    track('manual_edit', { kind: 'add_site_auto' });
+    pushHistory();
+    const added = rings.map((points) => ({ id: uuidv4(), points }));
+    set({
+      canvasData: { ...canvasData, sitePolygons: [...(canvasData.sitePolygons ?? []), ...added] },
+      isDirty: true,
+    });
+    return added.length;
   },
   clearScaffold: () => {
     const { canvasData, pushHistory } = get();

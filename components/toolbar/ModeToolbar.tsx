@@ -247,6 +247,18 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">▱</span>
               <span className="text-sm font-bold">敷地</span>
             </button>
+            {/* S-3: 建物の外周から一定距離の敷地を自動で作る。手描きの「敷地」の隣に置く。 */}
+            <button
+              data-tutorial-id="kutai-site-auto"
+              onClick={() => {
+                useCanvasStore.getState().setShowSiteAutoModal(true);
+                setShowKutaiMenu(false);
+              }}
+              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
+            >
+              <span className="text-3xl mb-1">⧉</span>
+              <span className="text-sm font-bold">敷地自動</span>
+            </button>
           </div>
         </>
       )}
