@@ -92,10 +92,14 @@ describe('確定の経路は 2 本ある。両方に敷地の枝があること'
   });
 
   it('敷地には階も屋根も付けない', () => {
+    // S-2 で `canTilt = pendingTargetType === 'site' && ...` が前方に増えたので、
+    //   確定分岐だけを指す目印（`s.` 付き）で切り出す。
     const branch = modal.slice(
-      modal.indexOf("pendingTargetType === 'site'"),
-      modal.indexOf("pendingTargetType === 'obstacle'"),
+      modal.indexOf("s.pendingTargetType === 'site'"),
+      modal.indexOf("s.pendingTargetType === 'obstacle'"),
     );
+    expect(branch.length).toBeGreaterThan(20);
+    expect(branch.length).toBeLessThan(400);
     expect(branch).not.toMatch(/floor|Floor|roof|Roof/);
   });
 });

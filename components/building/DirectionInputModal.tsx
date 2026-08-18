@@ -3,18 +3,13 @@ import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
 import NumInput from '@/components/ui/NumInput';
-import { GRID_UNIT_MM } from '@/lib/konva/gridUtils';
 import { buildingIdForPolygonOnFloor } from '@/lib/konva/floorScope';
 import { directionInputLabels } from '@/lib/directionInputLabels';
+import {
+  DIR_LABEL, TILT_PRESET_DEG, clampTiltDeg, stepEndpoint, type TiltSide,
+} from '@/lib/konva/directionStep';
 
 type Props = { onClose: () => void };
-
-const DIR_LABEL: Record<string, string> = {
-  up: '↑ 上方向',
-  down: '↓ 下方向',
-  left: '← 左方向',
-  right: '→ 右方向',
-};
 
 export default function DirectionInputModal({ onClose }: Props) {
   const {
@@ -36,6 +31,18 @@ export default function DirectionInputModal({ onClose }: Props) {
     : 3000;
 
   const [distanceMm, setDistanceMm] = useState(initialDistMm);
+  /**
+   * S-2: 選んだ方向からさらに左右へ傾ける（敷地だけ）。
+   * 既定は 0＝従来どおり。1 区間ごとにモーダルが開き直るので、毎回 0 に戻る。
+   */
+  const [tiltDeg, setTiltDeg] = useState(0);
+  const [tiltSide, setTiltSide] = useState<TiltSide>('left');
+
+  // 傾きを出すのは**敷地のときだけ**。躯体・屋根は 4 方向・傾きなしのまま
+  //   （平面の絶対原則「建物と足場は必ず平行」を壊さないため）。
+  //   交点タップは座標が決まっているので、そのときも出さない。
+  const canTilt = pendingTargetType === 'site' && !pendingDirectionTarget;
+  const effectiveTiltDeg = canTilt ? clampTiltDeg(tiltDeg) : 0;
 
   if (!pendingDirection) return null;
 
@@ -53,14 +60,10 @@ export default function DirectionInputModal({ onClose }: Props) {
       // 交点タップ: ターゲット座標をそのまま使う
       next = { ...pendingDirectionTarget };
     } else {
-      // 4方向ボタン: 方向×距離で計算 (= directionCursor 優先で polygon last fallback)
+      // 方向ボタン: 方向×距離で計算 (= directionCursor 優先で polygon last fallback)
+      //   S-2: 傾き 0 の上下左右は従来とまったく同じ足し算を通る（stepEndpoint 参照）。
       const currentLast = directionCursor ?? directionPoints[directionPoints.length - 1];
-      const distGrid = distanceMm / GRID_UNIT_MM;
-      next = { ...currentLast };
-      if (pendingDirection === 'up') next.y -= distGrid;
-      if (pendingDirection === 'down') next.y += distGrid;
-      if (pendingDirection === 'left') next.x -= distGrid;
-      if (pendingDirection === 'right') next.x += distGrid;
+      next = stepEndpoint(currentLast, pendingDirection, distanceMm, effectiveTiltDeg, tiltSide);
     }
 
     // キャラのみモード: polygon 不変、 cursor のみ更新 (= 壁を作らずキャラのみ移動)
@@ -144,7 +147,13 @@ export default function DirectionInputModal({ onClose }: Props) {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={handleClose}>
       <div className="bg-dark-surface border border-dark-border rounded-2xl p-5 max-w-xs w-full mx-4 space-y-4" onClick={e => e.stopPropagation()}>
         <h2 className="font-bold text-lg">{L.segmentNoun}の長さ</h2>
-        <p className="text-sm text-accent font-bold">{DIR_LABEL[pendingDirection]}</p>
+        <p className="text-sm text-accent font-bold">
+          {DIR_LABEL[pendingDirection]}
+          {/* S-2: 傾きも現在の方向表示に出す（例: 「↑ 上方向 左に5°」） */}
+          {effectiveTiltDeg > 0 && (
+            <span className="ml-2">{tiltSide === 'left' ? '左' : '右'}に{effectiveTiltDeg}°</span>
+          )}
+        </p>
         <p className="text-xs text-dimension">
           {directionPoints.length}点入力済み
           {pendingDirectionTarget && <span className="ml-2 text-orange-400">（交点タップ）</span>}
@@ -177,6 +186,37 @@ export default function DirectionInputModal({ onClose }: Props) {
                   distanceMm === mm ? 'bg-accent text-white border-accent' : 'border-dark-border text-dimension'
                 }`}>{mm}</button>
             ))}
+          </div>
+        )}
+
+        {/* S-2: 傾き（敷地だけ）。0 のままなら従来どおり真っ直ぐ進む。 */}
+        {canTilt && (
+          <div className="space-y-1.5 pt-1 border-t border-dark-border" data-testid="tilt-controls">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-dimension">傾き</span>
+              <div className="flex rounded-lg border border-dark-border overflow-hidden">
+                {([['left', '左に傾ける'], ['right', '右に傾ける']] as const).map(([side, label]) => (
+                  <button key={side} onClick={() => setTiltSide(side)}
+                    className={`px-2.5 py-1 text-xs font-bold transition-colors ${
+                      tiltSide === side ? 'bg-accent text-white' : 'bg-dark-bg text-dimension'
+                    }`}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <NumInput value={tiltDeg} onChange={(v) => setTiltDeg(clampTiltDeg(v))} min={0} step={0.5}
+                className="flex-1 bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm text-right font-mono" />
+              <span className="text-xs text-dimension">度</span>
+            </div>
+            {/* 角度プリセット（距離プリセットと同じ作法） */}
+            <div className="flex flex-wrap gap-1.5">
+              {TILT_PRESET_DEG.map((deg) => (
+                <button key={deg} onClick={() => setTiltDeg(deg)}
+                  className={`px-2 py-1 rounded text-xs font-mono border transition-colors ${
+                    tiltDeg === deg ? 'bg-accent text-white border-accent' : 'border-dark-border text-dimension'
+                  }`}>{deg === 0 ? 'なし' : `${deg}°`}</button>
+              ))}
+            </div>
           </div>
         )}
 

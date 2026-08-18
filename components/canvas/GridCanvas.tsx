@@ -27,6 +27,7 @@ import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
 import DirectionPad from './DirectionPad';
+import type { PadDir8 } from '@/lib/konva/directionStep';
 import { directionInputColors } from '@/lib/directionInputLabels';
 import ElevationViewLayer from './ElevationViewLayer';
 import FreePartLayer from './FreePartLayer';
@@ -987,12 +988,20 @@ export default function GridCanvas({ width, height }: Props) {
               const px = last.x * gridPx + panX;
               const py = last.y * gridPx + panY;
 
-              const handleDirection = (dir: 'up' | 'down' | 'left' | 'right') => {
+              const handleDirection = (dir: PadDir8) => {
                 useCanvasStore.getState().setPendingDirection(dir);
                 useCanvasStore.getState().setShowDirectionInputModal(true);
               };
 
-              return <DirectionPad x={px} y={py} facing={lastMoveDirection} onDirection={handleDirection} />;
+              // S-2: 斜め 4 方向を出すのは**敷地のときだけ**。躯体・屋根は 4 方向のまま
+              //   （平面の絶対原則「建物と足場は必ず平行」を壊さないため）。
+              return (
+                <DirectionPad
+                  x={px} y={py} facing={lastMoveDirection}
+                  diagonal={pendingTargetType === 'site'}
+                  onDirection={handleDirection}
+                />
+              );
             })()}
           </Layer>
           {/* グリッド交点マーカー */}

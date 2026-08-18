@@ -225,8 +225,9 @@ type CanvasStore = {
   setPendingObstacleType: (t: import('@/types').ObstacleType | null) => void;
   showDirectionInputModal: boolean;
   setShowDirectionInputModal: (show: boolean) => void;
-  pendingDirection: 'up' | 'down' | 'left' | 'right' | null;
-  setPendingDirection: (dir: 'up' | 'down' | 'left' | 'right' | null) => void;
+  /** 押した方向。S-2 で斜め 4 方向を追加（斜めが出るのは敷地のときだけ）。 */
+  pendingDirection: import('@/lib/konva/directionStep').PadDir8 | null;
+  setPendingDirection: (dir: import('@/lib/konva/directionStep').PadDir8 | null) => void;
   pendingDirectionTarget: { x: number; y: number } | null;
   setPendingDirectionTarget: (p: { x: number; y: number } | null) => void;
   /** 壁方向入力: キャラのみ移動した場合の現在位置 (= polygon 不変、 cursor のみ分離) */
@@ -235,8 +236,9 @@ type CanvasStore = {
   /** 壁方向入力: トグル「壁を作らずキャラのみ移動」(= default false、 session 内保持、 clearDirectionPoints でリセット) */
   noWallMode: boolean;
   setNoWallMode: (v: boolean) => void;
-  lastMoveDirection: 'up' | 'down' | 'left' | 'right';
-  setLastMoveDirection: (dir: 'up' | 'down' | 'left' | 'right') => void;
+  /** キャラの向き。S-2 で斜め 4 方向を追加（DIR_FACING_ROTATION が回転角を持つ）。 */
+  lastMoveDirection: import('@/lib/konva/directionStep').PadDir8;
+  setLastMoveDirection: (dir: import('@/lib/konva/directionStep').PadDir8) => void;
   /** 方向入力モーダル 距離プリセット履歴 (= 直近 10 件 LRU、 hardcode 10 個で seed、 セッション内のみ) */
   directionDistanceHistory: number[];
   addDirectionDistanceHistory: (mm: number) => void;
