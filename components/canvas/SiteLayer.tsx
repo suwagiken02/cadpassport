@@ -28,6 +28,7 @@ import {
   siteDash, siteStrokeColor, siteStrokeWidth, snapSiteVertex,
 } from '@/lib/konva/siteShape';
 import { buildingCornersGrid, nearestBuildingCornerGuide } from '@/lib/konva/siteVertexGuide';
+import { gapGuides } from '@/lib/konva/siteGapGuides';
 import type { Point } from '@/types';
 
 /** ドラッグ中の頂点（確定するまではストアへ書かず、ここで見せるだけ）。 */
@@ -36,6 +37,14 @@ type VertexDrag = { id: string; index: number; point: Point };
 /** 距離ガイドの色。計測ツールと同じ赤にそろえる (= S-5)。 */
 const GUIDE_COLOR = '#EF4444';
 const GUIDE_DASH = [6, 4];
+
+/**
+ * すき間の常時表示 (= S-6)。S-5 の赤いガイドが主役なので、こちらは控えめにする
+ * （細い線・小さい数字・青）。作法（破線＋mm）は S-5 と同じ。
+ */
+const GAP_COLOR = '#2563EB';
+const GAP_DASH = [4, 4];
+const GAP_FONT = 11;
 
 export default function SiteLayer() {
   const sitePolygons = useCanvasStore((s) => s.canvasData.sitePolygons);
@@ -63,6 +72,22 @@ export default function SiteLayer() {
    * 建物が変わったときだけ作り直す（ドラッグ中は毎フレーム作らない）。
    */
   const buildingCorners = useMemo(() => buildingCornersGrid(buildings), [buildings]);
+  /**
+   * 建物と敷地のすき間 (= S-6)。選んでいる敷地についてだけ出す。
+   * **形が変わったときだけ**計算する（選択中に止まっていれば計算しない。
+   * 画面を動かしただけでも計算しない＝画面座標への変換は描くときに行う）。
+   * ドラッグ中は drag が変わるので、そのぶんだけ計算し直して数値が追従する。
+   */
+  const gaps = useMemo(() => {
+    const chosen = (sitePolygons ?? []).filter((s) => selectedIds.includes(s.id));
+    if (chosen.length === 0 || buildings.length === 0) return [];
+    const shapes = chosen.map((s) => ({
+      points: drag && drag.id === s.id
+        ? s.points.map((p, i) => (i === drag.index ? drag.point : p))
+        : s.points,
+    }));
+    return gapGuides(buildings, shapes).filter((g) => g.mm > 0);
+  }, [sitePolygons, buildings, selectedIds, drag]);
 
   const sites = sitePolygons ?? [];
   // 敷地が 1 枚も無ければ何も出さない（既存の図面はノードが 1 つも増えない）。
@@ -125,6 +150,31 @@ export default function SiteLayer() {
             hitStrokeWidth={listening ? 14 : 0}
             listening={listening}
           />
+        );
+      })}
+
+      {/* S-6: 建物と敷地のすき間。選んでいる間ずっと出る（形を変えれば追従する）。
+          S-5 の赤いガイドが主役なので、こちらは細い青の破線＋小さめの数字で控えめに。 */}
+      {editable && gaps.map((g, i) => {
+        const ax = sx(g.from.x);
+        const ay = sy(g.from.y);
+        const bx = sx(g.to.x);
+        const by = sy(g.to.y);
+        const label = `${g.mm}`;
+        const horizontal = g.axis === 'x';
+        return (
+          <React.Fragment key={`gap-${i}`}>
+            <Line points={[ax, ay, bx, by]} stroke={GAP_COLOR} strokeWidth={1}
+              dash={GAP_DASH} opacity={0.75} listening={false} />
+            <Text
+              x={horizontal ? (ax + bx) / 2 : (ax + bx) / 2 + 6}
+              y={horizontal ? ay - GAP_FONT - 3 : (ay + by) / 2 - GAP_FONT / 2}
+              text={label}
+              fontSize={GAP_FONT} fontFamily="monospace" fill={GAP_COLOR} opacity={0.9}
+              offsetX={horizontal ? (label.length * 6.4) / 2 : 0}
+              listening={false}
+            />
+          </React.Fragment>
         );
       })}
 
