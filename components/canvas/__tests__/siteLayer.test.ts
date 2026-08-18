@@ -104,8 +104,11 @@ describe('線種は一点鎖線、太さは建物より細い', () => {
 
 // ============================================================
 describe('塗らない', () => {
-  it('SiteLayer に fill を書いていない', () => {
-    expect(siteLayer).not.toMatch(/fill=/);
+  it('敷地の外形に fill を書いていない', () => {
+    // S-4 で頂点のつまみ（塗りつぶした丸）が増えたので、外形の <Line> だけを見る。
+    const line = siteLayer.slice(siteLayer.indexOf('<Line'), siteLayer.indexOf('/>', siteLayer.indexOf('<Line')));
+    expect(line.length).toBeGreaterThan(100);
+    expect(line).not.toMatch(/fill=/);
   });
 
   it('外形は閉じる（closed）', () => {
@@ -138,9 +141,13 @@ describe('作法が BuildingLayer と同じ', () => {
   it('座標の写し方が同じ（グリッド × gridPx ＋ pan）', () => {
     for (const [name, src] of [['site', siteLayer], ['building', buildingLayer]] as const) {
       expect(src, name).toMatch(/const gridPx = INITIAL_GRID_PX \* zoom/);
-      expect(src, name).toMatch(/p\.x \* gridPx \+ panX/);
-      expect(src, name).toMatch(/p\.y \* gridPx \+ panY/);
     }
+    expect(buildingLayer).toMatch(/p\.x \* gridPx \+ panX/);
+    expect(buildingLayer).toMatch(/p\.y \* gridPx \+ panY/);
+    // S-4: つまみでも同じ式を使うので sx / sy に切り出した（式そのものは同じ）。
+    expect(siteLayer).toMatch(/const sx = \(gx: number\) => gx \* gridPx \+ panX;/);
+    expect(siteLayer).toMatch(/const sy = \(gy: number\) => gy \* gridPx \+ panY;/);
+    expect(siteLayer).toMatch(/points=\{pts\.flatMap\(\(p\) => \[sx\(p\.x\), sy\(p\.y\)\]\)\}/);
     // 画面座標の計算そのもの（レイヤーと同じ式）
     expect(10 * (INITIAL_GRID_PX * 2) + 50).toBe(110);
   });

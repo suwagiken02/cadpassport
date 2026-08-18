@@ -31,3 +31,41 @@ export const siteStrokeWidth = (zoom: number, selected: boolean): number =>
 
 export const siteStrokeColor = (isDarkMode: boolean, selected: boolean): string =>
   selected ? SITE_SELECT_COLOR : (isDarkMode ? SITE_STROKE_DARK : SITE_STROKE_LIGHT);
+
+// ============================================================
+// 頂点のつまみ (= S-4)
+//
+// 敷地を選ぶと角につまみが出て、引っ張ると形を直せる。
+// 敷地は S-2 で斜め・任意角度を許しているので、動かす向きに制約はかけない
+// （軸に平行へ寄せたりしない）。吸着も「近くの角へ軽く寄る」だけにする。
+// ============================================================
+
+/** つまみの半径(px)。見た目の大きさ。 */
+export const SITE_VERTEX_R = 7;
+/** 指で掴める当たり幅(px)。見た目より大きくしてタッチで外さないようにする。 */
+export const SITE_VERTEX_HIT = 30;
+/** 近くの角へ吸着する画面距離(px)。 */
+export const SITE_VERTEX_SNAP_PX = 12;
+export const SITE_VERTEX_FILL = '#FFFFFF';
+
+/** 浮動小数のごみを落とす（0.1mm まで）。 */
+const tidy = (v: number): number => Math.round(v * 1e3) / 1e3;
+export const tidyPoint = (p: { x: number; y: number }) => ({ x: tidy(p.x), y: tidy(p.y) });
+
+/**
+ * 近くの角があれば、そこへ寄せる（無ければそのまま）。
+ * 「自由が原則」なので、寄せるのは実在する角だけ。グリッドには吸着させない。
+ */
+export function snapSiteVertex(
+  p: { x: number; y: number },
+  candidates: { x: number; y: number }[],
+  radiusGrid: number,
+): { x: number; y: number } {
+  let best: { x: number; y: number } | null = null;
+  let bestD = radiusGrid;
+  for (const c of candidates) {
+    const d = Math.hypot(c.x - p.x, c.y - p.y);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best ? { x: best.x, y: best.y } : tidyPoint(p);
+}

@@ -462,6 +462,12 @@ type CanvasStore = {
    * 手描きの敷地と同じ配列へ同じ形で入れるだけ（自動生成の目印は持たせない）。
    */
   generateSitePolygons: (distanceMm: number) => number;
+  /**
+   * S-4: 敷地の頂点を 1 つ動かす（つまみのドラッグ）。
+   * ドラッグ中に連続で呼ばれるので、ここでは履歴を積まない
+   * （つまみを掴んだ時点で 1 回だけ pushHistory する＝1 ドラッグ 1 undo）。
+   */
+  setSitePolygonPoint: (id: string, index: number, point: import('@/types').Point) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1428,6 +1434,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
     return added.length;
+  },
+  setSitePolygonPoint: (id, index, point) => {
+    const { canvasData } = get();
+    const sites = canvasData.sitePolygons ?? [];
+    const target = sites.find((s) => s.id === id);
+    if (!target || index < 0 || index >= target.points.length) return;
+    set({
+      canvasData: {
+        ...canvasData,
+        sitePolygons: sites.map((s) => (
+          s.id === id
+            ? { ...s, points: s.points.map((p, i) => (i === index ? { ...point } : p)) }
+            : s
+        )),
+      },
+      isDirty: true,
+    });
   },
   clearScaffold: () => {
     const { canvasData, pushHistory } = get();
