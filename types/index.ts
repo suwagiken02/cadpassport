@@ -47,6 +47,23 @@ export type BuildingShape = {
   templateDims?: Record<string, number>;
 };
 
+// === 敷地境界線 (= S-1) ===
+/**
+ * 敷地の外形（敷地境界線）。
+ *
+ * 建物（BuildingShape）とは**別の入れ物**にしている。「自動は構造を持つ、手動は自由」
+ * の原則どおり、敷地は完全に手描きの外形で、足場の自動配置・屋根・立面・階の
+ * どれにも参加しない。buildings[] に混ぜると、敷地の外周に足場が回る／敷地が屋根の
+ * 親になる、といった巻き添えが起きる。
+ *
+ * 色や線種は持たない（描画側の定数が唯一の定義＝画面と出力で食い違わない）。
+ */
+export type SitePolygon = {
+  id: string;
+  /** 閉じた外形（グリッド座標・1 = 10mm）。 */
+  points: Point[];
+};
+
 // === 屋根の出幅 ===
 export type RoofOverhang = {
   id: string;
@@ -493,6 +510,11 @@ export type CanvasData = {
    * 既存の elevationViews[].parts の手動部材は移行しない（今までどおり動く）。
    */
   freeParts?: import('@/lib/konva/freeParts').FreePart[];
+  /**
+   * 敷地境界線 (= S-1、 undefined は既存プロジェクト互換、 normalize で [] に正規化)。
+   * 飛び地の敷地もあるので配列。建物とは別の入れ物（SitePolygon の説明を参照）。
+   */
+  sitePolygons?: SitePolygon[];
 };
 
 /**

@@ -65,6 +65,7 @@ const createEmptyCanvasData = (): CanvasData => ({
   stairs: [],
   pipes: [],
   freeParts: [],
+  sitePolygons: [],
 });
 
 /** 互換: 旧プロジェクトで欠落しているフィールドを補完する */
@@ -87,6 +88,7 @@ const normalizeCanvasData = (data: CanvasData): CanvasData => {
     stairs: data.stairs ?? [],
     pipes: data.pipes ?? [],
     freeParts: data.freeParts ?? [],
+    sitePolygons: data.sitePolygons ?? [],
     dimensionOffsetsMm: data.dimensionOffsetsMm ?? { ...DEFAULT_DIMENSION_OFFSETS_MM },
   };
   // 旧 scaffoldStart → scaffoldStart1F / scaffoldStart2F への移行。
@@ -445,6 +447,8 @@ type CanvasStore = {
   addFreePart: (p: import('@/lib/konva/freeParts').FreePart) => void;
   /** 1 本を差し替える（移動・回転の確定）。 */
   setFreePart: (id: string, next: import('@/lib/konva/freeParts').FreePart) => void;
+  // S-1: 敷地境界線（建物とは別の入れ物）
+  addSitePolygon: (s: import('@/types').SitePolygon) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1375,6 +1379,18 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  // === 敷地境界線 (= S-1) ===
+  // 建物とは別の入れ物。足場の自動配置・屋根・立面のどれにも参加しないので、
+  // 「配列に足す」以上のことは何もしない（階段・単管と同じ素直さ）。
+  addSitePolygon: (s) => {
+    track('manual_edit', { kind: 'add_site' });
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, sitePolygons: [...(canvasData.sitePolygons ?? []), s] },
+      isDirty: true,
+    });
+  },
   clearScaffold: () => {
     const { canvasData, pushHistory } = get();
     if (canvasData.handrails.length === 0 && canvasData.posts.length === 0 && canvasData.antis.length === 0) return;
@@ -1838,6 +1854,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         pipes: (canvasData.pipes ?? []).filter((p) => p.id !== id),
         // E-8-v5a: 手動部材は配列から取り除くだけ（自動生成ではないので墓標は要らない）。
         freeParts: (canvasData.freeParts ?? []).filter((p) => p.id !== id),
+        // S-1: 敷地境界線。他から参照されないので、消しても波及しない。
+        sitePolygons: (canvasData.sitePolygons ?? []).filter((s2) => s2.id !== id),
         // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
         roofs: (canvasData.roofs ?? []).filter((r) => r.id !== id && r.buildingId !== id),
       },
@@ -1866,6 +1884,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         stairs: (canvasData.stairs ?? []).filter((s2) => !idSet.has(s2.id)),
         pipes: (canvasData.pipes ?? []).filter((p) => !idSet.has(p.id)),
         freeParts: (canvasData.freeParts ?? []).filter((p) => !idSet.has(p.id)),
+        sitePolygons: (canvasData.sitePolygons ?? []).filter((s2) => !idSet.has(s2.id)),
         // R-1d: 屋根オブジェクト自身の削除＋建物削除時の子屋根の除去（孤児防止）。
         roofs: (canvasData.roofs ?? []).filter((r) => !idSet.has(r.id) && !idSet.has(r.buildingId)),
       },
@@ -1914,6 +1933,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         // E-8-v5a: 手動部材は自由座標なので、グリッドの移動量を mm へ直して足すだけ。
         freeParts: (canvasData.freeParts ?? []).map((p) =>
           p.id === id ? moveFreePart(p, dx, dy) : p
+        ),
+        // S-1: 敷地境界線は外形の全頂点をそのままずらす（建物・障害物と同じ動かし方）。
+        sitePolygons: (canvasData.sitePolygons ?? []).map((s2) =>
+          s2.id === id ? { ...s2, points: s2.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : s2
         ),
       },
       isDirty: true,
