@@ -47,7 +47,7 @@ import TutorialOverlay from '@/components/tutorial/TutorialOverlay';
 import DimensionVisibilityCheckboxes from '@/components/dimension/DimensionVisibilityCheckboxes';
 import MemoCreateModal from '@/components/memo/MemoCreateModal';
 import DirectionInputModal from '@/components/building/DirectionInputModal';
-import SiteAutoModal from '@/components/building/SiteAutoModal';
+import SiteModal from '@/components/building/SiteModal';
 import PinDistanceInputModal from '@/components/canvas/PinDistanceInputModal';
 import ProjectEditModal from '@/components/project/ProjectEditModal';
 import PageTabsContainer from '@/components/editor/PageTabsContainer';
@@ -783,8 +783,8 @@ export default function EditorPage() {
         <DirectionInputModal onClose={() => setShowDirectionInputModal(false)} />
       )}
       <RoofObjectModal />
-      {/* S-3: 敷地の自動生成（建物の外周から一定距離） */}
-      <SiteAutoModal />
+      {/* S-4: 敷地の入口（手で描く／自動生成） */}
+      <SiteModal />
       {/* R-1k: 高さ/棟/屋根ツールの起動直後に対象階を訊く（複数階のときのみ） */}
       <FloorPickerModal />
       {/* E-7-fix3: 全ページ PDF の枠指定ウィザード（ページ遷移をまたいで進行するので store 駆動） */}

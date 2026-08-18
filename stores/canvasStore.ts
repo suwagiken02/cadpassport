@@ -316,9 +316,9 @@ type CanvasStore = {
   setShowBuildingModal: (show: boolean) => void;
   showBuilding2FModal: boolean;
   setShowBuilding2FModal: (show: boolean) => void;
-  /** S-3: 敷地の自動生成（距離を訊く小さいモーダル）。 */
-  showSiteAutoModal: boolean;
-  setShowSiteAutoModal: (show: boolean) => void;
+  /** S-4: 敷地の入口（「手で描く／自動生成」を選ばせる小さいモーダル）。 */
+  showSiteModal: boolean;
+  setShowSiteModal: (show: boolean) => void;
   /** 電卓モーダル表示（ツールバー「電卓」ボタン） */
   showCalculator: boolean;
   setShowCalculator: (show: boolean) => void;
@@ -937,8 +937,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setShowElevation: (show) => set({ showElevation: show }),
   showBuilding2FModal: false,
   setShowBuilding2FModal: (show) => set({ showBuilding2FModal: show }),
-  showSiteAutoModal: false,
-  setShowSiteAutoModal: (show) => set({ showSiteAutoModal: show }),
+  showSiteModal: false,
+  setShowSiteModal: (show) => set({ showSiteModal: show }),
   showSettings: false,
   setShowSettings: (show) => set({ showSettings: show }),
   showPartSelector: false,

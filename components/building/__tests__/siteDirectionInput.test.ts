@@ -21,6 +21,8 @@ const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '../../../',
 const modal = read('components/building/DirectionInputModal.tsx');
 const editor = read('app/editor/[id]/page.tsx');
 const toolbar = read('components/toolbar/ModeToolbar.tsx');
+/** S-4: 手描きの起動は躯体メニューから SiteModal（入口）へ移した。 */
+const siteModal = read('components/building/SiteModal.tsx');
 
 const st = () => useCanvasStore.getState();
 
@@ -29,29 +31,26 @@ beforeEach(() => {
 });
 
 // ============================================================
-describe('入口（躯体メニューの「敷地」）', () => {
-  it('ボタンがある', () => {
+describe('入口（躯体メニューの「敷地」→ 手で描く）', () => {
+  it('躯体メニューに「敷地」ボタンがある', () => {
     expect(toolbar).toMatch(/<span className="text-sm font-bold">敷地<\/span>/);
   });
 
+  // S-4: 躯体メニューは入口モーダルを開くだけ。turtle の起動は SiteModal 側へ移した。
   it('屋根とまったく同じ起動の仕方（新しいモードを作らない）', () => {
-    const site = toolbar.slice(toolbar.indexOf("setPendingTargetType('site')"));
+    const site = siteModal.slice(siteModal.indexOf("setPendingTargetType('site')"));
     expect(site).toMatch(/setPendingTargetType\('site'\)/);
     expect(site).toMatch(/setBuildingInputMethod\('direction'\)/);
     expect(site).toMatch(/setMode\('building'\)/);
   });
 
   it('描き始める前に、前回の点を消してから入る', () => {
-    const site = toolbar.slice(toolbar.indexOf("setPendingTargetType('site')"));
+    const site = siteModal.slice(siteModal.indexOf("setPendingTargetType('site')"));
     expect(site.slice(0, 400)).toMatch(/clearDirectionPoints\(\)/);
   });
 
   it('敷地は階を持たないので対象階を訊かない', () => {
-    const site = toolbar.slice(
-      toolbar.indexOf("setPendingTargetType('site')"),
-      toolbar.indexOf('敷地</span>'),
-    );
-    expect(site).not.toMatch(/promptFloorIfMulti/);
+    expect(siteModal).not.toMatch(/promptFloorIfMulti/);
   });
 
   it('屋根の起動は従来どおり（対象階を訊く）', () => {

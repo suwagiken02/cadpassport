@@ -230,34 +230,18 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">⌒</span>
               <span className="text-sm font-bold">屋根</span>
             </button>
-            {/* S-1: 敷地境界線。屋根とまったく同じ turtle を pendingTargetType='site' で起動する。 */}
+            {/* S-4: 敷地の入口はひとつ。「手で描く／自動生成」はモーダルで選ばせる
+                （どちらを選んだあとの流れは S-1〜S-3 のまま）。 */}
             <button
               data-tutorial-id="kutai-site"
               onClick={() => {
-                const s = useCanvasStore.getState();
-                s.setPendingTargetType('site');
-                s.setBuildingInputMethod('direction');
-                s.setMode('building');
-                s.clearDirectionPoints();
+                useCanvasStore.getState().setShowSiteModal(true);
                 setShowKutaiMenu(false);
-                // 敷地は階を持たないので、対象階は訊かない。
               }}
               className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
             >
               <span className="text-3xl mb-1">▱</span>
               <span className="text-sm font-bold">敷地</span>
-            </button>
-            {/* S-3: 建物の外周から一定距離の敷地を自動で作る。手描きの「敷地」の隣に置く。 */}
-            <button
-              data-tutorial-id="kutai-site-auto"
-              onClick={() => {
-                useCanvasStore.getState().setShowSiteAutoModal(true);
-                setShowKutaiMenu(false);
-              }}
-              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
-            >
-              <span className="text-3xl mb-1">⧉</span>
-              <span className="text-sm font-bold">敷地自動</span>
             </button>
           </div>
         </>
