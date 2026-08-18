@@ -939,7 +939,7 @@ export default function GridCanvas({ width, height }: Props) {
               const flatPts = screenPts.flatMap(p => [p.x, p.y]);
               const first = screenPts[0];
               // R-1e-fix8: 屋根領域描き中は輪郭・頂点色を屋根用（琥珀）に着せ替え、躯体（青）と区別。
-              const c = directionInputColors(pendingTargetType === 'roof');
+              const c = directionInputColors(pendingTargetType);
               return (
                 <>
                   {/* ガイド線（全頂点のユニークX/Yから） */}

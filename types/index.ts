@@ -47,6 +47,13 @@ export type BuildingShape = {
   templateDims?: Record<string, number>;
 };
 
+/**
+ * 方向入力（キャラを方向で動かして外形を描く入力）で、描き終わったら何になるか。
+ * モードではなくこの指定で分岐する＝入力の仕組みそのものは 1 本しかない。
+ * S-1 で 'site'（敷地境界線）を足した。
+ */
+export type DirectionInputTarget = 'building' | 'obstacle' | 'roof' | 'site';
+
 // === 敷地境界線 (= S-1) ===
 /**
  * 敷地の外形（敷地境界線）。

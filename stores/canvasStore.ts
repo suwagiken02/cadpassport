@@ -218,8 +218,9 @@ type CanvasStore = {
   //   書き込み経路は R-1k で無くなり、旧モーダル自体も削除済み。
   pendingBuildingFloor: number;
   setPendingBuildingFloor: (f: number) => void;
-  pendingTargetType: 'building' | 'obstacle' | 'roof';
-  setPendingTargetType: (t: 'building' | 'obstacle' | 'roof') => void;
+  /** 方向入力で描き終わったら何になるか（S-1 で 'site' を追加）。 */
+  pendingTargetType: import('@/types').DirectionInputTarget;
+  setPendingTargetType: (t: import('@/types').DirectionInputTarget) => void;
   pendingObstacleType: import('@/types').ObstacleType | null;
   setPendingObstacleType: (t: import('@/types').ObstacleType | null) => void;
   showDirectionInputModal: boolean;

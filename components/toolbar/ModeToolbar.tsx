@@ -230,6 +230,23 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">⌒</span>
               <span className="text-sm font-bold">屋根</span>
             </button>
+            {/* S-1: 敷地境界線。屋根とまったく同じ turtle を pendingTargetType='site' で起動する。 */}
+            <button
+              data-tutorial-id="kutai-site"
+              onClick={() => {
+                const s = useCanvasStore.getState();
+                s.setPendingTargetType('site');
+                s.setBuildingInputMethod('direction');
+                s.setMode('building');
+                s.clearDirectionPoints();
+                setShowKutaiMenu(false);
+                // 敷地は階を持たないので、対象階は訊かない。
+              }}
+              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
+            >
+              <span className="text-3xl mb-1">▱</span>
+              <span className="text-sm font-bold">敷地</span>
+            </button>
           </div>
         </>
       )}

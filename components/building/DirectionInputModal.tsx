@@ -26,7 +26,7 @@ export default function DirectionInputModal({ onClose }: Props) {
     directionDistanceHistory, addDirectionDistanceHistory,
     pendingTargetType,
   } = useCanvasStore();
-  const L = directionInputLabels(pendingTargetType === 'roof'); // R-1e-fix8: 屋根時は「辺」表記
+  const L = directionInputLabels(pendingTargetType); // R-1e-fix8: 屋根は「辺」／S-1: 敷地は「境界」
 
   // 交点タップ時はターゲットから距離を算出して初期値にする
   // last = directionCursor 優先 (= キャラのみモード中の位置)、 fallback で polygon の最終頂点
@@ -83,6 +83,10 @@ export default function DirectionInputModal({ onClose }: Props) {
         // R-1h-3: 屋根が乗る建物は編集中の階から選ぶ（総二階での 1F/2F 取り違え対策）。
         const buildingId = buildingIdForPolygonOnFloor(pts, s.canvasData.buildings, s.activeFloor);
         if (buildingId) s.setRoofSettingsTarget({ buildingId, polygon: pts });
+        s.setPendingTargetType('building');
+      } else if (s.pendingTargetType === 'site') {
+        // S-1: 敷地境界線。外形をそのまま持つだけ（階も屋根も持たない）。
+        s.addSitePolygon({ id: newId, points: pts });
         s.setPendingTargetType('building');
       } else if (s.pendingTargetType === 'obstacle' && s.pendingObstacleType) {
         const xs = pts.map(p => p.x), ys = pts.map(p => p.y);

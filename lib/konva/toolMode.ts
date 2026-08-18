@@ -26,8 +26,8 @@ export type CanvasToolFlags = {
   isReorderMode?: boolean;
   /** 一括移動モード中。 */
   moveSelectActive?: boolean;
-  /** 方向入力の対象種別。'roof' は屋根領域の描き入力中。 */
-  pendingTargetType?: 'building' | 'obstacle' | 'roof';
+  /** 方向入力の対象種別。'roof' は屋根領域、'site' は敷地境界線の描き入力中。 */
+  pendingTargetType?: import('@/types').DirectionInputTarget;
 };
 
 /**
@@ -49,7 +49,9 @@ export function isToolActive(s: CanvasToolFlags): boolean {
     || s.isAreaDesignationMode
     || s.isReorderMode
     || s.moveSelectActive
-    || (s.pendingTargetType === 'roof' && s.mode === 'building')
+    // S-1: 敷地境界線も屋根とまったく同じ turtle なので、同じ扱いにする。
+    //   どちらも `mode === 'building'` を伴うときだけツール中＝選択モードには漏れない。
+    || ((s.pendingTargetType === 'roof' || s.pendingTargetType === 'site') && s.mode === 'building')
   );
 }
 

@@ -734,7 +734,7 @@ export default function EditorPage() {
             onClick={() => setShowDirectionInputModal(true)}
             className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-accent/80 text-white rounded-xl text-sm font-bold shadow-lg whitespace-nowrap"
           >
-            {directionInputLabels(pendingTargetType === 'roof').addSegment}
+            {directionInputLabels(pendingTargetType).addSegment}
           </button>
           {directionPoints.length >= 3 && (
             <button
@@ -747,6 +747,10 @@ export default function EditorPage() {
                   //   従来は配列順で先の建物＝常に 1F に紐づいていた）。
                   const buildingId = buildingIdForPolygonOnFloor(pts, canvasData.buildings, useCanvasStore.getState().activeFloor);
                   if (buildingId) useCanvasStore.getState().setRoofSettingsTarget({ buildingId, polygon: pts });
+                  setPendingTargetType('building');
+                } else if (pendingTargetType === 'site') {
+                  // S-1: 敷地境界線。外形をそのまま持つだけ（階も屋根も持たない）。
+                  useCanvasStore.getState().addSitePolygon({ id: newId, points: pts });
                   setPendingTargetType('building');
                 } else if (pendingTargetType === 'obstacle' && pendingObstacleType) {
                   const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
@@ -767,7 +771,7 @@ export default function EditorPage() {
               }}
               className="flex-1 sm:flex-none h-11 sm:h-auto px-2 sm:px-5 sm:py-2.5 bg-accent text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg whitespace-nowrap"
             >
-              {directionInputLabels(pendingTargetType === 'roof').confirm}（{directionPoints.length}点）
+              {directionInputLabels(pendingTargetType).confirm}（{directionPoints.length}点）
             </button>
           )}
         </div>
