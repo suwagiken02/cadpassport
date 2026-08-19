@@ -28,6 +28,7 @@ import PinDraftLayer from './PinDraftLayer';
 import HeightMarkerLayer from './HeightMarkerLayer';
 import RidgeLineLayer from './RidgeLineLayer';
 import DirectionPad from './DirectionPad';
+import { showsDirectionGrid } from '@/lib/konva/directionStartSnap';
 import type { PadDir8 } from '@/lib/konva/directionStep';
 import { directionInputColors } from '@/lib/directionInputLabels';
 import ElevationViewLayer from './ElevationViewLayer';
@@ -68,21 +69,25 @@ export default function GridCanvas({ width, height }: Props) {
   const panInitialized = useRef(false);
 
   // 十字ガイド用: 全頂点のユニークX/Y（建物+障害物+directionPoints+マグネットピン）
+  // S-8: 敷地は交点に縛らないので、十字ガイドも交点マーカーも出さない
+  //   （見えていると狙ってしまうため）。躯体・屋根・障害物は従来どおり。
   const guideXs = useMemo(() => {
+    if (!showsDirectionGrid(pendingTargetType)) return [];
     if (!showDirectionGuide || buildingInputMethod !== 'direction' || directionPoints.length === 0) return [];
     const verts = getAllExistingVertices(canvasData.buildings, canvasData.obstacles);
     verts.push(...directionPoints);
     verts.push(...(canvasData.magnetPins ?? []));
     return Array.from(new Set(verts.map(v => v.x)));
-  }, [showDirectionGuide, buildingInputMethod, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
+  }, [showDirectionGuide, buildingInputMethod, pendingTargetType, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
 
   const guideYs = useMemo(() => {
+    if (!showsDirectionGrid(pendingTargetType)) return [];
     if (!showDirectionGuide || buildingInputMethod !== 'direction' || directionPoints.length === 0) return [];
     const verts = getAllExistingVertices(canvasData.buildings, canvasData.obstacles);
     verts.push(...directionPoints);
     verts.push(...(canvasData.magnetPins ?? []));
     return Array.from(new Set(verts.map(v => v.y)));
-  }, [showDirectionGuide, buildingInputMethod, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
+  }, [showDirectionGuide, buildingInputMethod, pendingTargetType, directionPoints, directionCursor, canvasData.buildings, canvasData.obstacles, canvasData.magnetPins]);
   const lastPanPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // グリッド描画（ビューポート + 印刷範囲を含む拡張範囲）
@@ -1008,8 +1013,8 @@ export default function GridCanvas({ width, height }: Props) {
               );
             })()}
           </Layer>
-          {/* グリッド交点マーカー */}
-          {showDirectionGuide && (
+          {/* グリッド交点マーカー（S-8: 敷地では出さない） */}
+          {showDirectionGuide && showsDirectionGrid(pendingTargetType) && (
             <Layer>
               {(() => {
                 const gridPx = INITIAL_GRID_PX * zoom;

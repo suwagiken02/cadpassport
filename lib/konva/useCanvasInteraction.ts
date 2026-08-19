@@ -6,7 +6,9 @@ import Konva from 'konva';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { track } from '@/lib/analytics';
 import { screenToGrid, INITIAL_GRID_PX, mmToGrid } from './gridUtils';
-import { snapToHandrail, snapHandrailPlacement, getHandrailEndpoints, snapToGridIntersection, getAllExistingVertices, getAllExistingEdges, snapToVertex, snapToEdge, snapObstacleToWall } from './snapUtils';
+import { snapToHandrail, snapHandrailPlacement, getHandrailEndpoints, snapObstacleToWall } from './snapUtils';
+// S-8: 方向入力の寄せ方（対象ごとの違い）はここ 1 本。
+import { directionTowards, snapDirectionPoint } from './directionStartSnap';
 import { getHandrailColor } from './handrailColors';
 import { getEdgeOverhangs, computeOffsetPolygon } from './roofUtils';
 import { mmToGrid as toMmGrid } from './gridUtils';
@@ -604,20 +606,25 @@ export function useCanvasInteraction() {
 
       // building + direction モード: 起点をタップしてモーダル表示
       if (s.mode === 'building' && s.buildingInputMethod === 'direction') {
+        // S-8: 寄せ方は対象ごとに 1 本へまとめた（躯体・屋根は従来の交点縛りのまま、
+        //   敷地だけタップした座標そのまま。角への強スナップはどちらも残る）。
+        const snapCtx = {
+          target: s.pendingTargetType,
+          buildings: s.canvasData.buildings,
+          obstacles: s.canvasData.obstacles,
+          zoom: s.zoom,
+        };
         if (s.directionPoints.length === 0) {
-          // 強スナップ: 既存建物・障害物の頂点
-          const existVerts = getAllExistingVertices(s.canvasData.buildings, s.canvasData.obstacles);
-          let snapped = snapToVertex(rawPos.x, rawPos.y, existVerts, s.zoom, 30);
-          // 次: グリッド交点マグネット
-          if (!snapped) snapped = snapToGridIntersection(rawPos.x, rawPos.y, s.zoom);
-          // 次: 辺への弱スナップ
-          if (!snapped) {
-            const existEdges = getAllExistingEdges(s.canvasData.buildings, s.canvasData.obstacles);
-            snapped = snapToEdge(rawPos.x, rawPos.y, existEdges, s.zoom, 10);
-          }
-          // フォールバック
-          if (!snapped) snapped = { x: Math.round(rawPos.x), y: Math.round(rawPos.y) };
-          s.addDirectionPoint(snapped);
+          s.addDirectionPoint(snapDirectionPoint(rawPos, snapCtx));
+          s.setShowDirectionInputModal(true);
+        } else if (s.pendingTargetType === 'site' && e.target === stage) {
+          // S-8: 敷地は交点マーカーを出さない代わりに、**空いているところをタップすれば
+          //   そこへ進める**（交点タップとまったく同じ受け口を、交点以外でも使う）。
+          //   e.target === stage に絞っているので、方向パッドのボタンは奪わない。
+          const at = snapDirectionPoint(rawPos, snapCtx);
+          const last = s.directionCursor ?? s.directionPoints[s.directionPoints.length - 1];
+          s.setPendingDirection(directionTowards(last, at));
+          s.setPendingDirectionTarget(at);
           s.setShowDirectionInputModal(true);
         }
         dragStart.current = null;
