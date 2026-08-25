@@ -1140,6 +1140,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       memos: backup.memos.map(m =>
         cats.memo && sel.has(m.id) ? { ...m, x: m.x + dx, y: m.y + dy } : m
       ),
+      // 階段・単管は手摺・支柱・アンチと同じ足場カテゴリ。左上/始点をずらすだけで、
+      //   向き(angleDeg/flip)・長さ・所属階は触らない（moveElement と同じ扱い）。
+      //   P-1 で選択側には登録したが、ここへ入れ忘れていたため
+      //   「選べるのに数値を入れても動かない」状態が残っていた。
+      stairs: (backup.stairs ?? []).map(s =>
+        cats.scaffold && sel.has(s.id) ? { ...s, x: s.x + dx, y: s.y + dy } : s
+      ),
+      pipes: (backup.pipes ?? []).map(p =>
+        cats.scaffold && sel.has(p.id) ? { ...p, x: p.x + dx, y: p.y + dy } : p
+      ),
+      // freeParts は mm・Y 上向きの自由座標で、X を x0Mm/x1Mm の 2 値で持つ。
+      //   座標系の変換も 2 値の同時移動も moveFreePart が吸収しているので、
+      //   単体ドラッグ（moveElement）とまったく同じ 1 本を通す。
+      //   接合スナップの再計算はしない＝入れた数値どおりにきっちり動く。
+      freeParts: (backup.freeParts ?? []).map(p =>
+        cats.scaffold && sel.has(p.id) ? moveFreePart(p, dx, dy) : p
+      ),
       // S-1: 敷地は「建物」カテゴリとして扱う（躯体まわりで、選択ロックも建物側に従う）。
       //   建物と同じく外形の全頂点をずらす。
       sitePolygons: (backup.sitePolygons ?? []).map(sp =>
