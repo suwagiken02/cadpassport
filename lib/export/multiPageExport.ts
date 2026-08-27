@@ -15,6 +15,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { supabase } from '@/lib/supabase/client';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { withAidsHidden } from './aidVisibility';
 import { sortPages, type PageMeta } from '@/lib/pages/pageOps';
 import { downloadPdf, pdfFileName, renderPdfPage } from './pdfExport';
 import { nextPaint, withFittedPrintView } from './exportViewport';
@@ -64,6 +65,10 @@ export async function exportAllPagesToPdf(opts: {
   const savedLoadedId = s0.loadedDrawingId;
 
   const pdfDoc = await PDFDocument.create();
+  // E-8-v5c: 補助線を含めないときは、全ページのキャプチャの間ずっと隠しておく
+  //   （ページを差し替えながら描くので、1 枚ごとに出し入れしない）。
+  //   例外が出ても withAidsHidden の finally で必ず戻る。
+  return withAidsHidden(settings.includeAids, async () => {
   try {
     // 差し替え中に存在しない id を選択したままにしない（描画の乱れ防止）。
     if (savedSelectedIds.length > 0) useCanvasStore.setState({ selectedIds: [] });
@@ -107,6 +112,7 @@ export async function exportAllPagesToPdf(opts: {
     await nextPaint();
   }
 
-  await downloadPdf(pdfDoc, pdfFileName(settings.siteName, true));
-  return pages.length;
+    await downloadPdf(pdfDoc, pdfFileName(settings.siteName, true));
+    return pages.length;
+  });
 }

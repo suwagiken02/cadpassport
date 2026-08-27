@@ -61,7 +61,7 @@ export const PALETTE_KINDS: ElevationPartKind[] = ['post', 'rail', 'board', 'jac
  * 作図の補助 (= E-8-v5c)。部材ではないのでパレットでも列を分ける。
  * 線は 2 クリック（起点→終点）、点は 1 クリックで置く。
  */
-export const AID_PALETTE_KINDS: ElevationPartKind[] = ['line'];
+export const AID_PALETTE_KINDS: ElevationPartKind[] = ['line', 'point'];
 
 /**
  * パレットを開いた時点で選ばれている種類 (= E-8-v5c)。

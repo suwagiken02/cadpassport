@@ -6,12 +6,19 @@
 import type { CanvasData } from '@/types';
 import { elevationPrimitivesBounds } from './quadLayout';
 import { pipeEndpointsGrid, stairCornersGrid } from '@/lib/konva/planeParts';
-import { freePartsBoundsGrid } from '@/lib/konva/freeParts';
+import { freePartsBoundsGrid, scaffoldPartsOf } from '@/lib/konva/freeParts';
 import { partsToPrimitives } from '@/lib/konva/elevation/elevationParts';
 
 export type GridBounds = { minX: number; minY: number; maxX: number; maxY: number };
 
-export function computeContentBounds(cv: CanvasData): GridBounds | null {
+/**
+ * ページの中身が占める範囲 (= 印刷枠・全体表示の基準)。
+ * E-8-v5c: 補助線は既定では**含めない**（出力に出さないものを枠に入れない）。
+ * 含めるときだけ opts.includeAids を true にする＝出力側のフラグと同じ 1 つに従う。
+ */
+export function computeContentBounds(
+  cv: CanvasData, opts?: { includeAids?: boolean },
+): GridBounds | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const see = (x: number, y: number) => {
     if (x < minX) minX = x; if (y < minY) minY = y;
@@ -34,7 +41,9 @@ export function computeContentBounds(cv: CanvasData): GridBounds | null {
   for (const mp of cv.magnetPins ?? []) see(mp.x, mp.y);
   for (const rl of cv.ridgeLines ?? []) { see(rl.p1.x, rl.p1.y); see(rl.p2.x, rl.p2.y); }
   // E-8-v5a: キャンバス直下の手動部材（立面ビューに所属しない）。
-  const fb = freePartsBoundsGrid(cv.freeParts);
+  const fb = freePartsBoundsGrid(
+    opts?.includeAids ? cv.freeParts : scaffoldPartsOf(cv.freeParts),
+  );
   if (fb) { see(fb.minX, fb.minY); see(fb.maxX, fb.maxY); }
   for (const ev of cv.elevationViews ?? []) {
     // E-8-v5a: 背景プリミティブしか見ていなかったため、背景（建物・足場の絵）の外へ

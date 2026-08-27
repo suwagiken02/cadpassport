@@ -16,15 +16,28 @@
 import { CanvasData } from '@/types';
 import { gridToMm } from '@/lib/konva/gridUtils';
 import { getHandrailEndpoints } from '@/lib/konva/snapUtils';
-import { freePartsToPrimitives } from '@/lib/konva/freeParts';
+import { aidPartsOf, freePartsToPrimitives, scaffoldPartsOf } from '@/lib/konva/freeParts';
 import {
   pipeEndpointsGrid, stairArrowGrid, stairCornersGrid, stairTreadLinesGrid,
 } from '@/lib/konva/planeParts';
 
+/** 出力に何を含めるか (= E-8-v5c)。 */
+export type ExportContentOptions = {
+  /**
+   * 作図の補助（補助線・目印）を含めるか。**既定は false＝含めない**。
+   * 補助線は作図中の目安であって図面の中身ではないので、出力では既定で落とす。
+   */
+  includeAids?: boolean;
+};
+
 /** DXF 本体の文字列を組み立てる（pure・DOM に触らない）。 */
-export const buildDxf = (canvasData: CanvasData): string => {
+export const buildDxf = (canvasData: CanvasData, opts?: ExportContentOptions): string => {
   // S-1: 敷地境界線。無い図面では 1 バイトも出力を変えない。
   const sitePolygons = canvasData.sitePolygons ?? [];
+  // E-8-v5c: 補助線は既定では出さない。含めるときだけ AID レイヤーへ分けて出す
+  //   （FREEPART には入れない＝CAD 側で補助線だけ一括で消せる）。
+  const allFreeParts = canvasData.freeParts ?? [];
+  const aidParts = opts?.includeAids ? aidPartsOf(allFreeParts) : [];
   // DXFファイルを手動構築（dxf-writerのAPIに依存）
   let dxf = '';
 
@@ -52,6 +65,8 @@ export const buildDxf = (canvasData: CanvasData): string => {
     // S-1: 敷地境界線。**敷地があるときだけ**定義を出す。
     //   敷地を使っていない既存の図面は、出力がバイト単位で完全に不変になる。
     ...(sitePolygons.length > 0 ? [{ name: 'SITE', color: 1 }] : []),
+    // E-8-v5c: 補助線。**出すときだけ**定義を出す＝含めない図面はバイト単位で不変。
+    ...(aidParts.length > 0 ? [{ name: 'AID', color: 8 }] : []),
   ];
 
   layers.forEach((layer) => {
@@ -171,30 +186,37 @@ export const buildDxf = (canvasData: CanvasData): string => {
 
   // キャンバス直下の手動部材 (= E-8-v5a)。描かれる線をそのまま LINE で出す。
   // 座標は画面と同じグリッドなので、他の要素と同じ gridToMm でよい。
-  freePartsToPrimitives(canvasData.freeParts ?? []).forEach((p) => {
-    const seg = (x1: number, y1: number, x2: number, y2: number) =>
-      line('FREEPART', x1, y1, x2, y2);
-    if (p.kind === 'line') seg(p.x1, p.y1, p.x2, p.y2);
-    else if (p.kind === 'rect') {
-      seg(p.x, p.y, p.x + p.w, p.y);
-      seg(p.x + p.w, p.y, p.x + p.w, p.y + p.h);
-      seg(p.x + p.w, p.y + p.h, p.x, p.y + p.h);
-      seg(p.x, p.y + p.h, p.x, p.y);
-    } else if (p.kind === 'polygon' && p.points.length >= 4) {
-      for (let k = 0; k < p.points.length; k += 2) {
-        const n = (k + 2) % p.points.length;
-        seg(p.points[k], p.points[k + 1], p.points[n], p.points[n + 1]);
+  // E-8-v5c: 部材と補助線でレイヤーを分ける。補助線は既定で 0 件（含めない）。
+  const emitFreeParts = (layer: string, parts: typeof allFreeParts) => {
+    freePartsToPrimitives(parts).forEach((p) => {
+      const seg = (x1: number, y1: number, x2: number, y2: number) =>
+        line(layer, x1, y1, x2, y2);
+      if (p.kind === 'line') seg(p.x1, p.y1, p.x2, p.y2);
+      else if (p.kind === 'rect') {
+        seg(p.x, p.y, p.x + p.w, p.y);
+        seg(p.x + p.w, p.y, p.x + p.w, p.y + p.h);
+        seg(p.x + p.w, p.y + p.h, p.x, p.y + p.h);
+        seg(p.x, p.y + p.h, p.x, p.y);
+      } else if (p.kind === 'polygon' && p.points.length >= 4) {
+        for (let k = 0; k < p.points.length; k += 2) {
+          const n = (k + 2) % p.points.length;
+          seg(p.points[k], p.points[k + 1], p.points[n], p.points[n + 1]);
+        }
       }
-    }
-    // circle（端キャップ）と text は線ではないので出さない。
-  });
+      // circle（端キャップ）と text は線ではないので出さない。
+    });
+  };
+  emitFreeParts('FREEPART', scaffoldPartsOf(allFreeParts));
+  emitFreeParts('AID', aidParts);
 
   dxf += '0\nENDSEC\n0\nEOF\n';
   return dxf;
 };
 
-export const exportToDxf = (canvasData: CanvasData, siteName: string): void => {
-  const dxf = buildDxf(canvasData);
+export const exportToDxf = (
+  canvasData: CanvasData, siteName: string, opts?: ExportContentOptions,
+): void => {
+  const dxf = buildDxf(canvasData, opts);
 
   // ダウンロード
   const blob = new Blob([dxf], { type: 'application/dxf' });

@@ -596,6 +596,11 @@ export type ExportSettings = {
   companyLogoUrl?: string;
   siteName: string;
   date: string;
+  /**
+   * 作図の補助（補助線・目印）を出力に含めるか (= E-8-v5c)。
+   * 未指定＝false＝含めない。PDF / PNG / DXF で同じ 1 つのフラグに従う。
+   */
+  includeAids?: boolean;
 };
 
 // === プロジェクト ===

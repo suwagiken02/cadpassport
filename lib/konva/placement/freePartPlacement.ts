@@ -72,8 +72,10 @@ export function freePartDraftAt(atGrid: Point): FreePart | null {
   const tool = s.elevationAddTool;
   if (!tool || tool === 'text') return null;
 
+  // E-8-v5c: 目印も補助線の端点と同じく、近くの角へ軽く寄る（部材には吸い付かない）。
+  const at = tool === 'point' ? snapAidEndpoint(atGrid) : atGrid;
   const isPost = tool === 'post' || tool === 'postExt';
-  const draft = newFreePart(tool, 'draft', atGrid, {
+  const draft = newFreePart(tool, 'draft', at, {
     komaCount: isPost ? s.elevationAddSize : undefined,
     sizeMm: isPost ? undefined : s.elevationAddSize,
     flip: s.elevationAddFlip,

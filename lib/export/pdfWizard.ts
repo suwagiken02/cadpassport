@@ -18,6 +18,11 @@ export type PdfWizardSettings = {
   siteName: string;
   companyName: string;
   date: string;
+  /**
+   * 補助線を含めるか (= E-8-v5c)。全ページ出力はページ遷移をまたいで進むので、
+   * モーダルのローカル state では消える。ウィザードの状態（store）が持ち運ぶ。
+   */
+  includeAids?: boolean;
 };
 
 export type PdfWizardState = {
