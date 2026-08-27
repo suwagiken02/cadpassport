@@ -317,6 +317,12 @@ type CanvasStore = {
   showBuilding2FModal: boolean;
   setShowBuilding2FModal: (show: boolean) => void;
   /**
+   * E-8-v5c: 補助線の 1 点目（グリッド）。2 クリックで引くので、1 点目を打った
+   * 状態を覚えておく。2 点目で確定して null に戻る。種類を変えたときも捨てる。
+   */
+  aidLineStart: import('@/types').Point | null;
+  setAidLineStart: (p: import('@/types').Point | null) => void;
+  /**
    * S-7: 敷地の起点を選んでいる間のポインタ位置（グリッド）。
    * 建物からの距離ガイドを出すためだけに持つ。マウスの移動でだけ更新される
    * （タッチは指を置くまで位置が取れないので、既存の計測ツールと同じ扱い）。
@@ -952,6 +958,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setShowElevation: (show) => set({ showElevation: show }),
   showBuilding2FModal: false,
   setShowBuilding2FModal: (show) => set({ showBuilding2FModal: show }),
+  aidLineStart: null,
+  setAidLineStart: (p) => set({ aidLineStart: p }),
   siteStartCursor: null,
   setSiteStartCursor: (p) => set({ siteStartCursor: p }),
   showSiteModal: false,
@@ -1796,6 +1804,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setElevationAddTool: (t) => set({
     elevationAddTool: t,
     elevationEditSelectedId: null,
+    // E-8-v5c: 種類を変えたら補助線の引きかけは捨てる（別の種類の線が生まれない）。
+    aidLineStart: null,
     // 種類を**変えたとき**だけ寸法を既定へ戻す（支柱=コマ数 / 手摺・踏板=長さ mm）。
     // E-8-v5b-fix: 同じ種類を選び直すたびに戻していたため、長さボタンで選んだ寸法が
     //   即座に上書きされ「長さを変えられない」になっていた。長さボタンも姿図も、

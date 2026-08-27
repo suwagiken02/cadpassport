@@ -28,7 +28,7 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
 import { canPlaceFreePart } from '@/lib/konva/elevation/placementGate';
 import {
-  freePartDraftAt, placeFreePartAt,
+  aidLineDraftTo, freePartDraftAt, placeFreePartAt,
 } from '@/lib/konva/placement/freePartPlacement';
 import { freePartsToPrimitives, scaffoldPartsOf } from '@/lib/konva/freeParts';
 import { renderPrimLocal } from './ElevationViewLayer';
@@ -47,6 +47,8 @@ export default function FreePartLayer() {
   const addFlip = useCanvasStore((s) => s.elevationAddFlip);
   const addAngle = useCanvasStore((s) => s.elevationAddAngle);
   const dropAt = useCanvasStore((s) => s.elevationDropAt);
+  /** E-8-v5c: 補助線の 1 点目（打ってあれば、そこからカーソルまでを見せる）。 */
+  const aidLineStart = useCanvasStore((s) => s.aidLineStart);
   // E-8-v2l-hotfix3 と同じ理由でツールフラグは 1 つずつ購読する
   //   （オブジェクトを組み立てる selector は zustand v5 で毎回別値になり、再描画が止まらない）。
   const isHeightMarkerMode = useCanvasStore((s) => s.isHeightMarkerMode);
@@ -116,9 +118,17 @@ export default function FreePartLayer() {
    * 依存にはその値を並べておく（指を動かさなくても姿が変わる）。
    */
   const draftPart = useMemo(
-    () => (placing && hoverScreen ? freePartDraftAt(toGrid(hoverScreen)) : null),
+    () => {
+      if (!placing || !hoverScreen) return null;
+      const at = toGrid(hoverScreen);
+      // E-8-v5c: 補助線は 2 クリック。1 点目を打ってあれば「起点→カーソル」の線を、
+      //   まだなら（1 点目を待っている間は）何も出さない。
+      if (addTool === 'line') return aidLineStart ? aidLineDraftTo(at) : null;
+      return freePartDraftAt(at);
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [placing, hoverScreen, addTool, addSize, addFlip, addAngle, allParts, zoom, panX, panY],
+    [placing, hoverScreen, addTool, addSize, addFlip, addAngle, aidLineStart,
+      allParts, zoom, panX, panY],
   );
 
   const draftPreview = draftPart && (

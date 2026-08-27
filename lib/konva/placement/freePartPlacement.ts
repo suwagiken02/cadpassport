@@ -23,8 +23,14 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { GRID_MM, movePart, type ElevationPart } from '@/lib/konva/elevation/elevationParts';
 import { snapJoint, type JointSnap, type JointSnapOptions } from '@/lib/konva/elevation/elevationJoints';
-import { newFreePart, nextFreePartId, type FreePart } from '@/lib/konva/freeParts';
+import {
+  aidLineFromPoints, canDrawAidLine, newFreePart, nextFreePartId, type FreePart,
+} from '@/lib/konva/freeParts';
+import { snapSiteVertex } from '@/lib/konva/siteShape';
 import type { Point } from '@/types';
+
+/** 補助線の端点が建物・敷地の角へ寄る画面距離(px)。敷地の頂点編集と同じ値。 */
+export const AID_SNAP_PX = 12;
 
 /** 接合点へ吸着する画面距離(px)。立面ビュー内と同じ値＝同じ操作感にする。 */
 export const JOINT_SNAP_PX = 22;
@@ -79,13 +85,74 @@ export function freePartDraftAt(atGrid: Point): FreePart | null {
   return (snap.dxMm || snap.dyMm) ? movePart(draft, undefined, snap) : draft;
 }
 
-/** その位置へ置く。置いたら true（部材を選んでいなければ何もしない）。 */
+/**
+ * その位置へ置く。置いたら true（部材を選んでいなければ何もしない）。
+ *
+ * E-8-v5c: 補助線だけは 2 クリック。1 回目で起点を覚え（まだ何も置かない）、
+ * 2 回目で結んで確定する。他の種類は従来どおり 1 クリックで置かれる。
+ */
 export function placeFreePartAt(atGrid: Point): boolean {
+  const s = useCanvasStore.getState();
+
+  if (s.elevationAddTool === 'line') {
+    atGrid = snapAidEndpoint(atGrid);
+    const start = s.aidLineStart;
+    if (!start) {
+      // 1 点目。まだ線は作らない（2 点目が来るまで置かない）。
+      s.setAidLineStart({ x: atGrid.x, y: atGrid.y });
+      return false;
+    }
+    // 2 点目。短すぎる（＝同じ場所を 2 回押しただけ）ときは起点を打ち直しにする。
+    if (!canDrawAidLine(start, atGrid)) {
+      s.setAidLineStart({ x: atGrid.x, y: atGrid.y });
+      return false;
+    }
+    const id = nextFreePartId(currentParts(), 'line');
+    s.addFreePart(aidLineFromPoints(id, start, atGrid));
+    s.setAidLineStart(null);
+    return true;
+  }
+
   const draft = freePartDraftAt(atGrid);
   if (!draft) return false;
-  const s = useCanvasStore.getState();
   s.addFreePart({ ...draft, id: nextFreePartId(currentParts(), draft.kind) });
   return true;
+}
+
+/** 引きかけの補助線を捨てる（ツールを外す・Esc・モードを抜けるとき）。 */
+export function cancelAidLine(): void {
+  const s = useCanvasStore.getState();
+  if (s.aidLineStart) s.setAidLineStart(null);
+}
+
+/**
+ * 引いている最中の姿 (= E-8-v5c)。1 点目を打ってあれば、そこからカーソルまでの線。
+ * 確定と**同じ aidLineFromPoints** を通すので、見えている線がそのまま置かれる。
+ */
+export function aidLineDraftTo(atGrid: Point): FreePart | null {
+  const s = useCanvasStore.getState();
+  if (s.elevationAddTool !== 'line' || !s.aidLineStart) return null;
+  const at = snapAidEndpoint(atGrid);
+  if (!canDrawAidLine(s.aidLineStart, at)) return null;
+  return aidLineFromPoints('draft', s.aidLineStart, at);
+}
+
+/**
+ * 補助線の端点を、近くの角へ軽く寄せる (= E-8-v5c)。
+ *
+ * 寄せ先は**建物・障害物・敷地の角**だけ。接合スナップ（コマ⇔楔）には
+ * 参加しないので、部材に吸い付くことはない（isDrawingAid のガード）。
+ * 「この柱の角からここまで」を測る使い方で効く一方、それ以外の場所では
+ * 指した位置そのままに置ける（自由が原則）。
+ */
+export function snapAidEndpoint(atGrid: Point): Point {
+  const { canvasData, zoom } = useCanvasStore.getState();
+  const corners: Point[] = [
+    ...canvasData.buildings.flatMap((b) => b.points),
+    ...canvasData.obstacles.flatMap((o) => o.points ?? []),
+    ...(canvasData.sitePolygons ?? []).flatMap((sp) => sp.points),
+  ];
+  return snapSiteVertex(atGrid, corners, AID_SNAP_PX / gridPxOf(zoom));
 }
 
 /** 既存の 1 本をグリッド単位で動かす（接合が近ければ吸着）。動いたら true。 */

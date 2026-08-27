@@ -18,7 +18,10 @@
 // ============================================================
 import React, { useEffect, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { DEFAULT_ELEVATION_PART_KIND, PALETTE_KINDS } from '@/lib/konva/elevation/elevationSlots';
+import {
+  AID_PALETTE_KINDS, DEFAULT_ELEVATION_PART_KIND, PALETTE_KINDS,
+} from '@/lib/konva/elevation/elevationSlots';
+import { isDrawingAid } from '@/lib/konva/elevation/elevationParts';
 import {
   POST_KOMA_CHOICES, SPAN_LENGTH_CHOICES_MM, type ElevationPartKind,
 } from '@/lib/konva/elevation/elevationParts';
@@ -115,6 +118,20 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
             {PART_LABEL[k]}
           </button>
         ))}
+        {/* E-8-v5c: 作図の補助（部材ではないので区切って並べる）。 */}
+        <span className="mx-1 w-px self-stretch bg-dark-border" aria-hidden />
+        {AID_PALETTE_KINDS.map((k) => (
+          <button key={k} type="button"
+            // 部材ボタンと同じ作法。補助線は引き出し（ドラッグ）では置かず
+            // 2 クリックで引くので、押した時点で選ぶだけにする。
+            onPointerDown={() => useCanvasStore.getState()
+              .setElevationAddTool(addTool === k ? null : k)}
+            onClick={(e) => onKeyboardClick(e, () =>
+              useCanvasStore.getState().setElevationAddTool(addTool === k ? null : k))}
+            className={btn(addTool === k)}>
+            {PART_LABEL[k]}
+          </button>
+        ))}
         {showText && (
           <button type="button"
             onClick={() => useCanvasStore.getState().setElevationAddTool(addTool === 'text' ? null : 'text')}
@@ -172,8 +189,9 @@ export default function ElevationPartPalette({ showText = true }: { showText?: b
         </div>
       )}
 
-      {/* 長さ（支柱＝コマ数／手摺・踏板・筋交＝標準スパン）と、筋交の向き。 */}
-      {part && part !== 'jack' && (
+      {/* 長さ（支柱＝コマ数／手摺・踏板・筋交＝標準スパン）と、筋交の向き。
+          E-8-v5c: 補助線は起点→終点で引くので長さの指定は要らない。 */}
+      {part && part !== 'jack' && !isDrawingAid(part) && (
         <div className="flex items-center gap-1 mb-2 flex-wrap">
           <span className="text-[10px] text-dimension mr-1">{isPost ? '長さ(コマ)' : '長さ(mm)'}</span>
           {sizes.map(({ value, label }) => (

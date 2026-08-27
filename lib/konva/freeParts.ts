@@ -87,6 +87,36 @@ export function newFreePart(
   return newElevationPart(kind, id, 0, gridToPartMm(atGrid), opts);
 }
 
+/**
+ * 2 点から補助線を作る (= E-8-v5c)。起点 a → 終点 b をそのまま結ぶ。
+ *
+ * ElevationPart は高さ(levelMm)を 1 つしか持たないので、線は
+ * 「中心・長さ・傾き」で表す（筋交と同じ持ち方）。傾きは既存の angleDeg 回転が
+ * そのまま効くので、新しいフィールドを 1 つも足さずに任意の向きを表せる。
+ *
+ * 角度の向き: 部材の angleDeg は「右端が上がる向きが正」。キャンバスの y は
+ * 下向きなので、画面で右上がりに引いた線は正の角度になる。
+ */
+export function aidLineFromPoints(
+  id: string, a: { x: number; y: number }, b: { x: number; y: number },
+): FreePart {
+  const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const sizeMm = Math.hypot(dx, dy) * GRID_MM;
+  // atan2 は画面座標（y 下向き）。部材の角度は上向き正なので符号を反転する。
+  const angleDeg = (Math.atan2(-dy, dx) * 180) / Math.PI;
+  return newFreePart('line', id, center, { sizeMm, angleDeg });
+}
+
+/** 補助線として意味を持つ最短の長さ(mm)。これ未満は「点を 2 回押しただけ」とみなす。 */
+export const AID_LINE_MIN_MM = 50;
+
+/** その 2 点で線を引けるか（短すぎる誤タップを弾く）。 */
+export function canDrawAidLine(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+  return Math.hypot(b.x - a.x, b.y - a.y) * GRID_MM >= AID_LINE_MIN_MM;
+}
+
 /** グリッド単位で動かす（自由座標を書き換えるだけ。置ける/置けないの判定はしない）。 */
 export function moveFreePart(part: FreePart, dxGrid: number, dyGrid: number): FreePart {
   return movePart(part, undefined, { dxMm: dxGrid * GRID_MM, dyMm: -dyGrid * GRID_MM });

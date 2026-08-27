@@ -58,6 +58,12 @@ export type ElevationSlot = {
 export const PALETTE_KINDS: ElevationPartKind[] = ['post', 'rail', 'board', 'jack', 'brace'];
 
 /**
+ * 作図の補助 (= E-8-v5c)。部材ではないのでパレットでも列を分ける。
+ * 線は 2 クリック（起点→終点）、点は 1 クリックで置く。
+ */
+export const AID_PALETTE_KINDS: ElevationPartKind[] = ['line'];
+
+/**
  * パレットを開いた時点で選ばれている種類 (= E-8-v5c)。
  * 「何も選ばれていない段階」は要らない（鮎澤氏）。いちばん使うのが手摺。
  */
