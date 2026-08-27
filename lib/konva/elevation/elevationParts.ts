@@ -16,7 +16,8 @@ import type { ElevationPrimitive } from '@/types';
 import type { FaceElevation } from './elevationEngine';
 import { faceElevationExtent, q } from './elevationToObjects';
 import {
-  komaLevelsFromJackMm, postSegmentsMm, pushBoard, pushBrace, pushJack, pushPost, pushRail,
+  komaLevelsFromJackMm, postSegmentsMm, pushAidLine, pushAidPoint,
+  pushBoard, pushBrace, pushJack, pushPost, pushRail,
 } from './elevationPartStyle';
 import { KOMA_PITCH_MM } from './komaGrid';
 
@@ -29,7 +30,25 @@ export type ElevationPartKind =
   | 'rail'        // 手摺・コマ横線
   | 'raiseBoard'  // 妻面嵩上げの段違い床
   | 'raiseRail'   // 同上の手摺(+450/+900)
-  | 'brace';      // 筋交（現状エンジンは生成しない＝手動追加専用）
+  | 'brace'       // 筋交（現状エンジンは生成しない＝手動追加専用）
+  // === 作図の補助 (= E-8-v5c)。部材ではない ===
+  //   足場の集計・自動配置・接合スナップのどれにも参加しない。判定は isDrawingAid 1 本。
+  | 'line'        // 補助線（起点→終点の 2 点で引く。中心+長さ+angleDeg で保持）
+  | 'point';      // 目印（1 点。十字で描く＝線なので DXF にも出る）
+
+/**
+ * 作図の補助（補助線・目印）か (= E-8-v5c)。**部材ではない**ことの唯一の判定。
+ *
+ * これが true のものは:
+ *   ・接合スナップ（コマ⇔楔・ホゾ⇔受け）に一切参加しない
+ *     （補助線に手摺が吸い付く、が起きない）
+ *   ・部材の集計に数えない（現状そういう機能は無いが、将来足すときの拠り所）
+ *   ・出力では「補助線」として扱い、既定では含めない
+ * 判定を 1 か所に置いてあるので、足し忘れ・数え間違いが起こらない。
+ */
+export function isDrawingAid(kind: ElevationPartKind): boolean {
+  return kind === 'line' || kind === 'point';
+}
 
 export type ElevationPart = {
   id: string;
@@ -573,6 +592,16 @@ export function partsToPrimitives(bundle: ElevationPartsBundle): ElevationPrimit
           { kind: 'raise', id: p.id, heightMm: h, index: p.spanIndex, x: q(lx(span.x0)) });
         break;
       }
+      // E-8-v5c: 作図の補助。部材の装飾（フック・コマ等）を持たない素の線・十字。
+      //   線は中心+長さで持ち、傾きは既存の angleDeg 回転がそのまま効く。
+      case 'line':
+        pushAidLine(out, lx(span.x0), lx(span.x1), ly(p.levelMm ?? 0),
+          { kind: 'aid', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
+        break;
+      case 'point':
+        pushAidPoint(out, lx(span.x0), ly(p.levelMm ?? 0),
+          { kind: 'aid', id: p.id, heightMm: p.levelMm, x: q(lx(span.x0)) });
+        break;
       case 'brace': {
         // 筋交は手動追加専用。スパンの対角に1本。flip で向きを反転できる (= E-8-v3c)。
         const top = (p.levelMm ?? sg?.topRailMm ?? 0);
@@ -625,6 +654,11 @@ export function newElevationPart(
     };
   }
   if (kind === 'jack') {
+    return { ...base, x0Mm: at.xMm, x1Mm: at.xMm, levelMm: at.yMm };
+  }
+  // E-8-v5c: 目印は 1 点。既定枝（中心から長さの半分ずつ）に落とすと
+  //   幅 1800mm の線として作られてしまう。
+  if (kind === 'point') {
     return { ...base, x0Mm: at.xMm, x1Mm: at.xMm, levelMm: at.yMm };
   }
   // 手摺・踏板・筋交・嵩上げ: 指した位置を中心に、選んだ長さで置く

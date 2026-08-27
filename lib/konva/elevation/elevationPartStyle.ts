@@ -64,6 +64,12 @@ export const ELEV_PART_COLORS = {
   joint: '#C86A00',
   /** 継ぎ目スリーブの縁取り・境目の線 (= E-8-v2o)。輪郭を出して膨らみとして読ませる。 */
   jointEdge: '#4A2000',
+  /**
+   * 作図の補助（補助線・目印）(= E-8-v5c)。**部材ではない**ので、図面の主役
+   * （黒＝建物・青＝手摺・黄＝支柱）より必ず控えめな灰色にする。
+   * 主役を隠さないことが最優先なので、色でも線種でも一目で「下地」と分かる形にした。
+   */
+  aid: '#9CA3AF',
 } as const;
 
 /**
@@ -149,6 +155,14 @@ export const ELEV_PART_STYLE = {
   jointHalfGrid: 8,
   /** 受け口の縁の太さ(px 固定)。コマ(2.5)より太い。 */
   jointWidthPx: 3,
+  // 作図の補助 (= E-8-v5c)。部材より細く・薄く・破線＝図面の主役を隠さない。
+  aidWidthGrid: 2,          // 20mm 相当（手摺 8 の 1/4）
+  aidWidthMinPx: 1,
+  aidOpacity: 0.9,
+  /** 破線の刻み（グリッド）。実寸なのでズームに追従する。 */
+  aidDashGrid: [12, 8] as number[],
+  /** 目印の十字の腕の長さ（グリッド＝150mm）。 */
+  aidPointArmGrid: 15,
 } as const;
 
 /**
@@ -356,4 +370,40 @@ export function pushBrace(
   line(out, x0, y0, x1, y1, C.brace, S.braceWidthMinPx, S.braceWidthGrid, 1, meta);
   dot(out, x0, y0, S.braceHandleMinPx, S.braceHandleGrid, C.brace, 1, meta);
   dot(out, x1, y1, S.braceHandleMinPx, S.braceHandleGrid, C.brace, 1, meta);
+}
+
+/**
+ * 補助線 (= E-8-v5c)。部材の装飾（フック・コマ・輪郭）を一切持たない素の破線。
+ * 傾きは呼び出し側（partsToPrimitives）の angleDeg 回転がそのまま効くので、
+ * ここでは常に水平の 1 本として出す。
+ */
+export function pushAidLine(
+  out: Out, x0: number, x1: number, y: number, meta: ElevationPrimitiveMeta,
+): void {
+  out.push({
+    kind: 'line', x1: x0, y1: y, x2: x1, y2: y,
+    stroke: ELEV_PART_COLORS.aid,
+    width: ELEV_PART_STYLE.aidWidthMinPx, widthGrid: ELEV_PART_STYLE.aidWidthGrid,
+    dash: ELEV_PART_STYLE.aidDashGrid, opacity: ELEV_PART_STYLE.aidOpacity, meta,
+  });
+}
+
+/**
+ * 目印 (= E-8-v5c)。**十字（＋）で描く**。
+ * 円ではなく線 2 本にしてあるのは、DXF が circle を出力しないため
+ * （dxfExport は line/rect/polygon だけを出す）。十字なら出力にもそのまま乗る。
+ * 大きさは実寸（ズームに追従）で、他の部材と作法を揃える。
+ */
+export function pushAidPoint(
+  out: Out, x: number, y: number, meta: ElevationPrimitiveMeta,
+): void {
+  const r = ELEV_PART_STYLE.aidPointArmGrid;
+  const seg = (x0: number, y0: number, x1: number, y1: number) => out.push({
+    kind: 'line' as const, x1: x0, y1: y0, x2: x1, y2: y1,
+    stroke: ELEV_PART_COLORS.aid,
+    width: ELEV_PART_STYLE.aidWidthMinPx, widthGrid: ELEV_PART_STYLE.aidWidthGrid,
+    dash: undefined, opacity: ELEV_PART_STYLE.aidOpacity, meta,
+  });
+  seg(x - r, y, x + r, y);
+  seg(x, y - r, x, y + r);
 }

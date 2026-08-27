@@ -33,15 +33,26 @@
 // ============================================================
 import type { ElevationPrimitive } from '@/types';
 import {
-  GRID_MM, movePart, newElevationPart, partPivotMm, partsToPrimitives,
+  GRID_MM, isDrawingAid, movePart, newElevationPart, partPivotMm, partsToPrimitives,
   type ElevationPart, type ElevationPartGeometry, type ElevationPartKind,
 } from './elevation/elevationParts';
+
+// 「部材ではない」判定は elevationParts が唯一の定義。ここからも使えるよう通す。
+export { isDrawingAid };
 
 /**
  * キャンバスの住人としての手動部材。
  * 形は立面部材と同一（描画・吸着・回転をそのまま共有するため）。座標の意味だけが違う。
  */
 export type FreePart = ElevationPart;
+
+/** 補助線・目印だけ。 */
+export const aidPartsOf = (parts: FreePart[] | undefined): FreePart[] =>
+  (parts ?? []).filter((p) => isDrawingAid(p.kind));
+
+/** 部材だけ（補助線・目印を除く）。 */
+export const scaffoldPartsOf = (parts: FreePart[] | undefined): FreePart[] =>
+  (parts ?? []).filter((p) => !isDrawingAid(p.kind));
 
 /**
  * freeParts は「足場という手がかり」を持たない。

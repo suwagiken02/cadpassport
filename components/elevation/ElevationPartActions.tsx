@@ -22,6 +22,7 @@ const KIND_LABEL: Record<ElevationPrimitiveKind, string> = {
   building: '建物外形', roof: '屋根', ridge: '棟', gl: 'GL',
   board: '作業床', rail: '手摺', post: '支柱', jack: 'ジャッキ', raise: '嵩上げ床',
   dim: '寸法線', dimText: '寸法値', text: '文字',
+  aid: '補助線',   // E-8-v5c: 作図の補助（部材ではない）
 };
 
 /** divider: 上にパレットがあるときだけ区切り線を出す（単独表示で宙に浮いた線を出さない）。 */

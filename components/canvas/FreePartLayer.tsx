@@ -28,13 +28,11 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
 import { canPlaceFreePart } from '@/lib/konva/elevation/placementGate';
 import {
-  freePartDraftAt, moveFreePartBy, placeFreePartAt,
+  freePartDraftAt, placeFreePartAt,
 } from '@/lib/konva/placement/freePartPlacement';
-import { freePartsToPrimitives } from '@/lib/konva/freeParts';
-import { groupByPartId, renderPrimLocal } from './ElevationViewLayer';
-/** ドラッグと判定するまでの移動量(px)。指のタップのぶれより大きく。 */
-const EDIT_DRAG_PX = 10;
-
+import { freePartsToPrimitives, scaffoldPartsOf } from '@/lib/konva/freeParts';
+import { renderPrimLocal } from './ElevationViewLayer';
+import FreePartGroups from './FreePartGroups';
 export default function FreePartLayer() {
   const freeParts = useCanvasStore((s) => s.canvasData.freeParts);
   const views = useCanvasStore((s) => s.canvasData.elevationViews);
@@ -63,7 +61,11 @@ export default function FreePartLayer() {
   const [hoverScreen, setHoverScreen] = useState<{ x: number; y: number } | null>(null);
   const layerRef = React.useRef<Konva.Layer>(null);
 
-  const parts = useMemo(() => freeParts ?? [], [freeParts]);
+  // E-8-v5c: 補助線・目印は AidLayer（建物より背面）が受け持つ。ここは部材だけ。
+  //   置く操作（配置面・シャドー）は種類を問わずこのレイヤーが受ける。
+  const parts = useMemo(() => scaffoldPartsOf(freeParts), [freeParts]);
+  /** 置いた直後にシャドーを消すため、置ける判定には補助線も含めた全体を見る。 */
+  const allParts = useMemo(() => freeParts ?? [], [freeParts]);
   const gridPx = INITIAL_GRID_PX * zoom;
 
   const flags = {
@@ -81,10 +83,6 @@ export default function FreePartLayer() {
    * 閲覧モード）では置き場所の面が出ず、まっさらなキャンバスに置けなかった。
    */
   const placing = canPlaceFreePart({ addTool, flags, selectActive, viewSelected });
-
-  const prims = useMemo(() => freePartsToPrimitives(parts), [parts]);
-  const groups = useMemo(() => groupByPartId(prims), [prims]);
-  const partById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
 
   /** 画面 px → キャンバスのグリッド。 */
   const toGrid = (pt: { x: number; y: number }) => ({
@@ -112,13 +110,6 @@ export default function FreePartLayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropAt, placing]);
 
-  /** タップ: 消去ツール中は削除、そうでなければ既存の選択経路（selectedIds）へ乗せる。 */
-  const onPartTap = (id: string) => {
-    const st = useCanvasStore.getState();
-    if (mode === 'erase') { st.removeElement(id); return; }
-    st.setSelectedIds([id]);
-  };
-
   /**
    * シャドー（置かれる姿）。確定と同じ freePartDraftAt を通す。
    * 中身はストアから読むので、パレットで寸法や向きを変えたときに描き直せるよう、
@@ -127,7 +118,7 @@ export default function FreePartLayer() {
   const draftPart = useMemo(
     () => (placing && hoverScreen ? freePartDraftAt(toGrid(hoverScreen)) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [placing, hoverScreen, addTool, addSize, addFlip, addAngle, parts, zoom, panX, panY],
+    [placing, hoverScreen, addTool, addSize, addFlip, addAngle, allParts, zoom, panX, panY],
   );
 
   const draftPreview = draftPart && (
@@ -139,7 +130,7 @@ export default function FreePartLayer() {
   );
 
   // 部材も置き場所も無いなら何も出さない（従来どおりのキャンバス）。
-  if (parts.length === 0 && !placing) return null;
+  if (allParts.length === 0 && !placing) return null;
 
   return (
     <Layer ref={layerRef}>
@@ -167,34 +158,12 @@ export default function FreePartLayer() {
         />
       )}
       <Group x={panX} y={panY} scaleX={gridPx} scaleY={gridPx}>
-        {groups.map(({ id, from, items }) => {
-          const part = id ? partById.get(id) : undefined;
+        <FreePartGroups
+          parts={parts} gridPx={gridPx}
           // 置いている最中は既存部材を触らせない（面が全部拾う）。
-          const hittable = interactive && !placing && !!part;
-          const isSel = !!id && selectedIds.includes(id);
-          const nodes = items.map((p, k) => renderPrimLocal(p, `${from}-${k}`, gridPx, {
-            selected: isSel, overridden: false, interactive: hittable,
-          }));
-          if (!hittable || !id) return <React.Fragment key={`g-${from}`}>{nodes}</React.Fragment>;
-          return (
-            <Group
-              key={`g-${from}`}
-              draggable={mode === 'select'}
-              // 指のタップは必ず数 px ぶれる。小さすぎるとドラッグ扱いになり選べなくなる。
-              dragDistance={EDIT_DRAG_PX}
-              onDragStart={() => { if (mode === 'select') onPartTap(id); }}
-              onDragEnd={(e) => {
-                const d = e.target.position();
-                e.target.position({ x: 0, y: 0 });
-                moveFreePartBy(id, d);
-              }}
-              onClick={() => onPartTap(id)}
-              onTap={() => onPartTap(id)}
-            >
-              {nodes}
-            </Group>
-          );
-        })}
+          interactive={interactive && !placing}
+          mode={mode} selectedIds={selectedIds}
+        />
         {draftPreview}
       </Group>
     </Layer>

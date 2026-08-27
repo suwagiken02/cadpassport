@@ -17,6 +17,7 @@
 // ============================================================
 import {
   VIRTUAL_SPAN_MM,
+  isDrawingAid,
   partPivotMm, partRangeMm, postKomaMm, postMemberBottomMm, postMemberTopMm, rotateAboutMm,
   type ElevationPart, type ElevationPartGeometry,
 } from './elevationParts';
@@ -60,6 +61,9 @@ const isMale = (k: JointKind): k is 'wedge' | 'spigot' => k === 'wedge' || k ===
  */
 export function partJoints(part: ElevationPart, sg: Scaffold | undefined): JointPoint[] {
   if (part.removed) return [];
+  // E-8-v5c: 補助線・目印は部材ではないので接合点を持たない。
+  //   ここを通すと既定枝で「両端に楔」が生えて、補助線に手摺が吸い付いてしまう。
+  if (isDrawingAid(part.kind)) return [];
   const r = partRangeMm(part, sg);
   if (!r) return [];
   // E-8-v3c-fix4: 傾けた部材は接合点も一緒に回る（斜めに掛けた手摺の端も吸着する）。
@@ -122,6 +126,8 @@ const VIRTUAL_KOMA_STEPS = 4;
  */
 export function partVirtualJoints(part: ElevationPart, sg: Scaffold | undefined): JointPoint[] {
   if (part.removed) return [];
+  // E-8-v5c: 補助線・目印は「将来そこに入る相手」も連れてこない。
+  if (isDrawingAid(part.kind)) return [];
   const real = partJoints(part, sg);
   const out: JointPoint[] = [];
 

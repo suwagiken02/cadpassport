@@ -11,6 +11,7 @@ import {
   ZOOM_MIN,
   ZOOM_MAX,
 } from '@/lib/konva/gridUtils';
+import AidLayer from './AidLayer';
 import SiteLayer from './SiteLayer';
 import SiteStartGuideLayer from './SiteStartGuideLayer';
 import BuildingLayer from './BuildingLayer';
@@ -644,6 +645,9 @@ export default function GridCanvas({ width, height }: Props) {
         {gridLines()}
         {gridGuideLines()}
       </Layer>
+
+      {/* 作図の補助（E-8-v5c・建物より背面＝主役を隠さない） */}
+      <AidLayer />
 
       {/* 敷地境界線（S-1・建物より下＝下地） */}
       <SiteLayer />

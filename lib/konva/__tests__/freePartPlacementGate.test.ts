@@ -144,8 +144,9 @@ describe('達成条件: まっさらなキャンバスに 1 本置ける', () =>
   it('部材があれば、置いていない状態でもレイヤーは描画を出す', () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, '../../../components/canvas/FreePartLayer.tsx'), 'utf8');
-    // 「部材が無く、置いてもいない」ときだけ何も出さない
-    expect(src).toMatch(/if \(parts\.length === 0 && !placing\) return null;/);
+    // 「何も無く、置いてもいない」ときだけ何も出さない
+    //   E-8-v5c: 補助線は AidLayer が描くので、この判定は補助も含めた全体（allParts）で見る。
+    expect(src).toMatch(/if \(allParts\.length === 0 && !placing\) return null;/);
   });
 });
 

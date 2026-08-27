@@ -36,6 +36,8 @@ import NumInput from '@/components/ui/NumInput';
 const PART_LABEL: Record<ElevationPartKind, string> = {
   post: '支柱', postExt: '支柱延長', jack: 'ジャッキ', board: '踏板',
   rail: '手摺', raiseBoard: '嵩上げ床', raiseRail: '嵩上げ手摺', brace: '筋交',
+  // E-8-v5c: 作図の補助（部材ではない）。パレットに出すかは PALETTE_KINDS 側で決める。
+  line: '線', point: '点',
 };
 
 export default function ElevationPartPalette({ showText = true }: { showText?: boolean }) {
