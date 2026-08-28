@@ -24,15 +24,20 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
 import {
+  SITE_GHOST_HIT, SITE_GHOST_MIN_EDGE_PX, SITE_GHOST_OPACITY, SITE_GHOST_R,
   SITE_SELECT_COLOR, SITE_VERTEX_FILL, SITE_VERTEX_HIT, SITE_VERTEX_R, SITE_VERTEX_SNAP_PX,
-  siteDash, siteStrokeColor, siteStrokeWidth, snapSiteVertex,
+  edgeMidpointsGrid, siteDash, siteStrokeColor, siteStrokeWidth, snapSiteVertex, withPendingEdit,
+  type SiteVertexEdit,
 } from '@/lib/konva/siteShape';
 import { buildingCornersGrid } from '@/lib/konva/siteVertexGuide';
 import { gapGuides } from '@/lib/konva/siteGapGuides';
 import type { Point } from '@/types';
 
-/** ドラッグ中の頂点（確定するまではストアへ書かず、ここで見せるだけ）。 */
-type VertexDrag = { id: string; index: number; point: Point };
+/**
+ * つまみを操作している最中の仮の状態（確定するまではストアへ書かず、ここで見せるだけ）。
+ * S-4 の移動に加えて、S-9 で「辺の中点から頂点を足す」を足した。
+ */
+type VertexDrag = SiteVertexEdit;
 
 /**
  * すき間の常時表示 (= S-6)。S-5 の赤いガイドが主役なので、こちらは控えめにする
@@ -41,6 +46,11 @@ type VertexDrag = { id: string; index: number; point: Point };
 const GAP_COLOR = '#2563EB';
 const GAP_DASH = [4, 4];
 const GAP_FONT = 11;
+
+/** ゴーストがドラッグ扱いになる移動量(px) (= S-9)。これ未満はタップ。 */
+const GHOST_DRAG_PX = 6;
+/** ドラッグ直後の click を伏せる時間(ms)。 */
+const GHOST_CLICK_GUARD_MS = 300;
 
 export default function SiteLayer() {
   const sitePolygons = useCanvasStore((s) => s.canvasData.sitePolygons);
@@ -77,11 +87,7 @@ export default function SiteLayer() {
   const gaps = useMemo(() => {
     const chosen = (sitePolygons ?? []).filter((s) => selectedIds.includes(s.id));
     if (chosen.length === 0 || buildings.length === 0) return [];
-    const shapes = chosen.map((s) => ({
-      points: drag && drag.id === s.id
-        ? s.points.map((p, i) => (i === drag.index ? drag.point : p))
-        : s.points,
-    }));
+    const shapes = chosen.map((s) => ({ points: withPendingEdit(s.points, drag, s.id) }));
     return gapGuides(buildings, shapes).filter((g) => g.mm > 0);
   }, [sitePolygons, buildings, selectedIds, drag]);
 
@@ -108,10 +114,20 @@ export default function SiteLayer() {
   /** 画面 px → グリッド（つまみの位置を戻すときに使う）。 */
   const toGrid = (px: number, py: number): Point => ({ x: (px - panX) / gridPx, y: (py - panY) / gridPx });
 
-  /** ドラッグ中の頂点だけ差し替えた外形（線が指に追従する）。 */
-  const pointsOf = (id: string, pts: Point[]): Point[] => (
-    drag && drag.id === id ? pts.map((p, i) => (i === drag.index ? drag.point : p)) : pts
-  );
+  /**
+   * ゴーストをドラッグしたか (= S-9)。ドラッグの直後に来る click を
+   * 「タップで追加」と取り違えると、1 回の操作で頂点が 2 つ増えてしまう。
+   */
+  const ghostDraggedRef = React.useRef(false);
+
+  /** 辺の中点にそのまま頂点を足す（ゴーストのタップ）。 */
+  const addAtMidpoint = (id: string, edgeIndex: number, point: Point) => {
+    if (ghostDraggedRef.current) return;   // ドラッグで足した直後は無視する
+    useCanvasStore.getState().insertSitePolygonPoint(id, edgeIndex, point);
+  };
+
+  /** 操作中の頂点を差し替えた外形（線が指に追従する。追加中は仮の頂点が挟まる）。 */
+  const pointsOf = (id: string, pts: Point[]): Point[] => withPendingEdit(pts, drag, id);
 
   /**
    * 寄せ先の角。建物の角と、**他の**敷地の角だけ。
@@ -168,6 +184,63 @@ export default function SiteLayer() {
         );
       })}
 
+      {/* S-9: 辺の中点に「押せば頂点が増える」ゴーストのつまみを出す。
+          ・タップ … 中点にそのまま頂点を足す
+          ・ドラッグ … 離した位置に頂点を足す（足してから動かす、が 1 操作で済む）
+          **ドラッグ中は出さない**（drag が立っている間は描かない）。こうしておくと
+          「頂点を動かしている最中に頂点が増えて index がずれる」経路が構造的に無くなる。 */}
+      {editable && !drag && sites.filter((s) => selectedIds.includes(s.id)).map((site) => (
+        edgeMidpointsGrid(site.points)
+          // 短い辺には出さない（両端のつまみと団子になって押し分けられない）。
+          .filter((m) => m.lengthGrid * gridPx >= SITE_GHOST_MIN_EDGE_PX)
+          .map((m) => (
+            <Circle
+              key={`${site.id}-e${m.edgeIndex}`}
+              x={sx(m.point.x)} y={sy(m.point.y)}
+              radius={SITE_GHOST_R}
+              fill={SITE_VERTEX_FILL}
+              stroke={SITE_SELECT_COLOR}
+              strokeWidth={1.5}
+              opacity={SITE_GHOST_OPACITY}
+              hitStrokeWidth={SITE_GHOST_HIT}
+              draggable
+              // 指のタップは必ず数 px ぶれる。これ未満はタップ扱い。
+              dragDistance={GHOST_DRAG_PX}
+              // 既存のつまみと同じ。ステージへ渡すと範囲選択や
+              //   「外形を掴んで敷地ごと動かす」と喧嘩する。
+              onMouseDown={(e: Konva.KonvaEventObject<MouseEvent>) => { e.cancelBubble = true; }}
+              onTouchStart={(e: Konva.KonvaEventObject<TouchEvent>) => { e.cancelBubble = true; }}
+              dragBoundFunc={(pos) => {
+                const g = snapSiteVertex(
+                  toGrid(pos.x, pos.y), snapTargets(site.id), SITE_VERTEX_SNAP_PX / gridPx,
+                );
+                return { x: sx(g.x), y: sy(g.y) };
+              }}
+              onDragStart={() => {
+                ghostDraggedRef.current = true;
+                setDrag({ kind: 'insert', id: site.id, edgeIndex: m.edgeIndex, point: m.point });
+              }}
+              onDragMove={(e) => {
+                setDrag({
+                  kind: 'insert', id: site.id, edgeIndex: m.edgeIndex,
+                  point: toGrid(e.target.x(), e.target.y()),
+                });
+              }}
+              onDragEnd={(e) => {
+                // 1 操作 1 undo。ストアへ書くのはここ 1 回だけ（insert が pushHistory する）。
+                useCanvasStore.getState().insertSitePolygonPoint(
+                  site.id, m.edgeIndex, toGrid(e.target.x(), e.target.y()),
+                );
+                setDrag(null);
+                // 直後の click を「タップで追加」と誤解しないよう少しだけ伏せる。
+                window.setTimeout(() => { ghostDraggedRef.current = false; }, GHOST_CLICK_GUARD_MS);
+              }}
+              onClick={() => addAtMidpoint(site.id, m.edgeIndex, m.point)}
+              onTap={() => addAtMidpoint(site.id, m.edgeIndex, m.point)}
+            />
+          ))
+      ))}
+
       {/* S-4: 選んでいる敷地の角につまみを出す。引っ張るとその頂点だけが動く。 */}
       {editable && sites.filter((s) => selectedIds.includes(s.id)).map((site) => (
         pointsOf(site.id, site.points).map((p, index) => (
@@ -195,10 +268,10 @@ export default function SiteLayer() {
             onDragStart={() => {
               // 1 ドラッグ 1 undo（動かしている間は履歴を積まない）
               useCanvasStore.getState().pushHistory();
-              setDrag({ id: site.id, index, point: p });
+              setDrag({ kind: 'move', id: site.id, index, point: p });
             }}
             onDragMove={(e) => {
-              setDrag({ id: site.id, index, point: toGrid(e.target.x(), e.target.y()) });
+              setDrag({ kind: 'move', id: site.id, index, point: toGrid(e.target.x(), e.target.y()) });
             }}
             onDragEnd={(e) => {
               useCanvasStore.getState()

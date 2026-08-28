@@ -194,13 +194,13 @@ describe('見た目（控えめに）', () => {
   });
 
   it('常時表示の線は細い', () => {
-    const gap = siteLayer.slice(siteLayer.indexOf('{editable && gaps.map'), siteLayer.indexOf('{/* S-4:'));
+    const gap = siteLayer.slice(siteLayer.indexOf('{editable && gaps.map'), siteLayer.indexOf('{/* S-9:'));
     expect(gap).toMatch(/strokeWidth=\{1\}/);
     expect(gap).toMatch(/opacity=\{0\.75\}/);
   });
 
   it('触れない（操作を邪魔しない）', () => {
-    const gap = siteLayer.slice(siteLayer.indexOf('{editable && gaps.map'), siteLayer.indexOf('{/* S-4:'));
+    const gap = siteLayer.slice(siteLayer.indexOf('{editable && gaps.map'), siteLayer.indexOf('{/* S-9:'));
     expect((gap.match(/listening=\{false\}/g) ?? []).length).toBe(2);
     expect(gap).not.toMatch(/draggable|onClick|onTap/);
   });

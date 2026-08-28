@@ -42,6 +42,7 @@ import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas
 import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
 import { moveFreePart } from '@/lib/konva/freeParts';
 import { buildingsSitePolygons } from '@/lib/konva/siteAutoGenerate';
+import { insertPointAfterEdge } from '@/lib/konva/siteShape';
 import { v4 as uuidv4 } from 'uuid';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
@@ -481,6 +482,13 @@ type CanvasStore = {
    * （つまみを掴んだ時点で 1 回だけ pushHistory する＝1 ドラッグ 1 undo）。
    */
   setSitePolygonPoint: (id: string, index: number, point: import('@/types').Point) => void;
+  /**
+   * S-9: 辺 edgeIndex の後ろへ頂点を 1 つ足す（辺の中点のゴーストを押したとき）。
+   * 1 操作 1 undo なので、ここで pushHistory する（移動と違い連続では呼ばれない）。
+   */
+  insertSitePolygonPoint: (
+    id: string, edgeIndex: number, point: import('@/types').Point,
+  ) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1470,6 +1478,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
     return added.length;
+  },
+  insertSitePolygonPoint: (id, edgeIndex, point) => {
+    const { canvasData, pushHistory } = get();
+    const sites = canvasData.sitePolygons ?? [];
+    const target = sites.find((s) => s.id === id);
+    if (!target || edgeIndex < 0 || edgeIndex >= target.points.length) return;
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        sitePolygons: sites.map((s) => (
+          s.id === id ? { ...s, points: insertPointAfterEdge(s.points, edgeIndex, point) } : s
+        )),
+      },
+      isDirty: true,
+    });
   },
   setSitePolygonPoint: (id, index, point) => {
     const { canvasData } = get();
