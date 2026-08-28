@@ -134,6 +134,28 @@ export function withPendingEdit(
   return insertPointAfterEdge(points, edit.edgeIndex, edit.point);
 }
 
+// ============================================================
+// 頂点の削除 (= S-9 commit 2)
+//
+// 操作は**つまみのダブルクリック／ダブルタップだけ**。単発の操作（タップ・
+// ドラッグ）には割り当てない＝「動かそうとして消えた」が起こりようがない。
+// キャンバスは touch-action:none ＋ viewport の userScalable:false なので、
+// ダブルタップがブラウザの拡大に取られることもない（実機確認済み）。
+// ============================================================
+
+/** これ以下には減らさない頂点数。三角形が最小。 */
+export const SITE_MIN_VERTICES = 3;
+
+/** その敷地の頂点を消せるか（消せないときはつまみの見た目でも示す）。 */
+export const canRemoveSiteVertex = (pointCount: number): boolean =>
+  pointCount > SITE_MIN_VERTICES;
+
+/**
+ * 消せないつまみの色。消せるとき（オレンジ＝選択色）と分けて、
+ * 「これ以上は減らせない」を見た目で伝える。
+ */
+export const SITE_VERTEX_LOCKED_COLOR = '#9CA3AF';
+
 /**
  * 近くの角があれば、そこへ寄せる（無ければそのまま）。
  * 「自由が原則」なので、寄せるのは実在する角だけ。グリッドには吸着させない。

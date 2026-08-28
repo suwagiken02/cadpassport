@@ -25,9 +25,10 @@ import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { isPlainSelectMode } from '@/lib/konva/toolMode';
 import {
   SITE_GHOST_HIT, SITE_GHOST_MIN_EDGE_PX, SITE_GHOST_OPACITY, SITE_GHOST_R,
-  SITE_SELECT_COLOR, SITE_VERTEX_FILL, SITE_VERTEX_HIT, SITE_VERTEX_R, SITE_VERTEX_SNAP_PX,
-  edgeMidpointsGrid, siteDash, siteStrokeColor, siteStrokeWidth, snapSiteVertex, withPendingEdit,
-  type SiteVertexEdit,
+  SITE_SELECT_COLOR, SITE_VERTEX_FILL, SITE_VERTEX_HIT, SITE_VERTEX_LOCKED_COLOR,
+  SITE_VERTEX_R, SITE_VERTEX_SNAP_PX,
+  canRemoveSiteVertex, edgeMidpointsGrid, siteDash, siteStrokeColor, siteStrokeWidth,
+  snapSiteVertex, withPendingEdit, type SiteVertexEdit,
 } from '@/lib/konva/siteShape';
 import { buildingCornersGrid } from '@/lib/konva/siteVertexGuide';
 import { gapGuides } from '@/lib/konva/siteGapGuides';
@@ -51,6 +52,8 @@ const GAP_FONT = 11;
 const GHOST_DRAG_PX = 6;
 /** ドラッグ直後の click を伏せる時間(ms)。 */
 const GHOST_CLICK_GUARD_MS = 300;
+/** つまみを動かした直後、ダブル操作を伏せる時間(ms) (= S-9 commit 2)。 */
+const VERTEX_CLICK_GUARD_MS = 300;
 
 export default function SiteLayer() {
   const sitePolygons = useCanvasStore((s) => s.canvasData.sitePolygons);
@@ -119,6 +122,24 @@ export default function SiteLayer() {
    * 「タップで追加」と取り違えると、1 回の操作で頂点が 2 つ増えてしまう。
    */
   const ghostDraggedRef = React.useRef(false);
+
+  /**
+   * つまみを動かしたか (= S-9 commit 2)。ドラッグの直後に来る dblclick を
+   * 削除と取り違えると「動かそうとして消えた」になる。
+   */
+  const vertexDraggedRef = React.useRef(false);
+
+  /**
+   * 頂点を消す（つまみのダブルクリック／ダブルタップ）。
+   * ・単発の操作では絶対に呼ばれない（dbl 系のハンドラからのみ）
+   * ・動かした直後は無視する
+   * ・三角形は減らさない（ストア側にも同じ砦がある）
+   */
+  const removeVertex = (id: string, index: number, pointCount: number) => {
+    if (vertexDraggedRef.current) return;
+    if (!canRemoveSiteVertex(pointCount)) return;
+    useCanvasStore.getState().removeSitePolygonPoint(id, index);
+  };
 
   /** 辺の中点にそのまま頂点を足す（ゴーストのタップ）。 */
   const addAtMidpoint = (id: string, edgeIndex: number, point: Point) => {
@@ -242,14 +263,16 @@ export default function SiteLayer() {
       ))}
 
       {/* S-4: 選んでいる敷地の角につまみを出す。引っ張るとその頂点だけが動く。 */}
-      {editable && sites.filter((s) => selectedIds.includes(s.id)).map((site) => (
-        pointsOf(site.id, site.points).map((p, index) => (
+      {editable && sites.filter((s) => selectedIds.includes(s.id)).map((site) => {
+        // S-9 commit 2: 三角形は減らせない。消せないことを見た目でも示す。
+        const removable = canRemoveSiteVertex(site.points.length);
+        return pointsOf(site.id, site.points).map((p, index) => (
           <Circle
             key={`${site.id}-v${index}`}
             x={sx(p.x)} y={sy(p.y)}
             radius={SITE_VERTEX_R}
             fill={SITE_VERTEX_FILL}
-            stroke={SITE_SELECT_COLOR}
+            stroke={removable ? SITE_SELECT_COLOR : SITE_VERTEX_LOCKED_COLOR}
             strokeWidth={2}
             hitStrokeWidth={SITE_VERTEX_HIT}
             draggable
@@ -268,6 +291,8 @@ export default function SiteLayer() {
             onDragStart={() => {
               // 1 ドラッグ 1 undo（動かしている間は履歴を積まない）
               useCanvasStore.getState().pushHistory();
+              // S-9 commit 2: 動かした直後の dblclick を削除と取り違えない。
+              vertexDraggedRef.current = true;
               setDrag({ kind: 'move', id: site.id, index, point: p });
             }}
             onDragMove={(e) => {
@@ -277,10 +302,14 @@ export default function SiteLayer() {
               useCanvasStore.getState()
                 .setSitePolygonPoint(site.id, index, toGrid(e.target.x(), e.target.y()));
               setDrag(null);
+              window.setTimeout(() => { vertexDraggedRef.current = false; }, VERTEX_CLICK_GUARD_MS);
             }}
+            // S-9 commit 2: 削除は**ダブル操作だけ**。タップやドラッグでは消えない。
+            onDblClick={() => removeVertex(site.id, index, site.points.length)}
+            onDblTap={() => removeVertex(site.id, index, site.points.length)}
           />
-        ))
-      ))}
+        ));
+      })}
     </Layer>
   );
 }

@@ -489,6 +489,12 @@ type CanvasStore = {
   insertSitePolygonPoint: (
     id: string, edgeIndex: number, point: import('@/types').Point,
   ) => void;
+  /**
+   * S-9: 頂点を 1 つ消す（つまみのダブルクリック／ダブルタップ）。
+   * **三角形が最小**なので、3 つ以下なら何もしない。ここが最後の砦で、
+   * UI 側のガードが抜けても頂点が 2 つ以下の敷地は生まれない。
+   */
+  removeSitePolygonPoint: (id: string, index: number) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1490,6 +1496,24 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ...canvasData,
         sitePolygons: sites.map((s) => (
           s.id === id ? { ...s, points: insertPointAfterEdge(s.points, edgeIndex, point) } : s
+        )),
+      },
+      isDirty: true,
+    });
+  },
+  removeSitePolygonPoint: (id, index) => {
+    const { canvasData, pushHistory } = get();
+    const sites = canvasData.sitePolygons ?? [];
+    const target = sites.find((s) => s.id === id);
+    if (!target || index < 0 || index >= target.points.length) return;
+    // 三角形が最小。これ以上は減らさない（線や点になった敷地を作らない）。
+    if (target.points.length <= 3) return;
+    pushHistory();
+    set({
+      canvasData: {
+        ...canvasData,
+        sitePolygons: sites.map((s) => (
+          s.id === id ? { ...s, points: s.points.filter((_, i) => i !== index) } : s
         )),
       },
       isDirty: true,
