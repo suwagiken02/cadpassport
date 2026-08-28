@@ -71,6 +71,30 @@ export type SitePolygon = {
   points: Point[];
 };
 
+// === 下図（したず）(= U-1) ===
+/**
+ * 取り込んだ平面図を背景に敷き、グリッドと目盛りを一致させるための情報。
+ *
+ * **画像そのものはここに入れない。** pushHistory が全編集で canvasData 全体を
+ * ディープコピーするので、数 MB の画像を入れると部材を 1 つ置くたびに数 MB の
+ * コピーが走る。ここが持つのは Storage のパスと合わせ込みの結果だけ（数百バイト）。
+ *
+ * 公開 URL も持たない（他社の図面＝機密情報のため）。表示のたびに認証つきで
+ * 取得した Blob から URL を作る。
+ */
+export type Underlay = {
+  id: string;
+  /** Storage のパス（userId/projectId/drawingId/underlayId.ext）。 */
+  storagePath: string;
+  /** 保存した画像の大きさ(px)。縮尺の計算に要る。 */
+  widthPx: number;
+  heightPx: number;
+  /** グリッドへ載せる変換。第二弾（歪み補正）で差し替えられる入れ物。 */
+  transform: import('@/lib/konva/underlay').UnderlayTransform;
+  /** 背景の濃さ（0.1〜1.0）。足場が見やすいよう既定は薄め。 */
+  opacity: number;
+};
+
 // === 屋根の出幅 ===
 export type RoofOverhang = {
   id: string;
@@ -523,6 +547,11 @@ export type CanvasData = {
    * 飛び地の敷地もあるので配列。建物とは別の入れ物（SitePolygon の説明を参照）。
    */
   sitePolygons?: SitePolygon[];
+  /**
+   * 下図 (= U-1、 1 シート＝1 ページに 1 枚)。undefined は既存プロジェクト互換で、
+   * 持たない図面は描画・出力・範囲計算のどれも従来どおり。
+   */
+  underlay?: Underlay;
 };
 
 /**

@@ -43,6 +43,7 @@ import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/
 import { moveFreePart } from '@/lib/konva/freeParts';
 import { buildingsSitePolygons } from '@/lib/konva/siteAutoGenerate';
 import { insertPointAfterEdge } from '@/lib/konva/siteShape';
+import { clampOpacity } from '@/lib/konva/underlay';
 import { v4 as uuidv4 } from 'uuid';
 
 /** スキーマ版数。R-1b: 高さマーカーを壁線基準に再解釈した節目として '2.0'。
@@ -495,6 +496,13 @@ type CanvasStore = {
    * UI 側のガードが抜けても頂点が 2 つ以下の敷地は生まれない。
    */
   removeSitePolygonPoint: (id: string, index: number) => void;
+  // === 下図 (= U-1) ===
+  /** 下図を差し替える（読み込み直後・合わせ込みの確定）。null で外す。 */
+  setUnderlay: (u: import('@/types').Underlay | null) => void;
+  /** 合わせ込みだけを更新する（画像はそのまま・縮尺の合わせ直しや位置合わせ）。 */
+  setUnderlayTransform: (t: import('@/lib/konva/underlay').UnderlayTransform) => void;
+  /** 背景の濃さ。スライダーで連続的に呼ばれるので履歴は積まない。 */
+  setUnderlayOpacity: (v: number) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1532,6 +1540,35 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             ? { ...s, points: s.points.map((p, i) => (i === index ? { ...point } : p)) }
             : s
         )),
+      },
+      isDirty: true,
+    });
+  },
+  setUnderlay: (u) => {
+    const { canvasData, pushHistory } = get();
+    pushHistory();
+    // 外すときは参照を消すだけ。Storage の実体は消さない
+    //   （ページを複製すると同じ画像を指すので、片方で消すともう片方が壊れる）。
+    const next = { ...canvasData };
+    if (u) next.underlay = u; else delete next.underlay;
+    set({ canvasData: next, isDirty: true });
+  },
+  setUnderlayTransform: (t) => {
+    const { canvasData, pushHistory } = get();
+    if (!canvasData.underlay) return;
+    pushHistory();
+    set({
+      canvasData: { ...canvasData, underlay: { ...canvasData.underlay, transform: t } },
+      isDirty: true,
+    });
+  },
+  setUnderlayOpacity: (v) => {
+    const { canvasData } = get();
+    if (!canvasData.underlay) return;
+    set({
+      canvasData: {
+        ...canvasData,
+        underlay: { ...canvasData.underlay, opacity: clampOpacity(v) },
       },
       isDirty: true,
     });
