@@ -29,9 +29,23 @@ export default function UnderlayPanel() {
   const s = () => useCanvasStore.getState();
   const btn = 'px-2 py-1 rounded-lg text-[11px] font-bold';
 
+  /**
+   * 位置合わせ中の案内 (= U-1 使い勝手 3)。**パネルを畳んでいても見える**よう、
+   * キャンバスの上（下側の中央）に小さく出す。どちらを動かすのかが伝わらない、
+   * という指摘への対応で、いちばん間違えやすいところ。
+   */
+  const adjustHint = adjusting && (
+    <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-30 bg-amber-500/95 text-white rounded-xl shadow-2xl px-3 py-1.5 text-[11px] font-bold max-w-[calc(100vw-24px)] text-center leading-relaxed">
+      下図をドラッグして位置を合わせます<br />
+      <span className="font-normal opacity-90">建物・足場は動きません（合わせるのは下図の側です）</span>
+    </div>
+  );
+
   // 畳んだ状態。位置を調整している間は開いていないと分かりにくいので印を出す。
   if (!open) {
     return (
+      <>
+      {adjustHint}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -42,10 +56,13 @@ export default function UnderlayPanel() {
         {adjusting && <span className="text-amber-400">調整中</span>}
         {hidden && <span className="text-dimension">非表示</span>}
       </button>
+      </>
     );
   }
 
   return (
+    <>
+    {adjustHint}
     <div className="fixed top-16 left-3 z-30 w-[260px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-140px)] overflow-y-auto bg-dark-surface/95 backdrop-blur-sm border border-dark-border rounded-2xl shadow-2xl p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] text-canvas font-bold">🖼 下図</span>
@@ -107,5 +124,6 @@ export default function UnderlayPanel() {
           className={`${btn} flex-1 bg-dark-border text-canvas`}>外す</button>
       </div>
     </div>
+    </>
   );
 }

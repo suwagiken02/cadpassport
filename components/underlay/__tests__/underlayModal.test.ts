@@ -256,7 +256,8 @@ describe('位置合わせ', () => {
   });
 
   it('キャンバス上のドラッグでも直せる（主の操作）', () => {
-    expect(modal).toMatch(/キャンバス上で背景をドラッグ/);
+    // (2)(3) で言い方を「背景」→「下図」に揃えた。案内する内容は不変。
+    expect(modal).toMatch(/キャンバス上で下図をドラッグ/);
     expect(panel).toMatch(/位置を調整/);
   });
 
@@ -468,5 +469,56 @@ describe('(1) 精度が低いときは、承知のうえでないと先へ進め
   it('閉じたら承知も捨てる', () => {
     const body = modal.slice(modal.indexOf('const resetDraft'), modal.indexOf('// 閉じたら必ず捨てる'));
     expect(body).toContain('setRiskAccepted(false)');
+  });
+});
+
+// ============================================================
+describe('(2)(3) 位置合わせの案内', () => {
+  it('何をクリックすればいいか具体的に書く', () => {
+    expect(modal).toMatch(/建物の角をクリックしてください/);
+  });
+
+  it('押せない理由を出す（黙って無効にしない）', () => {
+    expect(modal).toMatch(/disabled=\{!anchor\}/);
+    expect(modal).toMatch(/\{!anchor && \(/);
+    expect(modal).toMatch(/基準点をクリックしてください。/);
+  });
+
+  it('打った後に、どこへ置くかを言い直す', () => {
+    expect(modal).toMatch(/\{anchor && \(/);
+    expect(modal).toMatch(/この点を X = \{targetMm\.x\.toLocaleString\(\)\}mm/);
+    expect(modal).toMatch(/Y = \{targetMm\.y\.toLocaleString\(\)\}mm に置きます。/);
+  });
+
+  it('下図の側を合わせると書いてある（建物は動かせない）', () => {
+    expect(modal).toMatch(/建物は交点に沿って描くため動かせません。<b>合わせるのは下図の側<\/b>です。/);
+  });
+
+  it('細かい調整はキャンバス上でもできると案内する', () => {
+    expect(modal).toMatch(/閉じたあとキャンバス上で下図をドラッグ/);
+  });
+});
+
+// ============================================================
+describe('(3) 調整中はキャンバス上にも出す', () => {
+  it('位置合わせ中だけ出る', () => {
+    expect(panel).toMatch(/const adjustHint = adjusting && \(/);
+  });
+
+  it('パネルを畳んでいても見える（両方の状態で描く）', () => {
+    expect((panel.match(/\{adjustHint\}/g) ?? [])).toHaveLength(2);
+  });
+
+  it('どちらを動かすのかを書く', () => {
+    expect(panel).toMatch(/下図をドラッグして位置を合わせます/);
+    expect(panel).toMatch(/建物・足場は動きません（合わせるのは下図の側です）/);
+  });
+
+  it('狭い画面でも収まる', () => {
+    expect(panel).toMatch(/fixed bottom-28 left-1\/2 -translate-x-1\/2 z-30[^"]*max-w-\[calc\(100vw-24px\)\]/);
+  });
+
+  it('パネル内の案内も残す（開いているときの手順）', () => {
+    expect(panel).toMatch(/オレンジの枠をドラッグして下図を動かします。/);
   });
 });

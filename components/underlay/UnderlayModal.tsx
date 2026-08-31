@@ -391,9 +391,12 @@ export default function UnderlayModal() {
             {step === 'place' && (
               <div className="space-y-3">
                 <p className="text-xs text-dimension leading-relaxed">
-                  図面の中で<b className="text-canvas">位置の基準にする点</b>（建物の角など）をクリックし、
-                  その点をキャンバスのどこに置くかを入れてください。<br />
-                  細かい調整は、閉じたあとキャンバス上で背景をドラッグしてもできます。
+                  図面の中で、<b className="text-canvas">建物の角をクリックしてください</b>。
+                  その角を、キャンバスのどこに置くかを決めます（既定は原点 X=0 / Y=0）。
+                </p>
+                {/* どちらを動かすのかが伝わらない、という指摘への対応。 */}
+                <p className="text-[11px] text-amber-300 leading-relaxed">
+                  建物は交点に沿って描くため動かせません。<b>合わせるのは下図の側</b>です。
                 </p>
                 <div className="flex items-center gap-2 flex-wrap text-[11px] text-dimension">
                   <span>置き先 X</span>
@@ -402,11 +405,24 @@ export default function UnderlayModal() {
                   <NumInput value={targetMm.y} onChange={(v) => setTargetMm((t) => ({ ...t, y: v }))} step={1000} />
                   <span className="text-xs text-canvas">mm</span>
                 </div>
+                {/* 打ったあとに何をするのかを言い直す（打ちっぱなしで不安にさせない）。 */}
+                {anchor && (
+                  <p className="text-[11px] text-emerald-300">
+                    この点を X = {targetMm.x.toLocaleString()}mm / Y = {targetMm.y.toLocaleString()}mm に置きます。
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setStep('scale')} className={`${btn} bg-dark-border text-canvas`}>戻る</button>
                   <button type="button" disabled={!anchor} onClick={() => setStep('verify')}
                     className={`${btn} bg-accent text-white disabled:opacity-40`}>次へ（ずれの確認）</button>
                 </div>
+                {/* 押せない理由を出す（黙って無効にしない）。 */}
+                {!anchor && (
+                  <p className="text-[11px] text-red-300">基準点をクリックしてください。</p>
+                )}
+                <p className="text-[10px] text-dimension">
+                  細かい調整は、閉じたあとキャンバス上で下図をドラッグしてもできます。
+                </p>
               </div>
             )}
 
