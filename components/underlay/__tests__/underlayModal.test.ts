@@ -15,8 +15,8 @@ import fs from 'fs';
 import path from 'path';
 import { useCanvasStore } from '@/stores/canvasStore';
 import {
-  calibrateFromTwoPoints, displayedToImagePx, imagePxToDisplayPercent, misalignmentMm,
-  originForAnchor, identityTransform,
+  calibrateFromTwoPoints, deviationMm, displayedToImagePx, imagePxToDisplayPercent,
+  measureFromAnchorMm, originForAnchor, identityTransform,
 } from '@/lib/konva/underlay';
 import type { CanvasData } from '@/types';
 
@@ -178,36 +178,65 @@ describe('精度を守る仕掛け（#5 の 3 つ）', () => {
 });
 
 // ============================================================
-describe('ずれの確認（3 点目）', () => {
-  it('確認点からずれを計算して見せる', () => {
-    expect(modal).toMatch(/misalignmentMm\(checkPoint, transform\)/);
-    expect(modal).toMatch(/グリッドの交点から <b>約 \{Math\.round\(gap\.distanceMm\)\}mm<\/b> ずれています/);
+describe('3 点目の確認は「基準点からの実寸」を出す（グリッドと比べない）', () => {
+  it('実寸をそのまま見せる', () => {
+    expect(modal).toMatch(/measureFromAnchorMm\(anchor, checkPoint, transform\)/);
+    expect(modal).toMatch(/基準点から <b>X = \{Math\.round\(measured\.xMm\)\.toLocaleString\(\)\}mm<\/b>/);
+    expect(modal).toMatch(/<b>Y = \{Math\.round\(measured\.yMm\)\.toLocaleString\(\)\}mm<\/b>/);
   });
 
-  it('X と Y のずれも出す（どちら向きか分かる）', () => {
-    expect(modal).toMatch(/X \{Math\.round\(gap\.dxMm\)\}mm \/ Y \{Math\.round\(gap\.dyMm\)\}mm/);
+  it('グリッドとは比べない（910 モジュールで破綻しない）', () => {
+    expect(modal).not.toMatch(/misalignmentMm|nearestMajorIntersection|GRID_MAJOR_STEP/);
+    expect(modal).not.toMatch(/グリッドの交点から/);
+  });
+
+  it('図面の寸法と見比べるよう促している', () => {
+    expect(modal).toMatch(/図面に書かれている寸法と見比べてください/);
+  });
+
+  it('期待する寸法は任意（入れなくても実寸は見える）', () => {
+    expect(modal).toMatch(/図面の寸法（任意）X/);
+    // 両方入っているときだけ差を出す
+    expect(modal).toMatch(/if \(!expectMm\.x\.trim\(\) \|\| !expectMm\.y\.trim\(\)\) return null;/);
+  });
+
+  it('入力されたときだけ差を出す', () => {
+    expect(modal).toMatch(/measured && expected \? deviationMm\(measured, expected\) : null/);
+    expect(modal).toMatch(/\{gap && \(/);
+  });
+
+  it('差はどちら向きかが分かる（符号つき）', () => {
+    expect(modal).toMatch(/gap\.dxMm >= 0 \? '\+' : ''/);
+    expect(modal).toMatch(/gap\.dyMm >= 0 \? '\+' : ''/);
   });
 
   it('判断の目安を書いてある', () => {
     expect(modal).toMatch(/10mm 以下＝良好 ／ 50mm 以下＝実用 ／ 100mm 超＝撮り直しか歪み補正が必要/);
   });
 
-  it('最初の 2 点から遠い場所を選ぶよう促している', () => {
-    expect(modal).toMatch(/最初の 2 点から遠い場所/);
+  it('基準点から遠い場所を選ぶよう促している', () => {
+    expect(modal).toMatch(/基準点から遠い場所/);
   });
 
   it('確認を省いても確定できる（強制しない）', () => {
     expect(modal).toMatch(/disabled=\{!transform \|\| !!busy\}/);
   });
 
-  it('計算そのもの: 合っていれば 0mm、ずらせばその値', () => {
+  it('計算そのもの: 910 の倍数の図面で、合っていれば差が 0 になる', () => {
+    // 10,010 x 7,280（すべて 910 の倍数）。グリッド基準なら大きくずれて見えるが、
+    // 実寸どうしの比較なので 0 になる。
     const c = calibrateFromTwoPoints({ x: 0, y: 0 }, { x: 1000, y: 0 }, 10000)!;
-    const origin = originForAnchor({ x: 500, y: 500 }, { x: 100, y: 100 }, c.scale, c.rotationDeg);
+    const origin = originForAnchor({ x: 0, y: 0 }, { x: 0, y: 0 }, c.scale, c.rotationDeg);
     const t = { ...identityTransform(), scale: c.scale, rotationDeg: c.rotationDeg, originGrid: origin };
-    expect(misalignmentMm({ x: 500, y: 500 }, t).distanceMm).toBeCloseTo(0, 6);
-    // 主線 1 つぶん（1000mm）の半分だけ離れた点は 500mm ずれとして出る
-    const off = misalignmentMm({ x: 500, y: 500 }, { ...t, originGrid: { x: origin.x + 50, y: origin.y } });
-    expect(off.distanceMm).toBeCloseTo(500, 6);
+    const m = measureFromAnchorMm({ x: 0, y: 0 }, { x: 1001, y: 728 }, t);
+    expect(m.xMm).toBeCloseTo(10010, 6);
+    expect(m.yMm).toBeCloseTo(7280, 6);
+    expect(deviationMm(m, { xMm: 10010, yMm: 7280 }).distanceMm).toBeCloseTo(0, 6);
+  });
+
+  it('計算そのもの: ずれていればその値が出る', () => {
+    expect(deviationMm({ xMm: 10015, yMm: 7283 }, { xMm: 10010, yMm: 7280 }).dxMm)
+      .toBeCloseTo(5, 9);
   });
 });
 

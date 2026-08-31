@@ -13,11 +13,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useCanvasStore } from '@/stores/canvasStore';
 import {
-  GRID_MAJOR_STEP, UNDERLAY_CLICK_ERROR_PX, UNDERLAY_DEFAULT_OPACITY, UNDERLAY_MAX_BYTES,
+  UNDERLAY_CLICK_ERROR_PX, UNDERLAY_DEFAULT_OPACITY, UNDERLAY_MAX_BYTES,
   UNDERLAY_MAX_LONG_EDGE_PX, UNDERLAY_MIN_CALIB_PX,
   calibrateFromTwoPoints, calibrationRotationDeg, canCalibrate, clampOpacity,
   estimatedErrorMm, fitToMaxLongEdge, gridToImage, guessOrientation, identityTransform,
-  imageDistancePx, imageSpanMm, imageToGrid, misalignmentMm, nearestMajorIntersection,
+  deviationMm, imageDistancePx, imageSpanMm, imageToGrid, measureFromAnchorMm,
   originForAnchor, translateTransform, underlayDrawingPrefix, underlayProjectPrefix,
   underlayStoragePath, type UnderlayTransform,
 } from '../underlay';
@@ -239,33 +239,80 @@ describe('画像座標 ⇔ グリッド座標', () => {
 });
 
 // ============================================================
-describe('合わせたあとのずれの確認（3 点目）', () => {
-  it('ぴったり合っていれば 0mm', () => {
-    // 画像 (1000,1000) を主線の交点 (100,100) に載せる
-    const o = originForAnchor({ x: 1000, y: 1000 }, { x: 100, y: 100 }, 0.1, 0);
-    const m = misalignmentMm({ x: 1000, y: 1000 }, t({ scale: 0.1, originGrid: o }));
-    expect(m.distanceMm).toBeCloseTo(0, 6);
+describe('3 点目の確認は「基準点からの実寸」（グリッドと比べない）', () => {
+  // グリッドの交点と比べると「主線が 1000mm か 910mm か」の話になる。
+  // 日本の木造は 910 モジュールなので、正しく合っていても最大 455mm ずれて見える。
+  // 図面に書かれている寸法と見比べられるよう、実寸をそのまま出す。
+
+  it('基準点からの X / Y を mm で返す', () => {
+    // 1px = 1 グリッド = 10mm
+    const tr = t({ scale: 1 });
+    const m = measureFromAnchorMm({ x: 0, y: 0 }, { x: 1001, y: 728 }, tr);
+    expect(m.xMm).toBeCloseTo(10010, 6);
+    expect(m.yMm).toBeCloseTo(7280, 6);
   });
 
-  it('ずれていれば mm で出る', () => {
-    // 主線の交点から 0.5 グリッド＝5mm ずらす
-    const tr = t({ scale: 0.1, originGrid: { x: 0.5, y: 0 } });
-    const m = misalignmentMm({ x: 1000, y: 1000 }, tr);
-    expect(m.dxMm).toBeCloseTo(5, 6);
-    expect(m.distanceMm).toBeCloseTo(5, 6);
+  it('910 の倍数でもそのまま出る（モジュールに依存しない）', () => {
+    const tr = t({ scale: 1 });
+    for (const mm of [910, 1820, 7280, 10010]) {
+      expect(measureFromAnchorMm({ x: 0, y: 0 }, { x: mm / 10, y: 0 }, tr).xMm)
+        .toBeCloseTo(mm, 6);
+    }
   });
 
-  it('いちばん近い主線の交点を相手にする（1000mm ごと）', () => {
-    expect(GRID_MAJOR_STEP).toBe(100);      // 100 グリッド = 1000mm
-    expect(nearestMajorIntersection({ x: 149, y: 151 })).toEqual({ x: 100, y: 200 });
-    expect(nearestMajorIntersection({ x: -149, y: -151 })).toEqual({ x: -100, y: -200 });
+  it('基準点そのものを指せば 0', () => {
+    const m = measureFromAnchorMm({ x: 800, y: 1200 }, { x: 800, y: 1200 }, t({ scale: 0.37 }));
+    expect(m.distanceMm).toBeCloseTo(0, 9);
   });
 
-  it('X と Y のずれを別々に返す（どちら向きにずれているか分かる）', () => {
-    const m = misalignmentMm({ x: 0, y: 0 }, t({ originGrid: { x: 0.3, y: -0.4 } }));
-    expect(m.dxMm).toBeCloseTo(3, 6);
-    expect(m.dyMm).toBeCloseTo(-4, 6);
-    expect(m.distanceMm).toBeCloseTo(5, 6);
+  it('原点をどこに置いても結果は変わらない（基準点からの相対だから）', () => {
+    const a = { x: 100, y: 200 }, b = { x: 1100, y: 900 };
+    const base = { scale: 0.37, rotationDeg: 12.5 };
+    const m1 = measureFromAnchorMm(a, b, t({ ...base, originGrid: { x: 0, y: 0 } }));
+    const m2 = measureFromAnchorMm(a, b, t({ ...base, originGrid: { x: -987.6, y: 543.2 } }));
+    expect(m2.xMm).toBeCloseTo(m1.xMm, 9);
+    expect(m2.yMm).toBeCloseTo(m1.yMm, 9);
+  });
+
+  it('回した図面では、合わせ込んだあとの水平・垂直で測る', () => {
+    // 画像の中で 45° 斜めの線が、合わせ込みで水平になるケース
+    const c = calibrateFromTwoPoints({ x: 0, y: 0 }, { x: 1000, y: 1000 }, 10000, 'horizontal')!;
+    const tr = t({ scale: c.scale, rotationDeg: c.rotationDeg });
+    const m = measureFromAnchorMm({ x: 0, y: 0 }, { x: 1000, y: 1000 }, tr);
+    expect(m.xMm).toBeCloseTo(10000, 6);   // 水平方向にちょうど実寸
+    expect(m.yMm).toBeCloseTo(0, 6);       // 縦のずれは無い
+  });
+
+  it('丸めない', () => {
+    const m = measureFromAnchorMm({ x: 0, y: 0 }, { x: 777, y: 333 }, t({ scale: 0.0731 }));
+    expect(Number.isInteger(m.xMm)).toBe(false);
+  });
+});
+
+// ============================================================
+describe('期待する寸法との差（任意入力されたときだけ）', () => {
+  it('図面の寸法と見比べた差が出る', () => {
+    const d = deviationMm({ xMm: 10015, yMm: 7283 }, { xMm: 10010, yMm: 7280 });
+    expect(d.dxMm).toBeCloseTo(5, 9);
+    expect(d.dyMm).toBeCloseTo(3, 9);
+    expect(d.distanceMm).toBeCloseTo(Math.hypot(5, 3), 9);
+  });
+
+  it('ぴったりなら 0', () => {
+    expect(deviationMm({ xMm: 10010, yMm: 7280 }, { xMm: 10010, yMm: 7280 }).distanceMm).toBe(0);
+  });
+
+  it('符号でどちら向きか分かる（実寸が小さければ負）', () => {
+    const d = deviationMm({ xMm: 9990, yMm: 7280 }, { xMm: 10010, yMm: 7280 });
+    expect(d.dxMm).toBeCloseTo(-20, 9);
+  });
+
+  it('910 モジュールの図面でも、合っていれば 0 になる', () => {
+    // 10,010 x 7,280 はどちらも 910 の倍数。グリッド基準だとずれて見えるが、
+    // 実寸どうしの比較なので 0 になる。
+    const tr = t({ scale: 1 });
+    const m = measureFromAnchorMm({ x: 0, y: 0 }, { x: 1001, y: 728 }, tr);
+    expect(deviationMm(m, { xMm: 10010, yMm: 7280 }).distanceMm).toBeCloseTo(0, 6);
   });
 });
 
@@ -514,12 +561,13 @@ describe('実際の図面での通し（合わせ込みが成立する）', () =
     const p2: Point = { x: 1500, y: 300 };
     const c = calibrateFromTwoPoints(p1, p2, 4550)!;
 
-    // 図面上の建物の角 (800, 1200) を、グリッドの主線の交点 (100,100) に置く
+    // 図面上の建物の角 (800, 1200) を、キャンバスの (100,100) に置く
     const origin = originForAnchor({ x: 800, y: 1200 }, { x: 100, y: 100 }, c.scale, c.rotationDeg);
     const tr = t({ scale: c.scale, rotationDeg: c.rotationDeg, originGrid: origin });
 
-    // その角はぴったり交点に乗る
-    expect(misalignmentMm({ x: 800, y: 1200 }, tr).distanceMm).toBeCloseTo(0, 6);
+    // その角はぴったり狙った位置に乗る
+    expect(imageToGrid({ x: 800, y: 1200 }, tr).x).toBeCloseTo(100, 6);
+    expect(imageToGrid({ x: 800, y: 1200 }, tr).y).toBeCloseTo(100, 6);
 
     // 寸法線の実寸が図面どおりに再現される
     const a = imageToGrid(p1, tr), b = imageToGrid(p2, tr);

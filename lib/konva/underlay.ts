@@ -217,31 +217,38 @@ export const translateTransform = (t: UnderlayTransform, dGrid: Point): Underlay
 // 精度の確認
 // ============================================================
 
-/** グリッドの主線の間隔（グリッド）。1000mm ごと＝通り芯を合わせる目安。 */
-export const GRID_MAJOR_STEP = 100;
-
-/** いちばん近い主線の交点。 */
-export function nearestMajorIntersection(p: Point): Point {
-  return {
-    x: Math.round(p.x / GRID_MAJOR_STEP) * GRID_MAJOR_STEP,
-    y: Math.round(p.y / GRID_MAJOR_STEP) * GRID_MAJOR_STEP,
-  };
+/**
+ * 3 点目の確認 (= 合わせたあと、離れた場所がどれだけ正しく載っているか)。
+ *
+ * **基準点からの実寸をそのまま返す。** グリッドの交点とは比べない。
+ * 比べてしまうと「主線が 1000mm か 910mm か」という話になるが、日本の木造は
+ * 910 モジュールなので、正しく合っていても最大 455mm ずれて見えてしまう。
+ * 図面に書かれている寸法（10,010 など）と見比べるのは普段やっていることなので、
+ * 実寸をそのまま出すのが一番自然で、モジュールにも依存しない。
+ *
+ * X / Y は**合わせ込んだあとの水平・垂直**（＝図面の縦横）で測る。
+ */
+export function measureFromAnchorMm(
+  anchorImagePoint: Point, targetImagePoint: Point, t: UnderlayTransform,
+): { xMm: number; yMm: number; distanceMm: number } {
+  const a = imageToGrid(anchorImagePoint, t);
+  const b = imageToGrid(targetImagePoint, t);
+  const xMm = (b.x - a.x) * GRID_UNIT_MM;
+  const yMm = (b.y - a.y) * GRID_UNIT_MM;
+  return { xMm, yMm, distanceMm: Math.hypot(xMm, yMm) };
 }
 
 /**
- * 3 点目の確認 (= 合わせたあと、反対側でどれだけずれているか)。
- * 画像上の点（通り芯の交点など）を渡すと、いちばん近いグリッド交点からの
- * ずれを mm で返す。写真の歪みや読み取り誤差は片側が合っても反対側に出るので、
- * これが「使えるか撮り直しか」の判断材料になる。
+ * 期待する寸法との差 (= 任意入力されたときだけ計算する)。
+ * 図面に書かれている数字を入れてもらえば、そのぶんの狂いが分かる。
  */
-export function misalignmentMm(
-  imagePoint: Point, t: UnderlayTransform,
-): { atGrid: Point; nearest: Point; dxMm: number; dyMm: number; distanceMm: number } {
-  const atGrid = imageToGrid(imagePoint, t);
-  const nearest = nearestMajorIntersection(atGrid);
-  const dxMm = (atGrid.x - nearest.x) * GRID_UNIT_MM;
-  const dyMm = (atGrid.y - nearest.y) * GRID_UNIT_MM;
-  return { atGrid, nearest, dxMm, dyMm, distanceMm: Math.hypot(dxMm, dyMm) };
+export function deviationMm(
+  measured: { xMm: number; yMm: number },
+  expected: { xMm: number; yMm: number },
+): { dxMm: number; dyMm: number; distanceMm: number } {
+  const dxMm = measured.xMm - expected.xMm;
+  const dyMm = measured.yMm - expected.yMm;
+  return { dxMm, dyMm, distanceMm: Math.hypot(dxMm, dyMm) };
 }
 
 /**

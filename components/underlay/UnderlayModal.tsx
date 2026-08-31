@@ -22,7 +22,7 @@ import NumInput from '@/components/ui/NumInput';
 import {
   UNDERLAY_DEFAULT_OPACITY, UNDERLAY_MIN_CALIB_PX,
   calibrateFromTwoPoints, canCalibrate, clickErrorImagePx, estimatedErrorMm, guessOrientation,
-  identityTransform, imageDistancePx, imageSpanMm, misalignmentMm,
+  deviationMm, identityTransform, imageDistancePx, imageSpanMm, measureFromAnchorMm,
   originForAnchor, type CalibOrientation, type UnderlayTransform,
 } from '@/lib/konva/underlay';
 import { imagePxToView } from '@/lib/konva/imageViewport';
@@ -76,6 +76,11 @@ export default function UnderlayModal() {
   const [targetMm, setTargetMm] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   /** ずれの確認に打った 3 点目。 */
   const [checkPoint, setCheckPoint] = useState<Point | null>(null);
+  /**
+   * 期待する寸法(mm)。**任意**。図面に書かれている数字を入れてもらえば
+   * 差を出すが、入れなくても実寸は見えるので必須にはしない。
+   */
+  const [expectMm, setExpectMm] = useState<{ x: string; y: string }>({ x: '', y: '' });
 
   /** すべての下書きを捨てる（閉じる・やり直す）。 */
   const resetDraft = useCallback(() => {
@@ -84,6 +89,7 @@ export default function UnderlayModal() {
     setLocalUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setP1(null); setP2(null); setRealMm(4550); setOrientation(null);
     setAnchor(null); setTargetMm({ x: 0, y: 0 }); setCheckPoint(null);
+    setExpectMm({ x: '', y: '' });
   }, []);
 
   // 閉じたら必ず捨てる（中途半端な状態を残さない・ローカル URL も解放する）。
@@ -147,10 +153,23 @@ export default function UnderlayModal() {
     return { ...identityTransform(), scale: calib.scale, rotationDeg: calib.rotationDeg, originGrid: origin };
   }, [calib, anchor, targetMm]);
 
-  /** 3 点目のずれ。 */
+  /** 3 点目の実寸（基準点から見て）。グリッドとは比べない。 */
+  const measured = useMemo(
+    () => (checkPoint && anchor && transform
+      ? measureFromAnchorMm(anchor, checkPoint, transform) : null),
+    [checkPoint, anchor, transform],
+  );
+
+  /** 期待する寸法が入っていれば、そのぶんの差。両方入っているときだけ出す。 */
+  const expected = useMemo(() => {
+    const x = Number(expectMm.x), y = Number(expectMm.y);
+    if (!expectMm.x.trim() || !expectMm.y.trim()) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { xMm: x, yMm: y };
+  }, [expectMm]);
   const gap = useMemo(
-    () => (checkPoint && transform ? misalignmentMm(checkPoint, transform) : null),
-    [checkPoint, transform],
+    () => (measured && expected ? deviationMm(measured, expected) : null),
+    [measured, expected],
   );
 
   if (!open) return null;
@@ -357,21 +376,53 @@ export default function UnderlayModal() {
             {step === 'verify' && (
               <div className="space-y-3">
                 <p className="text-xs text-dimension leading-relaxed">
-                  合わせ込みの確かめです。<b className="text-canvas">最初の 2 点から遠い場所</b>にある
-                  通り芯の交点をクリックしてください。そこがグリッドの交点から何 mm ずれているかを出します。
+                  合わせ込みの確かめです。<b className="text-canvas">基準点から遠い場所</b>にある
+                  通り芯の交点をクリックしてください。<b className="text-canvas">基準点からの実寸</b>を出すので、
+                  図面に書かれている寸法と見比べてください。
                 </p>
-                {gap ? (
-                  <div className="text-[11px] space-y-1">
-                    <div className={gap.distanceMm > 100 ? 'text-red-300' : gap.distanceMm > 50 ? 'text-amber-300' : 'text-emerald-300'}>
-                      グリッドの交点から <b>約 {Math.round(gap.distanceMm)}mm</b> ずれています
-                      （X {Math.round(gap.dxMm)}mm / Y {Math.round(gap.dyMm)}mm）
+                {measured ? (
+                  <div className="text-[11px] space-y-2">
+                    <div className="text-canvas">
+                      基準点から <b>X = {Math.round(measured.xMm).toLocaleString()}mm</b>
+                      {' / '}<b>Y = {Math.round(measured.yMm).toLocaleString()}mm</b> の位置です
                     </div>
-                    <div className="text-dimension">
-                      目安: 10mm 以下＝良好 ／ 50mm 以下＝実用 ／ 100mm 超＝撮り直しか歪み補正が必要
+
+                    {/* 任意。入れてもらえれば差を出すが、入れなくても実寸は見える。 */}
+                    <div className="flex items-center gap-2 flex-wrap text-dimension">
+                      <span>図面の寸法（任意）X</span>
+                      <input
+                        type="number" inputMode="numeric" value={expectMm.x}
+                        onChange={(e) => setExpectMm((v) => ({ ...v, x: e.target.value }))}
+                        placeholder="10010"
+                        className="w-24 px-2 py-1 rounded-lg bg-dark-bg border border-dark-border text-canvas text-[11px]"
+                      />
+                      <span>Y</span>
+                      <input
+                        type="number" inputMode="numeric" value={expectMm.y}
+                        onChange={(e) => setExpectMm((v) => ({ ...v, y: e.target.value }))}
+                        placeholder="7280"
+                        className="w-24 px-2 py-1 rounded-lg bg-dark-bg border border-dark-border text-canvas text-[11px]"
+                      />
+                      <span>mm</span>
                     </div>
+
+                    {gap && (
+                      <>
+                        <div className={gap.distanceMm > 100 ? 'text-red-300' : gap.distanceMm > 50 ? 'text-amber-300' : 'text-emerald-300'}>
+                          約 <b>{Math.round(gap.distanceMm)}mm</b> ずれています
+                          （X {gap.dxMm >= 0 ? '+' : ''}{Math.round(gap.dxMm)}mm
+                          {' / '}Y {gap.dyMm >= 0 ? '+' : ''}{Math.round(gap.dyMm)}mm）
+                        </div>
+                        <div className="text-dimension">
+                          目安: 10mm 以下＝良好 ／ 50mm 以下＝実用 ／ 100mm 超＝撮り直しか歪み補正が必要
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
-                  <div className="text-[11px] text-dimension">交点をクリックすると、ずれを表示します（省略もできます）。</div>
+                  <div className="text-[11px] text-dimension">
+                    交点をクリックすると、基準点からの実寸を表示します（省略もできます）。
+                  </div>
                 )}
                 <div className="flex gap-2">
                   <button type="button" onClick={() => { setCheckPoint(null); setStep('place'); }}
