@@ -328,3 +328,65 @@ describe('入口と、既存を壊していないこと', () => {
     expect(read('components/canvas/UnderlayLayer.tsx')).not.toMatch(/読み込めませんでした/);
   });
 });
+
+// ============================================================
+describe('パネルの置き場所（fix3: 画面からはみ出していた件）', () => {
+  // 原因: このパネルはキャンバス領域（唯一の relative な入れ物）の**外**に
+  //   マウントされているのに absolute を使っていた。位置の基準になる親が無く、
+  //   画面外へ出ていた。キャンバス上に浮く UI はこのアプリでは例外なく fixed。
+  const page = read('app/editor/[id]/page.tsx');
+
+  it('原因の確認: パネルは唯一の relative な入れ物の外にある', () => {
+    const canvasContainer = page.indexOf('data-canvas-container className="flex-1 relative');
+    expect(canvasContainer).toBeGreaterThan(0);
+    // relative な入れ物は 1 つだけ
+    expect((page.match(/className="flex-1 relative/g) ?? [])).toHaveLength(1);
+    // パネルはそれより後ろ＝入れ子の外に置かれている
+    expect(page.indexOf('<UnderlayPanel />')).toBeGreaterThan(canvasContainer);
+  });
+
+  it('fixed で置く（既存の浮く UI と同じ作法）', () => {
+    expect(panel).toMatch(/className="fixed top-16 left-3 z-30/);
+    expect(panel).not.toMatch(/className="absolute/);
+  });
+
+  it('幅を明示し、狭い画面でも収まる', () => {
+    expect(panel).toMatch(/w-\[260px\] max-w-\[calc\(100vw-24px\)\]/);
+  });
+
+  it('縦にも収まる（背が高くなったらパネルの中でスクロールする）', () => {
+    expect(panel).toMatch(/max-h-\[calc\(100vh-140px\)\] overflow-y-auto/);
+  });
+
+  it('既存のパネルと同じ書き方（幅と max-w の組み合わせ）', () => {
+    const ref = read('components/scaffold/MoveSelectRangePanel.tsx');
+    expect(ref).toMatch(/max-w-\[calc\(100vw-24px\)\]/);
+    expect(panel).toMatch(/max-w-\[calc\(100vw-24px\)\]/);
+  });
+
+  it('他の浮く UI と場所が重ならない', () => {
+    // 上中央は FloorSelector、下は縮尺表示と各種バーが使っている
+    expect(read('components/toolbar/FloorSelector.tsx')).toMatch(/fixed top-2 left-1\/2/);
+    expect(panel).toMatch(/top-16 left-3/);
+  });
+
+  it('既定は畳んだつまみ（出しっぱなしで図面を隠さない）', () => {
+    expect(panel).toMatch(/const \[open, setOpen\] = useState\(false\);/);
+    expect(panel).toMatch(/if \(!open\) \{/);
+    expect(panel).toMatch(/onClick=\{\(\) => setOpen\(true\)\}/);
+  });
+
+  it('畳んでいても状態が分かる（読み込み失敗・調整中・非表示）', () => {
+    expect(panel).toMatch(/\{status === 'error' && <span className="text-red-300">!<\/span>\}/);
+    expect(panel).toMatch(/\{adjusting && <span className="text-amber-400">調整中<\/span>\}/);
+    expect(panel).toMatch(/\{hidden && <span className="text-dimension">非表示<\/span>\}/);
+  });
+
+  it('開いたら閉じられる', () => {
+    expect(panel).toMatch(/onClick=\{\(\) => setOpen\(false\)\}/);
+  });
+
+  it('調整中に「下図の側を動かす」と案内する', () => {
+    expect(panel).toMatch(/建物や足場は動きません（合わせるのは下図の側です）/);
+  });
+});
