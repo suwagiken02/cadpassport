@@ -29,7 +29,8 @@ describe('チェックは 1 つで 3 形式に効く', () => {
   });
 
   it('PNG / DXF の経路（範囲指定なし）に渡る', () => {
-    expect(modal).toMatch(/onExport\(\{ format, paperSize, scale, includeAids \}\)/);
+    // U-1 で includeUnderlay が並んだ。補助線のフラグが渡ることは不変。
+    expect(modal).toMatch(/onExport\(\{ format, paperSize, scale, includeAids/);
   });
 
   it('「このページのみ」の PDF に渡る', () => {
@@ -42,7 +43,7 @@ describe('チェックは 1 つで 3 形式に効く', () => {
   });
 
   it('3 形式とも handleExport でフラグを使っている', () => {
-    expect(editor).toMatch(/exportToPng\(siteName, \{ includeAids: settings\.includeAids \}\)/);
+    expect(editor).toContain('includeAids: settings.includeAids,');
     expect(editor).toMatch(/includeAids: settings\.includeAids,/);
     expect(editor).toMatch(/exportToDxf\(canvasData, siteName, \{ includeAids: settings\.includeAids \}\)/);
   });

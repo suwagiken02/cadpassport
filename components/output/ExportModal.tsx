@@ -19,6 +19,8 @@ type Props = {
     onProgress?: (p: ExportProgress) => void;
     /** E-8-v5c: 作図の補助（補助線・目印）を含めるか。既定 false＝含めない。 */
     includeAids?: boolean;
+    /** U-1: 下図（背景の平面図）を含めるか。既定 true＝含める。 */
+    includeUnderlay?: boolean;
   }) => void;
   siteName: string;
 };
@@ -48,12 +50,19 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   const [allPages, setAllPages] = useState(false);
   /** E-7: 全ページ出力の進捗（null = 出力中でない）。 */
   const [progress, setProgress] = useState<ExportProgress | null>(null);
+  /** 下図があるページでだけ切り替えを出す（無ければ関係のない項目を並べない）。 */
+  const hasUnderlay = !!useCanvasStore((s) => s.canvasData.underlay);
   /**
    * E-8-v5c: 補助線を出力に含めるか。**既定はオフ**。
    * PDF / PNG / DXF は同じ画面の切り替えなので、このチェック 1 つで 3 形式に効く。
    * 記憶はしない（毎回オフから始まる）。
    */
   const [includeAids, setIncludeAids] = useState(false);
+  /**
+   * U-1: 下図を出力に含めるか。**既定はオン**（背景ごと印刷するのが目的なので
+   * 補助線とは逆）。DXF は写真を載せられないので対象外。
+   */
+  const [includeUnderlay, setIncludeUnderlay] = useState(true);
 
   // E-7-fix: 範囲指定中にホームへ戻る等でアンマウントされても印刷枠を必ず消す。
   //   ✕/戻る/出力完了の経路は個別に消していたが、画面離脱の経路だけ漏れていた。
@@ -69,7 +78,7 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
   const handleConfirmSettings = () => {
     if (format !== 'pdf') {
       // PNG/DXFは範囲指定不要 → そのまま出力
-      onExport({ format, paperSize, scale, includeAids });
+      onExport({ format, paperSize, scale, includeAids, includeUnderlay });
       return;
     }
     // PDF: 印刷枠を表示してステップ2へ + 印刷範囲全体を画面に収める
@@ -99,9 +108,10 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
         siteName,
         companyName: useAuthStore.getState().profile?.company_name || '',
         date: new Date().toLocaleDateString('ja-JP'),
-        // E-8-v5c: 全ページはページ遷移をまたぐので、ここで store の状態へ載せる。
+        // E-8-v5c / U-1: 全ページはページ遷移をまたぐので、ここで store の状態へ載せる。
         //   モーダルのローカル state は遷移で消えるため、載せ忘れると全ページだけ効かない。
         includeAids,
+        includeUnderlay,
       },
       s.drawingId,
     );
@@ -121,7 +131,7 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
       const vh = canvasSize.height || (window.innerHeight - 120);
       zoomToFitPrintArea(vw, vh);
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await onExport({ format, paperSize, scale, allPages, includeAids, onProgress: setProgress });
+      await onExport({ format, paperSize, scale, allPages, includeAids, includeUnderlay, onProgress: setProgress });
       trackResult('export_done', true, { format, paper: paperSize, scale, all_pages: allPages });
       trackDuration('export_duration', Date.now() - startedAt, { format });
     } catch (e) {
@@ -261,6 +271,22 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* U-1: 下図を含めるか。既定オン。DXF は写真を載せられないので対象外。 */}
+          {hasUnderlay && (
+            <label className="flex items-center gap-2 mb-2 text-xs text-canvas cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeUnderlay && format !== 'dxf'}
+                disabled={format === 'dxf'}
+                onChange={(e) => setIncludeUnderlay(e.target.checked)}
+              />
+              <span>下図を含める</span>
+              <span className="text-[10px] text-dimension">
+                {format === 'dxf' ? '（DXF は写真を出力できません）' : '（背景の平面図）'}
+              </span>
+            </label>
           )}
 
           {/* E-8-v5c: 補助線を含めるか。PDF / PNG / DXF に共通で効く。既定オフ。 */}

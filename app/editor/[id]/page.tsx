@@ -319,11 +319,15 @@ export default function EditorPage() {
       onProgress?: (p: { current: number; total: number; title: string }) => void;
       /** E-8-v5c: 補助線を含めるか。既定 false＝含めない。 */
       includeAids?: boolean;
+      /** U-1: 下図を含めるか。既定＝含める。 */
+      includeUnderlay?: boolean;
     }) => {
       try {
         if (settings.format === 'png') {
           const { exportToPng } = await import('@/lib/export/pngExport');
-          await exportToPng(siteName, { includeAids: settings.includeAids });
+          await exportToPng(siteName, {
+            includeAids: settings.includeAids, includeUnderlay: settings.includeUnderlay,
+          });
         } else if (settings.format === 'pdf') {
           let exportedPages = 1; // 完了案内に出すページ数（全ページ出力時に上書き）
           const store = useCanvasStore.getState();
@@ -336,6 +340,8 @@ export default function EditorPage() {
             date: new Date().toLocaleDateString('ja-JP'),
             // E-8-v5c: 補助線を含めるか（PDF は画像化の間だけレイヤーを隠す）。
             includeAids: settings.includeAids,
+            // U-1: 下図を含めるか（既定は含める）。
+            includeUnderlay: settings.includeUnderlay,
           };
           if (settings.allPages && store.projectId) {
             // E-7: 物件の全ページを1つの PDF に。ページごとに canvasData を差し替えて描く。
@@ -353,12 +359,17 @@ export default function EditorPage() {
             // E-7-1: 印刷枠が画面外にはみ出していると、その部分が白紙で出力される（背景・グリッドは
             //   ビューポート分しか描かれないため）。キャプチャの間だけビューを寄せ、終わったら戻す。
             const { withAidsHidden } = await import('@/lib/export/aidVisibility');
-            await withAidsHidden(settings.includeAids, () => withFittedPrintView(
-              canvasData, settings.paperSize, settings.scale, store.printAreaCenter,
-              (view) => exportToPdf(
-                canvasData, pdfSettings, store.printAreaCenter, view.zoom, view.panX, view.panY,
-              ),
-            ));
+            const { withUnderlayVisibility } = await import('@/lib/export/underlayVisibility');
+            const { whenUnderlayReady } = await import('@/lib/underlay/underlayImage');
+            // U-1: 読み込み中だと背景の無い絵になるので、待ってから撮る。
+            await whenUnderlayReady(canvasData.underlay?.storagePath);
+            await withAidsHidden(settings.includeAids, () =>
+              withUnderlayVisibility(settings.includeUnderlay, () => withFittedPrintView(
+                canvasData, settings.paperSize, settings.scale, store.printAreaCenter,
+                (view) => exportToPdf(
+                  canvasData, pdfSettings, store.printAreaCenter, view.zoom, view.panX, view.panY,
+                ),
+              )));
           }
           // PDF 保存完了案内 (= UA 判定で端末別文言)
           const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';

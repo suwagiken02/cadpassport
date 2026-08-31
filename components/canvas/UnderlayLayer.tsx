@@ -61,7 +61,9 @@ export default function UnderlayLayer() {
 
   // hidden は「見比べるための一時的な切り替え」。取得はそのまま続ける（消してから
   //   戻すたびに読み直さない）。
-  if (!underlay || !image || hidden) return null;
+  // **ノードは残したまま visible で切る**。出力側が「画面では隠しているが出力には
+  //   含める」を実現できるようにするため（消してしまうと出力から動かせない）。
+  if (!underlay || !image) return null;
 
   const gridPx = INITIAL_GRID_PX * zoom;
   const t = underlay.transform;
@@ -77,6 +79,7 @@ export default function UnderlayLayer() {
       scaleX={scalePx}
       scaleY={scalePx}
       opacity={underlay.opacity}
+      visible={!hidden}
       listening={false}
     >
       <KonvaImage image={image} x={0} y={0} width={underlay.widthPx} height={underlay.heightPx} />

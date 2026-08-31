@@ -203,12 +203,13 @@ describe('PNG / PDF はレイヤーを隠して実現する', () => {
   });
 
   it('単ページ PDF が通っている', () => {
+    // U-1 で内側に下図の出し分けが挟まった。補助線を隠す経路であることは不変。
     expect(read('app/editor/[id]/page.tsx'))
-      .toMatch(/withAidsHidden\(settings\.includeAids, \(\) => withFittedPrintView\(/);
+      .toMatch(/withAidsHidden\(settings\.includeAids, \(\) =>/);
   });
 
   it('全ページ PDF が通っている（ページ遷移をまたぐ経路）', () => {
     expect(read('lib/export/multiPageExport.ts'))
-      .toMatch(/return withAidsHidden\(settings\.includeAids, async \(\) => \{/);
+      .toMatch(/return withAidsHidden\(settings\.includeAids, async \(\) =>/);
   });
 });

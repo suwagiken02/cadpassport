@@ -289,8 +289,8 @@ describe('目で確かめる 3 つ（#4）', () => {
 
   it('表示のオンオフで見比べられる', () => {
     expect(panel).toMatch(/setUnderlayHidden\(!hidden\)/);
-    expect(read('components/canvas/UnderlayLayer.tsx'))
-      .toMatch(/if \(!underlay \|\| !image \|\| hidden\) return null;/);
+    // U-1 commit 4: ノードは残したまま visible で切る（出力側から出し分けるため）。
+    expect(read('components/canvas/UnderlayLayer.tsx')).toMatch(/visible=\{!hidden\}/);
   });
 
   it('隠しても取得はやり直さない', () => {

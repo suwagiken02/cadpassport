@@ -630,6 +630,11 @@ export type ExportSettings = {
    * 未指定＝false＝含めない。PDF / PNG / DXF で同じ 1 つのフラグに従う。
    */
   includeAids?: boolean;
+  /**
+   * 下図（背景の平面図）を出力に含めるか (= U-1)。
+   * 未指定＝含める（背景ごと印刷するのがこの機能の目的なので、補助線とは逆で既定オン）。
+   */
+  includeUnderlay?: boolean;
 };
 
 // === プロジェクト ===

@@ -16,6 +16,8 @@ import { PDFDocument } from 'pdf-lib';
 import { supabase } from '@/lib/supabase/client';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { withAidsHidden } from './aidVisibility';
+import { withUnderlayVisibility } from './underlayVisibility';
+import { whenUnderlayReady } from '@/lib/underlay/underlayImage';
 import { sortPages, type PageMeta } from '@/lib/pages/pageOps';
 import { downloadPdf, pdfFileName, renderPdfPage } from './pdfExport';
 import { nextPaint, withFittedPrintView } from './exportViewport';
@@ -68,7 +70,8 @@ export async function exportAllPagesToPdf(opts: {
   // E-8-v5c: 補助線を含めないときは、全ページのキャプチャの間ずっと隠しておく
   //   （ページを差し替えながら描くので、1 枚ごとに出し入れしない）。
   //   例外が出ても withAidsHidden の finally で必ず戻る。
-  return withAidsHidden(settings.includeAids, async () => {
+  return withAidsHidden(settings.includeAids, async () =>
+    withUnderlayVisibility(settings.includeUnderlay, async () => {
   try {
     // 差し替え中に存在しない id を選択したままにしない（描画の乱れ防止）。
     if (savedSelectedIds.length > 0) useCanvasStore.setState({ selectedIds: [] });
@@ -87,6 +90,8 @@ export async function exportAllPagesToPdf(opts: {
       await nextPaint();
 
       const cv = useCanvasStore.getState().canvasData;
+      // U-1: そのページの下図が読み込めるまで待つ（背景の無い絵にしない）。
+      await whenUnderlayReady(cv.underlay?.storagePath);
       // 枠中心の優先順: ウィザードでこのページに指定された中心 → 表示中ページの現在の指定 → null(bbox 中心)。
       const center = centers?.[p.id] ?? (isCurrent ? useCanvasStore.getState().printAreaCenter : null);
       await withFittedPrintView(cv, settings.paperSize, settings.scale, center, (view) =>
@@ -114,5 +119,5 @@ export async function exportAllPagesToPdf(opts: {
 
     await downloadPdf(pdfDoc, pdfFileName(settings.siteName, true));
     return pages.length;
-  });
+  }));
 }

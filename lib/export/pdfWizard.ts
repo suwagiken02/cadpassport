@@ -23,6 +23,8 @@ export type PdfWizardSettings = {
    * モーダルのローカル state では消える。ウィザードの状態（store）が持ち運ぶ。
    */
   includeAids?: boolean;
+  /** 下図を含めるか (= U-1)。全ページはページ遷移をまたぐので store が持ち運ぶ。 */
+  includeUnderlay?: boolean;
 };
 
 export type PdfWizardState = {
