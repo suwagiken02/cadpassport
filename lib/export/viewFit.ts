@@ -53,6 +53,36 @@ export function fitViewToPrintArea(
 }
 
 /** 建物の外接矩形の中心（グリッド）。建物なしは null。印刷中心の既定値。 */
+/**
+ * 印刷枠の中心を決める — **唯一の定義** (= E-7-fix5)。
+ *
+ * 枠の位置は「画面に描く側」「ビューを寄せる側」「PDF を切り取る側」の 3 か所で
+ * 使う。それぞれが別々に既定値を持っていたため、**建物がまだ無い図面では
+ * 描く側は画面の中央に枠を出すのに、切り取る側は中心を決められず（null）
+ * 切り取りそのものを飛ばしていた**＝枠の外まで PDF に入っていた。
+ * 一度でも枠を動かせば printAreaCenter が入るので直る、という症状もこれで説明がつく。
+ *
+ * 優先順: ユーザーが決めた位置 → 建物の中心 → 画面の中央。
+ * **null を返さない**ので、呼ぶ側が「中心が無い」分岐を持たなくて済む。
+ */
+export function resolvePrintAreaCenter(
+  printAreaCenter: { x: number; y: number } | null | undefined,
+  buildings: { points: { x: number; y: number }[] }[],
+  viewport: { width: number; height: number },
+  view: { zoom: number; panX: number; panY: number },
+  gridPxAtZoom1: number,
+): { x: number; y: number } {
+  if (printAreaCenter) return printAreaCenter;
+  const b = buildingsCenterGrid(buildings);
+  if (b) return b;
+  const gridPx = gridPxAtZoom1 * view.zoom;
+  if (!(gridPx > 0)) return { x: 0, y: 0 };
+  return {
+    x: (viewport.width / 2 - view.panX) / gridPx,
+    y: (viewport.height / 2 - view.panY) / gridPx,
+  };
+}
+
 export function buildingsCenterGrid(
   buildings: { points: { x: number; y: number }[] }[],
 ): { x: number; y: number } | null {

@@ -12,6 +12,8 @@
 import React, { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { resolvePrintAreaCenter } from '@/lib/export/viewFit';
+import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { saveCurrentPageIfDirty } from '@/lib/pages/pageSave';
 import {
   advanceWizard, centerForPage, currentWizardPage, isLastWizardStep, wizardStepLabel,
@@ -34,7 +36,13 @@ export default function PdfPageWizardBar() {
     if (!s.showPrintArea) s.toggleShowPrintArea();
     s.setPrintPaperSize(wizard.settings.paperSize);
     s.setPrintScale(wizard.settings.scale);
-    s.setPrintAreaCenter(centerForPage(wizard.centers, page.id));
+    // E-7-fix5: このページの枠をまだ指定していなければ、ここで中心を確定させる。
+    //   null のままだと、一度も動かさずに出力したとき枠の外まで PDF に入る。
+    //   ビューを寄せる前に決めるのが要点（寄せたあとだと画面の中央がずれる）。
+    s.setPrintAreaCenter(centerForPage(wizard.centers, page.id) ?? resolvePrintAreaCenter(
+      null, s.canvasData.buildings, s.canvasSize,
+      { zoom: s.zoom, panX: s.panX, panY: s.panY }, INITIAL_GRID_PX,
+    ));
     const vw = s.canvasSize.width || window.innerWidth;
     const vh = s.canvasSize.height || (window.innerHeight - 120);
     if (vw > 0 && vh > 0) s.zoomToFitPrintArea(vw, vh);

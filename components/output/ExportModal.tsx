@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { PaperSize, ScaleOption } from '@/types';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { resolvePrintAreaCenter } from '@/lib/export/viewFit';
+import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import { trackDuration, trackError, trackResult } from '@/lib/analytics';
 import { useAuthStore } from '@/stores/authStore';
 import type { ExportProgress } from '@/lib/export/multiPageExport';
@@ -85,6 +87,20 @@ export default function ExportModal({ onClose, onExport, siteName }: Props) {
     setPrintPaperSize(paperSize);
     setPrintScale(scale);
     if (!showPrintArea) toggleShowPrintArea();
+    // E-7-fix5: 枠を出した時点で中心を**確定させる**。決めておかないと、
+    //   一度も動かさずに出力したときに切り取る側が中心を決められず、
+    //   枠の外まで PDF に入っていた。ここで入れておけば、描く側・寄せる側・
+    //   切り取る側が必ず同じ値を見る。ビューを寄せる前に決めるのが要点で、
+    //   寄せたあとだと画面の中央がずれて、見えていた枠と食い違う。
+    {
+      const st = useCanvasStore.getState();
+      if (!st.printAreaCenter) {
+        st.setPrintAreaCenter(resolvePrintAreaCenter(
+          null, st.canvasData.buildings, st.canvasSize,
+          { zoom: st.zoom, panX: st.panX, panY: st.panY }, INITIAL_GRID_PX,
+        ));
+      }
+    }
     const vw = canvasSize.width || window.innerWidth;
     const vh = canvasSize.height || (window.innerHeight - 120);
     zoomToFitPrintArea(vw, vh);

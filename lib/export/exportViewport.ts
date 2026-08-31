@@ -9,7 +9,8 @@
 // ============================================================
 import { useCanvasStore } from '@/stores/canvasStore';
 import { getPrintAreaGrid } from './pdfExport';
-import { buildingsCenterGrid, fitViewToPrintArea, type ViewTransform } from './viewFit';
+import { fitViewToPrintArea, resolvePrintAreaCenter, type ViewTransform } from './viewFit';
+import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
 import type { CanvasData } from '@/types';
 
 /** 次の描画フレームまで待つ（React 再レンダ → Konva 再描画の完了待ち）。 */
@@ -34,7 +35,10 @@ export async function withFittedPrintView<T>(
 ): Promise<T> {
   const s = useCanvasStore.getState();
   const before: ViewTransform = { zoom: s.zoom, panX: s.panX, panY: s.panY };
-  const center = printAreaCenter ?? buildingsCenterGrid(canvasData.buildings);
+  // E-7-fix5: 描く側・切り取る側と同じ 1 本を通す（別々の既定値を持たない）。
+  const center = resolvePrintAreaCenter(
+    printAreaCenter, canvasData.buildings, s.canvasSize, before, INITIAL_GRID_PX,
+  );
   const fit = fitViewToPrintArea(
     getPrintAreaGrid(paperSize, scale),
     center,

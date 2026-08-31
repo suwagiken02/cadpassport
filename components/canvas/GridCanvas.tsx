@@ -11,6 +11,7 @@ import {
   ZOOM_MIN,
   ZOOM_MAX,
 } from '@/lib/konva/gridUtils';
+import { resolvePrintAreaCenter } from '@/lib/export/viewFit';
 import AidLayer from './AidLayer';
 import UnderlayLayer from './UnderlayLayer';
 import UnderlayAdjustLayer from './UnderlayAdjustLayer';
@@ -878,22 +879,12 @@ export default function GridCanvas({ width, height }: Props) {
         // 建物と同じ座標変換: gridCoord * INITIAL_GRID_PX * zoom + pan
         const gridPx = INITIAL_GRID_PX * zoom;
         // 中心座標（グリッド単位）
-        let centerGrid: { x: number; y: number };
-        if (printAreaCenter) {
-          centerGrid = printAreaCenter;
-        } else {
-          if (canvasData.buildings.length > 0) {
-            let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
-            for (const b of canvasData.buildings)
-              for (const p of b.points) {
-                if (p.x < bMinX) bMinX = p.x; if (p.y < bMinY) bMinY = p.y;
-                if (p.x > bMaxX) bMaxX = p.x; if (p.y > bMaxY) bMaxY = p.y;
-              }
-            centerGrid = { x: (bMinX + bMaxX) / 2, y: (bMinY + bMaxY) / 2 };
-          } else {
-            centerGrid = { x: (width / 2 - panX) / gridPx, y: (height / 2 - panY) / gridPx };
-          }
-        }
+        // E-7-fix5: 中心の決め方は resolvePrintAreaCenter が唯一の定義。
+        //   描く側と切り取る側で別々に既定値を持っていたため、枠の位置が食い違っていた。
+        const centerGrid = resolvePrintAreaCenter(
+          printAreaCenter, canvasData.buildings, { width, height },
+          { zoom, panX, panY }, INITIAL_GRID_PX,
+        );
         // 印刷枠サイズはズームに追従する（グリッド数 × 1グリッドのピクセルサイズ）
         // INITIAL_GRID_PX はズーム1.0のときの1グリッドのピクセルサイズ
         const pw = area.widthGrid * INITIAL_GRID_PX * zoom;

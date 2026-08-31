@@ -2,6 +2,7 @@ import { PDFDocument, rgb } from 'pdf-lib';
 import Konva from 'konva';
 import { CanvasData, ExportSettings } from '@/types';
 import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
+import { resolvePrintAreaCenter } from './viewFit';
 
 // 用紙サイズ・表題欄・方位記号の実寸は pdfLayout.ts と単一ソース（画面プレビューと共有・E-7-fix4）。
 import {
@@ -185,21 +186,15 @@ export async function renderPdfPage(pdfDoc: PDFDocument, o: PdfPageOptions): Pro
   if (stages.length > 0) {
     const stage = stages[0];
 
-    // printAreaCenterがnullの場合は建物の中心を使う
-    let center = printAreaCenter;
-    if (!center) {
-      if (canvasData.buildings.length > 0) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const b of canvasData.buildings)
-          for (const p of b.points) {
-            if (p.x < minX) minX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y > maxY) maxY = p.y;
-          }
-        center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-      }
-    }
+    // E-7-fix5: 中心の決め方は resolvePrintAreaCenter が唯一の定義。
+    //   ここに別の既定値を書いていたため、建物がまだ無い図面では中心が決まらず
+    //   （null）、**切り取りそのものを飛ばして枠の外まで PDF に入れていた**。
+    //   この関数は null を返さないので、切り取りは必ず行われる。
+    const center = resolvePrintAreaCenter(
+      printAreaCenter, canvasData.buildings,
+      { width: stage.width(), height: stage.height() },
+      { zoom, panX, panY }, INITIAL_GRID_PX,
+    );
 
     const area = getPrintAreaGrid(settings.paperSize, settings.scale);
 
