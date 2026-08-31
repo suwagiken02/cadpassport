@@ -557,6 +557,10 @@ export default function EditorPage() {
           <GridCanvas width={canvasSize.width} height={canvasSize.height} />
         )}
         <CompassWidget />
+        {/* U-1: 下図の操作つまみ。キャンバスに属する UI なので、この入れ物を
+            基準にした absolute で置く（画面全体を基準にするとヘッダーや
+            ページタブの高さが変わるたびにぶつかる）。 */}
+        <UnderlayPanel />
         <OperationGuideBar />
 
         {/* スマホ用 全体表示ボタン (E-6f: 全ページ常時表示・コンテンツ基準にフィット) */}
@@ -804,7 +808,6 @@ export default function EditorPage() {
       {/* S-4: 敷地の入口（手で描く／自動生成） */}
       <SiteModal />
       <UnderlayModal />
-      <UnderlayPanel />
       {/* R-1k: 高さ/棟/屋根ツールの起動直後に対象階を訊く（複数階のときのみ） */}
       <FloorPickerModal />
       {/* E-7-fix3: 全ページ PDF の枠指定ウィザード（ページ遷移をまたいで進行するので store 駆動） */}

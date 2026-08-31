@@ -3,13 +3,17 @@
 // ============================================================
 // 下図の操作パネル (= U-1 commit 3、 fix3 で置き場所を直した)。
 //
-// ■ fix3 で直したこと
-// もとは `absolute left-2 bottom-2` だったが、このパネルは**キャンバス領域
-// （唯一の relative な入れ物）の外**にマウントされている。位置の基準になる
-// 親が無いので absolute が効かず、画面からはみ出していた。
-// キャンバス上に浮く UI は、このアプリでは**例外なく fixed ＋ 明示的な幅 ＋
-// max-w-[calc(100vw-24px)]** で書かれている（MoveSelectRangePanel /
-// ReorderModeBar / PdfPageWizardBar など）。同じ作法に揃えた。
+// ■ 置き場所は「キャンバスの中」(= fix4)
+// 下図はキャンバスに属する UI なので、**キャンバス領域の中**に置き、その要素を
+// 基準にした absolute で配置する。画面全体を基準にした fixed だと、ヘッダーや
+// ページタブの高さが変わるたびにぶつかる（実際 fix3 の fixed top-16 は
+// ページタブと重なり、1 ページ目が押せなくなった）。空いていそうな座標を手で
+// 選び直す繰り返しを終わらせるための構造的な直し。
+//
+// キャンバスの中で使われている場所:
+//   左上 top-3 left-3 … 方位マーク(40px) / 上中央 … 操作ガイド
+//   左下 … 縮尺表示   / 下・右・上中央 … 各ツールバーとモードバー（外側）
+// 空いている**方位マークの右**（top-3 left-16）に置く。
 //
 // 下図があるあいだ出しっぱなしになるので、**既定は小さなつまみ**にして
 // 図面の邪魔をしない。押すと開く。
@@ -35,7 +39,7 @@ export default function UnderlayPanel() {
    * という指摘への対応で、いちばん間違えやすいところ。
    */
   const adjustHint = adjusting && (
-    <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-30 bg-amber-500/95 text-white rounded-xl shadow-2xl px-3 py-1.5 text-[11px] font-bold max-w-[calc(100vw-24px)] text-center leading-relaxed">
+    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 bg-amber-500/95 text-white rounded-xl shadow-2xl px-3 py-1.5 text-[11px] font-bold max-w-[calc(100%-24px)] text-center leading-relaxed">
       下図をドラッグして位置を合わせます<br />
       <span className="font-normal opacity-90">建物・足場は動きません（合わせるのは下図の側です）</span>
     </div>
@@ -49,7 +53,7 @@ export default function UnderlayPanel() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed top-16 left-3 z-30 bg-dark-surface/95 border border-dark-border rounded-xl shadow-2xl px-3 py-1.5 flex items-center gap-1.5 text-[11px] font-bold text-canvas"
+        className="absolute top-3 left-16 z-20 bg-dark-surface/95 border border-dark-border rounded-xl shadow-2xl px-3 py-1.5 flex items-center gap-1.5 text-[11px] font-bold text-canvas"
       >
         <span>🖼 下図</span>
         {status === 'error' && <span className="text-red-300">!</span>}
@@ -63,7 +67,7 @@ export default function UnderlayPanel() {
   return (
     <>
     {adjustHint}
-    <div className="fixed top-16 left-3 z-30 w-[260px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-140px)] overflow-y-auto bg-dark-surface/95 backdrop-blur-sm border border-dark-border rounded-2xl shadow-2xl p-3">
+    <div className="absolute top-3 left-16 z-20 w-[260px] max-w-[calc(100%-76px)] max-h-[calc(100%-24px)] overflow-y-auto bg-dark-surface/95 backdrop-blur-sm border border-dark-border rounded-2xl shadow-2xl p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] text-canvas font-bold">🖼 下図</span>
         <button type="button" onClick={() => setOpen(false)}

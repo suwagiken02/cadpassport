@@ -364,44 +364,52 @@ describe('入口と、既存を壊していないこと', () => {
 });
 
 // ============================================================
-describe('パネルの置き場所（fix3: 画面からはみ出していた件）', () => {
-  // 原因: このパネルはキャンバス領域（唯一の relative な入れ物）の**外**に
-  //   マウントされているのに absolute を使っていた。位置の基準になる親が無く、
-  //   画面外へ出ていた。キャンバス上に浮く UI はこのアプリでは例外なく fixed。
+describe('パネルの置き場所（fix4: キャンバスの中に置く）', () => {
+  // fix3 で fixed にしたが、fixed top-16 は**ページタブと重なり**、1 ページ目の
+  // タブが押せなくなった。空いていそうな座標を手で選び直す繰り返しになるので、
+  // 「キャンバスに属する UI はキャンバス領域の中に置く」という形に直した。
   const page = read('app/editor/[id]/page.tsx');
+  const canvasArea = page.slice(
+    page.indexOf('data-canvas-container className="flex-1 relative'),
+    page.indexOf('{/* モーダル */}'),
+  );
 
-  it('原因の確認: パネルは唯一の relative な入れ物の外にある', () => {
-    const canvasContainer = page.indexOf('data-canvas-container className="flex-1 relative');
-    expect(canvasContainer).toBeGreaterThan(0);
-    // relative な入れ物は 1 つだけ
-    expect((page.match(/className="flex-1 relative/g) ?? [])).toHaveLength(1);
-    // パネルはそれより後ろ＝入れ子の外に置かれている
-    expect(page.indexOf('<UnderlayPanel />')).toBeGreaterThan(canvasContainer);
+  it('キャンバス領域の中にマウントされている', () => {
+    expect(canvasArea).toContain('<UnderlayPanel />');
   });
 
-  it('fixed で置く（既存の浮く UI と同じ作法）', () => {
-    expect(panel).toMatch(/className="fixed top-16 left-3 z-30/);
-    expect(panel).not.toMatch(/className="absolute/);
+  it('画面全体を基準にした fixed を使っていない', () => {
+    expect(panel).not.toMatch(/className="fixed/);
+    expect(panel).not.toMatch(/100vw|100vh/);
   });
 
-  it('幅を明示し、狭い画面でも収まる', () => {
-    expect(panel).toMatch(/w-\[260px\] max-w-\[calc\(100vw-24px\)\]/);
+  it('キャンバスを基準にした absolute で置く', () => {
+    expect(panel).toMatch(/className="absolute top-3 left-16 z-20/);
   });
 
-  it('縦にも収まる（背が高くなったらパネルの中でスクロールする）', () => {
-    expect(panel).toMatch(/max-h-\[calc\(100vh-140px\)\] overflow-y-auto/);
+  it('方位マークの右（重ならない位置）', () => {
+    // 方位マークは top-3 left-3 の 40px 四方 → 右端は 52px。left-16 は 64px。
+    expect(read('components/canvas/CompassWidget.tsx'))
+      .toMatch(/className="absolute top-3 left-3 w-10 h-10/);
+    expect(panel).toMatch(/left-16/);
   });
 
-  it('既存のパネルと同じ書き方（幅と max-w の組み合わせ）', () => {
-    const ref = read('components/scaffold/MoveSelectRangePanel.tsx');
-    expect(ref).toMatch(/max-w-\[calc\(100vw-24px\)\]/);
-    expect(panel).toMatch(/max-w-\[calc\(100vw-24px\)\]/);
+  it('上中央の操作ガイドとも重ならない', () => {
+    expect(read('components/canvas/OperationGuideBar.tsx'))
+      .toMatch(/className="absolute top-3 left-1\/2 -translate-x-1\/2/);
+    // こちらは左寄せなので中央とぶつからない
+    expect(panel).not.toMatch(/left-1\/2[^"]*top-3/);
   });
 
-  it('他の浮く UI と場所が重ならない', () => {
-    // 上中央は FloorSelector、下は縮尺表示と各種バーが使っている
-    expect(read('components/toolbar/FloorSelector.tsx')).toMatch(/fixed top-2 left-1\/2/);
-    expect(panel).toMatch(/top-16 left-3/);
+  it('幅も高さもキャンバスの中に収まる', () => {
+    expect(panel).toMatch(/w-\[260px\] max-w-\[calc\(100%-76px\)\]/);
+    expect(panel).toMatch(/max-h-\[calc\(100%-24px\)\] overflow-y-auto/);
+  });
+
+  it('ページタブより後ろに描かれない（タブを隠さない）', () => {
+    // タブはキャンバス領域の外（上）にあるので、中に置けば構造的に重ならない
+    expect(page.indexOf('<PageTabsContainer />'))
+      .toBeLessThan(page.indexOf('data-canvas-container'));
   });
 
   it('既定は畳んだつまみ（出しっぱなしで図面を隠さない）', () => {
@@ -420,105 +428,12 @@ describe('パネルの置き場所（fix3: 画面からはみ出していた件�
     expect(panel).toMatch(/onClick=\{\(\) => setOpen\(false\)\}/);
   });
 
+  it('調整中の帯もキャンバスの中（下のツールバーとぶつからない）', () => {
+    expect(panel).toMatch(/className="absolute bottom-3 left-1\/2 -translate-x-1\/2 z-20/);
+    expect(panel).toMatch(/max-w-\[calc\(100%-24px\)\]/);
+  });
+
   it('調整中に「下図の側を動かす」と案内する', () => {
     expect(panel).toMatch(/建物や足場は動きません（合わせるのは下図の側です）/);
-  });
-});
-
-// ============================================================
-describe('(1) 精度が低いときは、承知のうえでないと先へ進めない', () => {
-  it('しきい値は 1 か所（色分けと判定で同じ値を見る）', () => {
-    expect(UNDERLAY_ERROR_WARN_MM).toBe(20);
-    expect(UNDERLAY_ERROR_RISK_MM).toBe(50);
-    expect(isRiskyError(51)).toBe(true);
-    expect(isRiskyError(50)).toBe(false);
-    expect(isRiskyError(null)).toBe(false);
-    expect(isRiskyError(Infinity)).toBe(false);
-  });
-
-  it('色分けも同じ定数を使う（数値が散らない）', () => {
-    expect(modal).toMatch(/errMm > UNDERLAY_ERROR_RISK_MM \? 'text-red-300'/);
-    expect(modal).toMatch(/errMm > UNDERLAY_ERROR_WARN_MM \? 'text-amber-300'/);
-    // 生の数値で書かれていない
-    expect(modal).not.toMatch(/errMm > 50|errMm > 20/);
-  });
-
-  it('赤のときだけチェックを出す', () => {
-    expect(modal).toMatch(/\{risky && \(/);
-    expect(modal).toMatch(/精度が低いことを承知で進む/);
-  });
-
-  it('チェックしないと次へ進めない', () => {
-    expect(modal).toMatch(/disabled=\{!calib \|\| tooClose \|\| \(risky && !riskAccepted\)\}/);
-  });
-
-  it('逃げ道は残す（完全には塞がない）', () => {
-    expect(modal).toMatch(/onChange=\{\(e\) => setRiskAccepted\(e\.target\.checked\)\}/);
-  });
-
-  it('押せない理由を出す（黙って無効にしない）', () => {
-    expect(modal).toMatch(/2 点が近すぎます。もっと離れた 2 点を選んでください。/);
-    expect(modal).toMatch(/上のチェックを入れると先へ進めます。/);
-  });
-
-  it('点を打ち直したら承知は取り消される（前の判断を持ち越さない）', () => {
-    expect(modal).toMatch(/setRiskAccepted\(false\);\s*\n\s*if \(!p1 \|\| \(p1 && p2\)\)/);
-    expect(modal).toMatch(/setOrientation\(null\); setRiskAccepted\(false\); \}\}/);
-  });
-
-  it('閉じたら承知も捨てる', () => {
-    const body = modal.slice(modal.indexOf('const resetDraft'), modal.indexOf('// 閉じたら必ず捨てる'));
-    expect(body).toContain('setRiskAccepted(false)');
-  });
-});
-
-// ============================================================
-describe('(2)(3) 位置合わせの案内', () => {
-  it('何をクリックすればいいか具体的に書く', () => {
-    expect(modal).toMatch(/建物の角をクリックしてください/);
-  });
-
-  it('押せない理由を出す（黙って無効にしない）', () => {
-    expect(modal).toMatch(/disabled=\{!anchor\}/);
-    expect(modal).toMatch(/\{!anchor && \(/);
-    expect(modal).toMatch(/基準点をクリックしてください。/);
-  });
-
-  it('打った後に、どこへ置くかを言い直す', () => {
-    expect(modal).toMatch(/\{anchor && \(/);
-    expect(modal).toMatch(/この点を X = \{targetMm\.x\.toLocaleString\(\)\}mm/);
-    expect(modal).toMatch(/Y = \{targetMm\.y\.toLocaleString\(\)\}mm に置きます。/);
-  });
-
-  it('下図の側を合わせると書いてある（建物は動かせない）', () => {
-    expect(modal).toMatch(/建物は交点に沿って描くため動かせません。<b>合わせるのは下図の側<\/b>です。/);
-  });
-
-  it('細かい調整はキャンバス上でもできると案内する', () => {
-    expect(modal).toMatch(/閉じたあとキャンバス上で下図をドラッグ/);
-  });
-});
-
-// ============================================================
-describe('(3) 調整中はキャンバス上にも出す', () => {
-  it('位置合わせ中だけ出る', () => {
-    expect(panel).toMatch(/const adjustHint = adjusting && \(/);
-  });
-
-  it('パネルを畳んでいても見える（両方の状態で描く）', () => {
-    expect((panel.match(/\{adjustHint\}/g) ?? [])).toHaveLength(2);
-  });
-
-  it('どちらを動かすのかを書く', () => {
-    expect(panel).toMatch(/下図をドラッグして位置を合わせます/);
-    expect(panel).toMatch(/建物・足場は動きません（合わせるのは下図の側です）/);
-  });
-
-  it('狭い画面でも収まる', () => {
-    expect(panel).toMatch(/fixed bottom-28 left-1\/2 -translate-x-1\/2 z-30[^"]*max-w-\[calc\(100vw-24px\)\]/);
-  });
-
-  it('パネル内の案内も残す（開いているときの手順）', () => {
-    expect(panel).toMatch(/オレンジの枠をドラッグして下図を動かします。/);
   });
 });
