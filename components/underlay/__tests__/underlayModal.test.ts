@@ -15,8 +15,9 @@ import fs from 'fs';
 import path from 'path';
 import { useCanvasStore } from '@/stores/canvasStore';
 import {
+  UNDERLAY_ERROR_RISK_MM, UNDERLAY_ERROR_WARN_MM,
   calibrateFromTwoPoints, deviationMm, displayedToImagePx, imagePxToDisplayPercent,
-  measureFromAnchorMm, originForAnchor, identityTransform,
+  isRiskyError, measureFromAnchorMm, originForAnchor, identityTransform,
 } from '@/lib/konva/underlay';
 import type { CanvasData } from '@/types';
 
@@ -158,11 +159,14 @@ describe('精度を守る仕掛け（#5 の 3 つ）', () => {
 
   it('近すぎるうちは次へ進ませない', () => {
     expect(modal).toMatch(/const tooClose = !!p1 && !!p2 && !canCalibrate\(p1, p2\);/);
-    expect(modal).toMatch(/disabled=\{!calib \|\| tooClose\}/);
+    // (1) で「赤なら承知のうえ」も条件に加わった。近すぎたら進めない点は不変。
+    expect(modal).toMatch(/disabled=\{!calib \|\| tooClose \|\|/);
   });
 
   it('誤差の大きさで色を変える（一目で分かる）', () => {
-    expect(modal).toMatch(/errMm > 50 \? 'text-red-300' : errMm > 20 \? 'text-amber-300' : 'text-emerald-300'/);
+    // (1) で生の数値をやめ、しきい値の定数を見るようにした。色分けの意図は不変。
+    expect(modal).toContain("errMm > UNDERLAY_ERROR_RISK_MM ? 'text-red-300'");
+    expect(modal).toContain("errMm > UNDERLAY_ERROR_WARN_MM ? 'text-amber-300' : 'text-emerald-300'");
   });
 
   it('向きは自動推定してから選ばせる（修正3）', () => {
@@ -417,5 +421,52 @@ describe('パネルの置き場所（fix3: 画面からはみ出していた件�
 
   it('調整中に「下図の側を動かす」と案内する', () => {
     expect(panel).toMatch(/建物や足場は動きません（合わせるのは下図の側です）/);
+  });
+});
+
+// ============================================================
+describe('(1) 精度が低いときは、承知のうえでないと先へ進めない', () => {
+  it('しきい値は 1 か所（色分けと判定で同じ値を見る）', () => {
+    expect(UNDERLAY_ERROR_WARN_MM).toBe(20);
+    expect(UNDERLAY_ERROR_RISK_MM).toBe(50);
+    expect(isRiskyError(51)).toBe(true);
+    expect(isRiskyError(50)).toBe(false);
+    expect(isRiskyError(null)).toBe(false);
+    expect(isRiskyError(Infinity)).toBe(false);
+  });
+
+  it('色分けも同じ定数を使う（数値が散らない）', () => {
+    expect(modal).toMatch(/errMm > UNDERLAY_ERROR_RISK_MM \? 'text-red-300'/);
+    expect(modal).toMatch(/errMm > UNDERLAY_ERROR_WARN_MM \? 'text-amber-300'/);
+    // 生の数値で書かれていない
+    expect(modal).not.toMatch(/errMm > 50|errMm > 20/);
+  });
+
+  it('赤のときだけチェックを出す', () => {
+    expect(modal).toMatch(/\{risky && \(/);
+    expect(modal).toMatch(/精度が低いことを承知で進む/);
+  });
+
+  it('チェックしないと次へ進めない', () => {
+    expect(modal).toMatch(/disabled=\{!calib \|\| tooClose \|\| \(risky && !riskAccepted\)\}/);
+  });
+
+  it('逃げ道は残す（完全には塞がない）', () => {
+    expect(modal).toMatch(/onChange=\{\(e\) => setRiskAccepted\(e\.target\.checked\)\}/);
+  });
+
+  it('押せない理由を出す（黙って無効にしない）', () => {
+    expect(modal).toMatch(/2 点が近すぎます。もっと離れた 2 点を選んでください。/);
+    expect(modal).toMatch(/上のチェックを入れると先へ進めます。/);
+  });
+
+  it('点を打ち直したら承知は取り消される（前の判断を持ち越さない）', () => {
+    expect(modal).toMatch(/setRiskAccepted\(false\);\s*\n\s*if \(!p1 \|\| \(p1 && p2\)\)/);
+    expect(modal).toMatch(/setOrientation\(null\); setRiskAccepted\(false\); \}\}/);
+  });
+
+  it('閉じたら承知も捨てる', () => {
+    const body = modal.slice(modal.indexOf('const resetDraft'), modal.indexOf('// 閉じたら必ず捨てる'));
+    expect(body).toContain('setRiskAccepted(false)');
   });
 });

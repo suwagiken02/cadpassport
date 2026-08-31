@@ -20,8 +20,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasStore } from '@/stores/canvasStore';
 import NumInput from '@/components/ui/NumInput';
 import {
-  UNDERLAY_DEFAULT_OPACITY, UNDERLAY_MIN_CALIB_PX,
-  calibrateFromTwoPoints, canCalibrate, clickErrorImagePx, estimatedErrorMm, guessOrientation,
+  UNDERLAY_DEFAULT_OPACITY, UNDERLAY_ERROR_RISK_MM, UNDERLAY_ERROR_WARN_MM, UNDERLAY_MIN_CALIB_PX,
+  calibrateFromTwoPoints, canCalibrate, clickErrorImagePx, isRiskyError, estimatedErrorMm, guessOrientation,
   deviationMm, identityTransform, imageDistancePx, imageSpanMm, measureFromAnchorMm,
   originForAnchor, type CalibOrientation, type UnderlayTransform,
 } from '@/lib/konva/underlay';
@@ -81,6 +81,12 @@ export default function UnderlayModal() {
    * 差を出すが、入れなくても実寸は見えるので必須にはしない。
    */
   const [expectMm, setExpectMm] = useState<{ x: string; y: string }>({ x: '', y: '' });
+  /**
+   * 精度が低いことを承知したか。**赤（見込み誤差が大きい）のときだけ**求める。
+   * 完全に塞ぐと「概算で構わない」場面で詰むので、逃げ道は残す。
+   * 点を打ち直したら要求し直す（前の承知を持ち越さない）。
+   */
+  const [riskAccepted, setRiskAccepted] = useState(false);
 
   /** すべての下書きを捨てる（閉じる・やり直す）。 */
   const resetDraft = useCallback(() => {
@@ -89,7 +95,7 @@ export default function UnderlayModal() {
     setLocalUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setP1(null); setP2(null); setRealMm(4550); setOrientation(null);
     setAnchor(null); setTargetMm({ x: 0, y: 0 }); setCheckPoint(null);
-    setExpectMm({ x: '', y: '' });
+    setExpectMm({ x: '', y: '' }); setRiskAccepted(false);
   }, []);
 
   // 閉じたら必ず捨てる（中途半端な状態を残さない・ローカル URL も解放する）。
@@ -110,6 +116,8 @@ export default function UnderlayModal() {
   const setStepPick = useRef<((p: Point) => void) | null>(null);
   setStepPick.current = (p: Point) => {
     if (step === 'scale') {
+      // 打ち直したら「承知のうえ」も取り消す（前の判断を持ち越さない）。
+      setRiskAccepted(false);
       if (!p1 || (p1 && p2)) { setP1(p); setP2(null); setOrientation(null); return; }
       setP2(p);
       setOrientation(guessOrientation(p1, p));
@@ -142,6 +150,9 @@ export default function UnderlayModal() {
       distPx, imageSpanMm(nat.w, nat.h, calib.scale), clickErrorImagePx(vp.displayScale),
     );
   }, [calib, distPx, nat.w, nat.h, vp.displayScale]);
+
+  /** 見込み誤差が大きいか（＝承知のうえかを確かめる）。 */
+  const risky = isRiskyError(errMm);
 
   /** 位置まで決めた変換。 */
   const transform: UnderlayTransform | null = useMemo(() => {
@@ -310,11 +321,12 @@ export default function UnderlayModal() {
                     </div>
                     {errMm != null && Number.isFinite(errMm) && (
                       <>
-                        <div className={errMm > 50 ? 'text-red-300' : errMm > 20 ? 'text-amber-300' : 'text-emerald-300'}>
+                        <div className={errMm > UNDERLAY_ERROR_RISK_MM ? 'text-red-300'
+                          : errMm > UNDERLAY_ERROR_WARN_MM ? 'text-amber-300' : 'text-emerald-300'}>
                           この 2 点だと、図面の反対側で <b>約 {Math.round(errMm)}mm</b> ずれる見込みです
                           <span className="opacity-70">（表示倍率 {(vp.displayScale * 100).toFixed(0)}% で狙った場合）</span>
                         </div>
-                        {errMm > 20 && (
+                        {errMm > UNDERLAY_ERROR_WARN_MM && (
                           <div className="text-amber-300">
                             拡大してから打ち直すと精度が上がります。
                             {vp.displayScale < 1 && (
@@ -340,12 +352,38 @@ export default function UnderlayModal() {
                     </div>
                   </div>
                 )}
+                {/* 赤（精度が低い）のときだけ、承知のうえかを確かめる。
+                    完全に塞ぐと「概算で構わない」場面で詰むので、逃げ道は残す。 */}
+                {risky && (
+                  <label className="flex items-start gap-2 text-[11px] text-red-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox" checked={riskAccepted}
+                      onChange={(e) => setRiskAccepted(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      精度が低いことを承知で進む<br />
+                      <span className="opacity-80">
+                        （拡大して打ち直すか、もっと離れた 2 点を選ぶと精度が上がります）
+                      </span>
+                    </span>
+                  </label>
+                )}
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => { setP1(null); setP2(null); setOrientation(null); }}
+                  <button type="button"
+                    onClick={() => { setP1(null); setP2(null); setOrientation(null); setRiskAccepted(false); }}
                     className={`${btn} bg-dark-border text-canvas`}>点を打ち直す</button>
-                  <button type="button" disabled={!calib || tooClose} onClick={() => setStep('place')}
+                  <button type="button" disabled={!calib || tooClose || (risky && !riskAccepted)}
+                    onClick={() => setStep('place')}
                     className={`${btn} bg-accent text-white disabled:opacity-40`}>次へ（位置合わせ）</button>
                 </div>
+                {/* 押せないときは理由を出す（黙って無効にしない）。 */}
+                {p1 && p2 && tooClose && (
+                  <p className="text-[11px] text-red-300">2 点が近すぎます。もっと離れた 2 点を選んでください。</p>
+                )}
+                {risky && !riskAccepted && !tooClose && (
+                  <p className="text-[11px] text-red-300">上のチェックを入れると先へ進めます。</p>
+                )}
               </div>
             )}
 

@@ -36,6 +36,21 @@ import type { Point } from '@/types';
  */
 export const UNDERLAY_MIN_CALIB_PX = 500;
 /**
+ * 合わせ込みの精度の目安(mm) (= 図面の反対側での見込み誤差)。
+ * 色分けにも「先へ進ませるか」の判定にも、この 2 つだけを使う
+ * （ばらばらの数値が散らないよう 1 か所に置く）。
+ *   〜20mm  … 良好（緑）
+ *   〜50mm  … 実用（橙）。拡大を促す
+ *   50mm 超 … 精度が低い（赤）。承知のうえでないと先へ進ませない
+ */
+export const UNDERLAY_ERROR_WARN_MM = 20;
+export const UNDERLAY_ERROR_RISK_MM = 50;
+
+/** その見込み誤差は「承知のうえ」を求めるほど大きいか。 */
+export const isRiskyError = (errMm: number | null): boolean =>
+  errMm != null && Number.isFinite(errMm) && errMm > UNDERLAY_ERROR_RISK_MM;
+
+/**
  * クリックの誤差の見積もり。**単位は「表示上の px」**。
  *
  * 人が点を狙うときにずれるのは、画像の画素ではなく**画面で見えている px**。
