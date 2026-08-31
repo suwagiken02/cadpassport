@@ -243,7 +243,9 @@ describe('レイヤーの置き場所と、壊れない作り', () => {
   });
 
   it('下図が無ければ何も描かない（既存の図面はノードが増えない）', () => {
-    expect(layer).toMatch(/if \(!underlay \|\| !image\) return null;/);
+    // U-1 commit 3 で「一時的に隠す」を足したので条件が 1 つ増えた。
+    //   「下図が無い／画像が取れていないなら描かない」という意図は変えていない。
+    expect(layer).toMatch(/if \(!underlay \|\| !image \|\| hidden\) return null;/);
   });
 
   it('読めなくても画面を壊さない（背景を出さないだけ）', () => {

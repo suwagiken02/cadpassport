@@ -13,6 +13,7 @@ import {
 } from '@/lib/konva/gridUtils';
 import AidLayer from './AidLayer';
 import UnderlayLayer from './UnderlayLayer';
+import UnderlayAdjustLayer from './UnderlayAdjustLayer';
 import SiteLayer from './SiteLayer';
 import SiteStartGuideLayer from './SiteStartGuideLayer';
 import BuildingLayer from './BuildingLayer';
@@ -650,6 +651,9 @@ export default function GridCanvas({ width, height }: Props) {
         {gridLines()}
         {gridGuideLines()}
       </Layer>
+
+      {/* 下図の位置合わせ（U-1・調整中だけ出る透明な板） */}
+      <UnderlayAdjustLayer />
 
       {/* 作図の補助（E-8-v5c・建物より背面＝主役を隠さない） */}
       <AidLayer />

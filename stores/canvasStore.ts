@@ -509,6 +509,18 @@ type CanvasStore = {
    */
   underlayStatus: import('@/lib/underlay/imageCache').UnderlayLoadStatus;
   setUnderlayStatus: (s: import('@/lib/underlay/imageCache').UnderlayLoadStatus) => void;
+  /** 下図モーダルを開いているか。 */
+  showUnderlayModal: boolean;
+  setShowUnderlayModal: (v: boolean) => void;
+  /** 位置合わせ中か（キャンバス上で背景をドラッグできる状態）。 */
+  underlayAdjusting: boolean;
+  setUnderlayAdjusting: (v: boolean) => void;
+  /**
+   * 下図を一時的に隠しているか。**図面データではない**ので canvasData には入れない
+   * （履歴にも保存にも乗せない）。重なりを目で比べるための一時的な切り替え。
+   */
+  underlayHidden: boolean;
+  setUnderlayHidden: (v: boolean) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1568,6 +1580,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       isDirty: true,
     });
   },
+  showUnderlayModal: false,
+  setShowUnderlayModal: (v) => set({ showUnderlayModal: v }),
+  underlayAdjusting: false,
+  setUnderlayAdjusting: (v) => set({ underlayAdjusting: v }),
+  underlayHidden: false,
+  setUnderlayHidden: (v) => set({ underlayHidden: v }),
   underlayStatus: 'idle',
   setUnderlayStatus: (v) => {
     // 同じ値なら書かない（毎レンダーの set で再描画が回るのを防ぐ）。

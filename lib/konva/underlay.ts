@@ -268,6 +268,32 @@ export const clampOpacity = (v: number): number => {
   return Math.min(UNDERLAY_MAX_OPACITY, Math.max(UNDERLAY_MIN_OPACITY, v));
 };
 
+/**
+ * 画面に表示した画像の上でのクリックを、**元の画像の px** に直す。
+ * モーダルでは画像を縮めて表示するので、そのままの座標では合わせ込みがずれる。
+ */
+export function displayedToImagePx(
+  clientX: number, clientY: number,
+  rect: { left: number; top: number; width: number; height: number },
+  naturalWidth: number, naturalHeight: number,
+): Point | null {
+  if (!(rect.width > 0) || !(rect.height > 0)) return null;
+  return {
+    x: ((clientX - rect.left) / rect.width) * naturalWidth,
+    y: ((clientY - rect.top) / rect.height) * naturalHeight,
+  };
+}
+
+/** 画像 px → 表示中の画像の中での位置(%)。打った点の印を出すのに使う。 */
+export function imagePxToDisplayPercent(
+  p: Point, naturalWidth: number, naturalHeight: number,
+): { left: number; top: number } {
+  return {
+    left: naturalWidth > 0 ? (p.x / naturalWidth) * 100 : 0,
+    top: naturalHeight > 0 ? (p.y / naturalHeight) * 100 : 0,
+  };
+}
+
 // ============================================================
 // 保存する場所
 // ============================================================

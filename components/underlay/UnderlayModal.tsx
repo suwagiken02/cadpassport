@@ -1,0 +1,337 @@
+'use client';
+
+// ============================================================
+// 下図の合わせ込み (= U-1 commit 3)。
+//
+// 流れ: 読み込み → 2 点クリック → 実寸入力 → 位置合わせ → ずれの確認 → 確定
+//
+// ■ 中断しても残骸を作らない
+// 下書き（打った点・実寸・向き・縮小した画像）は**すべてこのコンポーネントの
+// ローカル state**に持つ。モーダルを閉じれば React が丸ごと捨てるので、
+// 中途半端な状態が残りようがない。ストアにも canvasData にも書かない。
+// Storage へ上げるのも**最後の「確定」の 1 回だけ**なので、途中でやめても
+// 孤児の画像は 1 枚も生まれない。
+//
+// ■ 精度が最優先
+// 2 点が近いと図面の反対側で大きくずれる。距離と**推定誤差(mm)**を出しっぱなしにし、
+// 近すぎるうちは次へ進ませない。合わせたあとは 3 点目でずれを実測できる。
+// ============================================================
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCanvasStore } from '@/stores/canvasStore';
+import NumInput from '@/components/ui/NumInput';
+import {
+  UNDERLAY_DEFAULT_OPACITY, UNDERLAY_MIN_CALIB_PX,
+  calibrateFromTwoPoints, canCalibrate, displayedToImagePx, estimatedErrorMm, guessOrientation,
+  identityTransform, imageDistancePx, imagePxToDisplayPercent, imageSpanMm, misalignmentMm,
+  originForAnchor, type CalibOrientation, type UnderlayTransform,
+} from '@/lib/konva/underlay';
+import { prepareUnderlayImage, uploadUnderlay, type PreparedImage } from '@/lib/underlay/underlayStorage';
+import { forgetUnderlayImage } from '@/lib/underlay/underlayImage';
+import type { Point } from '@/types';
+
+type Step = 'load' | 'scale' | 'place' | 'verify';
+
+/** 打った点の印。 */
+function Marker({ p, w, h, label, tone }: {
+  p: Point; w: number; h: number; label: string; tone: string;
+}) {
+  const { left, top } = imagePxToDisplayPercent(p, w, h);
+  return (
+    <div
+      className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2"
+      style={{ left: `${left}%`, top: `${top}%` }}
+    >
+      <div className="w-4 h-4 rounded-full border-2" style={{ borderColor: tone }} />
+      <div className="absolute left-5 top-0 text-[10px] font-bold" style={{ color: tone }}>{label}</div>
+    </div>
+  );
+}
+
+export default function UnderlayModal() {
+  const open = useCanvasStore((s) => s.showUnderlayModal);
+  const existing = useCanvasStore((s) => s.canvasData.underlay);
+
+  const [step, setStep] = useState<Step>('load');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  /** 縮小済みの画像（まだ上げていない）。 */
+  const [prepared, setPrepared] = useState<PreparedImage | null>(null);
+  /** 表示用のローカル URL（この画面の中だけ・閉じるときに解放する）。 */
+  const [localUrl, setLocalUrl] = useState<string | null>(null);
+
+  const [p1, setP1] = useState<Point | null>(null);
+  const [p2, setP2] = useState<Point | null>(null);
+  const [realMm, setRealMm] = useState(4550);
+  const [orientation, setOrientation] = useState<CalibOrientation | null>(null);
+  /** 位置合わせの基準点（画像上）と、その置き先（グリッド）。 */
+  const [anchor, setAnchor] = useState<Point | null>(null);
+  const [targetMm, setTargetMm] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  /** ずれの確認に打った 3 点目。 */
+  const [checkPoint, setCheckPoint] = useState<Point | null>(null);
+
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  /** すべての下書きを捨てる（閉じる・やり直す）。 */
+  const resetDraft = useCallback(() => {
+    setStep('load'); setBusy(null); setError(null);
+    setPrepared(null);
+    setLocalUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setP1(null); setP2(null); setRealMm(4550); setOrientation(null);
+    setAnchor(null); setTargetMm({ x: 0, y: 0 }); setCheckPoint(null);
+  }, []);
+
+  // 閉じたら必ず捨てる（中途半端な状態を残さない・ローカル URL も解放する）。
+  useEffect(() => { if (!open) resetDraft(); }, [open, resetDraft]);
+  // 画面から消えるときも解放する（保存し忘れのメモリを残さない）。
+  useEffect(() => () => { setLocalUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; }); }, []);
+
+  const nat = { w: prepared?.widthPx ?? 0, h: prepared?.heightPx ?? 0 };
+
+  /** 2 点から決まる縮尺と回転（位置はまだ決まらない）。 */
+  const calib = useMemo(() => {
+    if (!p1 || !p2) return null;
+    return calibrateFromTwoPoints(p1, p2, realMm, orientation ?? undefined);
+  }, [p1, p2, realMm, orientation]);
+
+  const distPx = p1 && p2 ? imageDistancePx(p1, p2) : 0;
+  const tooClose = !!p1 && !!p2 && !canCalibrate(p1, p2);
+  /** 図面の反対側での見込み誤差(mm)。 */
+  const errMm = useMemo(() => {
+    if (!calib || !distPx) return null;
+    return estimatedErrorMm(distPx, imageSpanMm(nat.w, nat.h, calib.scale));
+  }, [calib, distPx, nat.w, nat.h]);
+
+  /** 位置まで決めた変換。 */
+  const transform: UnderlayTransform | null = useMemo(() => {
+    if (!calib) return null;
+    const base = anchor ?? { x: 0, y: 0 };
+    const origin = originForAnchor(
+      base, { x: targetMm.x / 10, y: targetMm.y / 10 }, calib.scale, calib.rotationDeg,
+    );
+    return { ...identityTransform(), scale: calib.scale, rotationDeg: calib.rotationDeg, originGrid: origin };
+  }, [calib, anchor, targetMm]);
+
+  /** 3 点目のずれ。 */
+  const gap = useMemo(
+    () => (checkPoint && transform ? misalignmentMm(checkPoint, transform) : null),
+    [checkPoint, transform],
+  );
+
+  if (!open) return null;
+
+  const onPickFile = async (file: File) => {
+    setError(null);
+    setBusy('画像を読み込んでいます…');
+    try {
+      const prep = await prepareUnderlayImage(file);
+      setLocalUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(prep.blob); });
+      setPrepared(prep);
+      setStep('scale');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '画像を読み込めませんでした');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 画像の上のクリックを、元画像の px に直して受ける。 */
+  const onImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    const el = imgRef.current;
+    if (!el || !prepared) return;
+    const r = el.getBoundingClientRect();
+    const p = displayedToImagePx(e.clientX, e.clientY, r, prepared.widthPx, prepared.heightPx);
+    if (!p) return;
+    if (step === 'scale') {
+      if (!p1 || (p1 && p2)) { setP1(p); setP2(null); setOrientation(null); return; }
+      setP2(p);
+      setOrientation(guessOrientation(p1, p));
+      return;
+    }
+    if (step === 'place') { setAnchor(p); return; }
+    if (step === 'verify') { setCheckPoint(p); }
+  };
+
+  const confirm = async () => {
+    const s = useCanvasStore.getState();
+    if (!prepared || !transform || !s.projectId || !s.drawingId) {
+      setError('保存先が分かりません。ページを開き直してください');
+      return;
+    }
+    setBusy('保存しています…');
+    setError(null);
+    try {
+      const id = `u${Date.now().toString(36)}`;
+      const path = await uploadUnderlay(s.projectId, s.drawingId, id, prepared);
+      // 同じパスの古い画像が取ってあれば捨てる（差し替えで前の絵が出ないように）。
+      if (existing?.storagePath) forgetUnderlayImage(existing.storagePath);
+      s.setUnderlay({
+        id, storagePath: path,
+        widthPx: prepared.widthPx, heightPx: prepared.heightPx,
+        transform, opacity: existing?.opacity ?? UNDERLAY_DEFAULT_OPACITY,
+      });
+      s.setShowUnderlayModal(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存できませんでした');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const close = () => useCanvasStore.getState().setShowUnderlayModal(false);
+  const btn = 'px-4 py-2 rounded-xl text-sm font-bold';
+
+  return (
+    <div className="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+      <div className="bg-dark-surface border border-dark-border rounded-2xl p-5 w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base text-canvas font-bold">下図（したず）</h2>
+          <button type="button" onClick={close} className="text-dimension hover:text-canvas px-2">✕</button>
+        </div>
+
+        {error && (
+          <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/15 text-red-300 text-xs">{error}</div>
+        )}
+        {busy && <div className="mb-3 text-xs text-dimension">{busy}</div>}
+
+        {/* --- 1. 読み込み --- */}
+        {step === 'load' && (
+          <div className="space-y-3">
+            <p className="text-xs text-dimension leading-relaxed">
+              平面図の画像（JPEG / PNG・10MB まで）を選びます。<br />
+              長辺が 4000px を超える画像は、送る前に自動で縮小します。
+            </p>
+            <input
+              type="file" accept="image/jpeg,image/png"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickFile(f); }}
+              className="text-xs text-canvas"
+            />
+            {existing && (
+              <p className="text-[11px] text-dimension">
+                いまの下図を置き換えます（元の画像は残るので、あとから消せます）。
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* --- 画像（2〜4 ステップ共通） --- */}
+        {step !== 'load' && localUrl && (
+          <>
+            <div className="relative inline-block w-full mb-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={imgRef} src={localUrl} alt="下図"
+                onClick={onImageClick}
+                className="w-full h-auto cursor-crosshair select-none rounded-lg border border-dark-border"
+                draggable={false}
+              />
+              {p1 && <Marker p={p1} w={nat.w} h={nat.h} label="1" tone="#F59E0B" />}
+              {p2 && <Marker p={p2} w={nat.w} h={nat.h} label="2" tone="#F59E0B" />}
+              {anchor && <Marker p={anchor} w={nat.w} h={nat.h} label="基準" tone="#2563EB" />}
+              {checkPoint && <Marker p={checkPoint} w={nat.w} h={nat.h} label="確認" tone="#10B981" />}
+            </div>
+
+            {/* --- 2. 縮尺と回転 --- */}
+            {step === 'scale' && (
+              <div className="space-y-3">
+                <p className="text-xs text-dimension leading-relaxed">
+                  寸法線の<b className="text-canvas">両端を 2 か所クリック</b>し、その実寸を入れてください。<br />
+                  <b className="text-canvas">できるだけ離れた 2 点</b>を選ぶほど、図面の反対側での誤差が小さくなります。
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-dimension">実寸</span>
+                  <NumInput value={realMm} onChange={(v) => setRealMm(Math.max(1, Math.round(v)))} min={1} step={50} />
+                  <span className="text-xs text-canvas">mm</span>
+                </div>
+                {p1 && p2 && (
+                  <div className="text-[11px] space-y-1">
+                    <div className="text-dimension">
+                      2 点の間隔: <b className="text-canvas">{Math.round(distPx)}px</b>
+                      {tooClose && <span className="text-red-300 ml-2">近すぎます（{UNDERLAY_MIN_CALIB_PX}px 以上離してください）</span>}
+                    </div>
+                    {errMm != null && Number.isFinite(errMm) && (
+                      <div className={errMm > 50 ? 'text-red-300' : errMm > 20 ? 'text-amber-300' : 'text-emerald-300'}>
+                        この 2 点だと、図面の反対側で <b>約 {Math.round(errMm)}mm</b> ずれる見込みです
+                      </div>
+                    )}
+                    <div className="text-dimension">
+                      向き:
+                      {(['horizontal', 'vertical'] as const).map((o) => (
+                        <button
+                          key={o} type="button" onClick={() => setOrientation(o)}
+                          className={`ml-2 px-2 py-0.5 rounded ${(orientation ?? guessOrientation(p1, p2)) === o
+                            ? 'bg-accent text-white' : 'bg-dark-border text-canvas'}`}
+                        >
+                          {o === 'horizontal' ? '横の寸法' : '縦の寸法'}
+                        </button>
+                      ))}
+                      <span className="ml-2">（自動で推定しています。違っていたら押して切り替えてください）</span>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setP1(null); setP2(null); setOrientation(null); }}
+                    className={`${btn} bg-dark-border text-canvas`}>点を打ち直す</button>
+                  <button type="button" disabled={!calib || tooClose} onClick={() => setStep('place')}
+                    className={`${btn} bg-accent text-white disabled:opacity-40`}>次へ（位置合わせ）</button>
+                </div>
+              </div>
+            )}
+
+            {/* --- 3. 位置合わせ --- */}
+            {step === 'place' && (
+              <div className="space-y-3">
+                <p className="text-xs text-dimension leading-relaxed">
+                  図面の中で<b className="text-canvas">位置の基準にする点</b>（建物の角など）をクリックし、
+                  その点をキャンバスのどこに置くかを入れてください。<br />
+                  細かい調整は、閉じたあとキャンバス上で背景をドラッグしてもできます。
+                </p>
+                <div className="flex items-center gap-2 flex-wrap text-[11px] text-dimension">
+                  <span>置き先 X</span>
+                  <NumInput value={targetMm.x} onChange={(v) => setTargetMm((t) => ({ ...t, x: v }))} step={1000} />
+                  <span>Y</span>
+                  <NumInput value={targetMm.y} onChange={(v) => setTargetMm((t) => ({ ...t, y: v }))} step={1000} />
+                  <span className="text-xs text-canvas">mm</span>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setStep('scale')} className={`${btn} bg-dark-border text-canvas`}>戻る</button>
+                  <button type="button" disabled={!anchor} onClick={() => setStep('verify')}
+                    className={`${btn} bg-accent text-white disabled:opacity-40`}>次へ（ずれの確認）</button>
+                </div>
+              </div>
+            )}
+
+            {/* --- 4. ずれの確認 --- */}
+            {step === 'verify' && (
+              <div className="space-y-3">
+                <p className="text-xs text-dimension leading-relaxed">
+                  合わせ込みの確かめです。<b className="text-canvas">最初の 2 点から遠い場所</b>にある
+                  通り芯の交点をクリックしてください。そこがグリッドの交点から何 mm ずれているかを出します。
+                </p>
+                {gap ? (
+                  <div className="text-[11px] space-y-1">
+                    <div className={gap.distanceMm > 100 ? 'text-red-300' : gap.distanceMm > 50 ? 'text-amber-300' : 'text-emerald-300'}>
+                      グリッドの交点から <b>約 {Math.round(gap.distanceMm)}mm</b> ずれています
+                      （X {Math.round(gap.dxMm)}mm / Y {Math.round(gap.dyMm)}mm）
+                    </div>
+                    <div className="text-dimension">
+                      目安: 10mm 以下＝良好 ／ 50mm 以下＝実用 ／ 100mm 超＝撮り直しか歪み補正が必要
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-dimension">交点をクリックすると、ずれを表示します（省略もできます）。</div>
+                )}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setCheckPoint(null); setStep('place'); }}
+                    className={`${btn} bg-dark-border text-canvas`}>戻る</button>
+                  <button type="button" disabled={!transform || !!busy} onClick={() => void confirm()}
+                    className={`${btn} bg-accent text-white disabled:opacity-40`}>この内容で確定</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

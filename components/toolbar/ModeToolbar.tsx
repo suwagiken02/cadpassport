@@ -243,6 +243,18 @@ export default function ModeToolbar() {
               <span className="text-3xl mb-1">▱</span>
               <span className="text-sm font-bold">敷地</span>
             </button>
+            {/* U-1: 下図。取り込んだ平面図を背景に敷き、グリッドと目盛りを一致させる。 */}
+            <button
+              data-tutorial-id="kutai-underlay"
+              onClick={() => {
+                useCanvasStore.getState().setShowUnderlayModal(true);
+                setShowKutaiMenu(false);
+              }}
+              className="flex flex-col items-center justify-center w-24 h-24 rounded-xl bg-accent/10 border-2 border-accent text-accent hover:bg-accent/20 transition-colors"
+            >
+              <span className="text-3xl mb-1">🖼</span>
+              <span className="text-sm font-bold">下図</span>
+            </button>
           </div>
         </>
       )}

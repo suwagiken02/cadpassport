@@ -33,6 +33,7 @@ export default function UnderlayLayer() {
   const panX = useCanvasStore((s) => s.panX);
   const panY = useCanvasStore((s) => s.panY);
   const setUnderlayStatus = useCanvasStore((s) => s.setUnderlayStatus);
+  const hidden = useCanvasStore((s) => s.underlayHidden);
 
   const path = underlay?.storagePath;
   // 既に取ってあれば最初の描画から出す（ページを戻ったときにちらつかない）。
@@ -58,7 +59,9 @@ export default function UnderlayLayer() {
     return () => { alive = false; };
   }, [path, setUnderlayStatus]);
 
-  if (!underlay || !image) return null;
+  // hidden は「見比べるための一時的な切り替え」。取得はそのまま続ける（消してから
+  //   戻すたびに読み直さない）。
+  if (!underlay || !image || hidden) return null;
 
   const gridPx = INITIAL_GRID_PX * zoom;
   const t = underlay.transform;
