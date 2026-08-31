@@ -123,6 +123,16 @@ export default function PageTabsContainer() {
     setBusy(true);
     try {
       const nextActive = drawingId ? nextActiveAfterDelete(pages, id, drawingId) : null;
+      // U-1: 物件削除と同じく **Storage が先**（行を消すと権限を失って消せなくなる）。
+      //   消せなくてもページの削除は進める。
+      if (projectId) {
+        try {
+          const { removeUnderlaysForDrawing } = await import('@/lib/underlay/underlayStorage');
+          await removeUnderlaysForDrawing(projectId, id);
+        } catch (e) {
+          console.warn('[handleDelete] 下図の画像を削除できませんでした', e);
+        }
+      }
       const { error } = await supabase.from('drawings').delete().eq('id', id);
       if (error) {
         alert(`ページ削除エラー: ${error.message}`);

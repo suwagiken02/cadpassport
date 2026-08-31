@@ -148,6 +148,17 @@ export default function ProjectsPage() {
 
   const deleteProject = async (id: string) => {
     if (!confirm('このプロジェクトを削除しますか？')) return;
+    // U-1: **必ず Storage が先**。下図のアクセス権は「その物件の持ち主か」を
+    //   projects へ問い合わせて判定しているので、行を先に消すと誰も消せなくなり、
+    //   画像が永久に残る。
+    //   ただし消せなくても物件の削除は進める（容量が残るだけで整合性は壊れない。
+    //   通信の失敗など一時的な理由で物件を消せない方が困る）。
+    try {
+      const { removeUnderlaysForProject } = await import('@/lib/underlay/underlayStorage');
+      await removeUnderlaysForProject(id);
+    } catch (e) {
+      console.warn('[deleteProject] 下図の画像を削除できませんでした', e);
+    }
     await supabase.from('drawings').delete().eq('project_id', id);
     await supabase.from('projects').delete().eq('id', id);
     setProjects((prev) => prev.filter((p) => p.id !== id));

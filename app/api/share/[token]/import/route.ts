@@ -27,6 +27,19 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  *   - 元データ無変更 (= 取り込みはコピー作成のみ)
  *   - 部分失敗ロールバック (= 新 projects 削除で cascade 削除)
  */
+/**
+ * 下図の参照を落とす (= U-1)。画像は元の持ち主の Storage にあるので、
+ * 取り込んだ人は読めない。参照を残すと「読めない下図」になるだけなので消す。
+ */
+function stripUnderlay(canvasData: unknown): unknown {
+  if (!canvasData || typeof canvasData !== 'object') return canvasData;
+  const cv = canvasData as Record<string, unknown>;
+  if (!('underlay' in cv)) return canvasData;
+  const next = { ...cv };
+  delete next.underlay;
+  return next;
+}
+
 export async function POST(_request: Request, { params }: { params: { token: string } }) {
   // Step 1: token 形式確認
   const token = params.token;
@@ -123,7 +136,10 @@ export async function POST(_request: Request, { params }: { params: { token: str
     const newDrawings = srcDrawings.map(d => ({
       project_id: newProjectId,
       title: d.title,
-      canvas_data: d.canvas_data,
+      // U-1: 下図（背景の平面図）は引き継がない。画像は元の持ち主の Storage に
+      //   あり、取り込んだ人には読む権限が無い。参照だけ残すと「読めない下図」に
+      //   なるので、ここで落としておく（合わせ込みの情報も一緒に消える）。
+      canvas_data: stripUnderlay(d.canvas_data),
       // thumbnail_url は NULL (= 実装上未使用、 schema 定義のみ)
     }));
     const { error: drawingsInsertError } = await supabaseAdmin

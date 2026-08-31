@@ -211,8 +211,18 @@ export default function UnderlayModal() {
     try {
       const id = `u${Date.now().toString(36)}`;
       const path = await uploadUnderlay(s.projectId, s.drawingId, id, prepared);
-      // 同じパスの古い画像が取ってあれば捨てる（差し替えで前の絵が出ないように）。
-      if (existing?.storagePath) forgetUnderlayImage(existing.storagePath);
+      // 差し替えたら、古い実体と取っておいた画像を捨てる。
+      //   **新しいものを上げたあとに消す**ので、途中で失敗しても表示は壊れない。
+      //   消せなくても確定は進める（容量が残るだけ。物件の削除で回収できる）。
+      if (existing?.storagePath && existing.storagePath !== path) {
+        forgetUnderlayImage(existing.storagePath);
+        try {
+          const { removeUnderlayObject } = await import('@/lib/underlay/underlayStorage');
+          await removeUnderlayObject(existing.storagePath);
+        } catch (e) {
+          console.warn('[underlay] 古い画像を削除できませんでした', e);
+        }
+      }
       s.setUnderlay({
         id, storagePath: path,
         widthPx: prepared.widthPx, heightPx: prepared.heightPx,
