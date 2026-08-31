@@ -142,7 +142,18 @@ describe('精度を守る仕掛け（#5 の 3 つ）', () => {
 
   it('推定誤差を mm で見せる', () => {
     expect(modal).toMatch(/図面の反対側で <b>約 \{Math\.round\(errMm\)\}mm<\/b> ずれる見込み/);
-    expect(modal).toMatch(/estimatedErrorMm\(distPx, imageSpanMm/);
+    expect(modal).toMatch(/estimatedErrorMm\(\s*distPx, imageSpanMm/);
+  });
+
+  it('誤差は「表示上のクリック誤差」を画像の画素へ直してから見積もる', () => {
+    // 縮小表示のままだと大きく、拡大すれば小さく出る＝実態どおりの数字になる
+    expect(modal).toMatch(/clickErrorImagePx\(vp\.displayScale\)/);
+    // 表示倍率が変われば計算し直す
+    expect(modal).toMatch(/\}, \[calib, distPx, nat\.w, nat\.h, vp\.displayScale\]\);/);
+  });
+
+  it('いまの表示倍率を数字で出す（何倍で狙ったかが分かる）', () => {
+    expect(modal).toMatch(/表示倍率 \{\(vp\.displayScale \* 100\)\.toFixed\(0\)\}%/);
   });
 
   it('近すぎるうちは次へ進ませない', () => {

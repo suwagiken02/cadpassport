@@ -21,28 +21,35 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import NumInput from '@/components/ui/NumInput';
 import {
   UNDERLAY_DEFAULT_OPACITY, UNDERLAY_MIN_CALIB_PX,
-  calibrateFromTwoPoints, canCalibrate, displayedToImagePx, estimatedErrorMm, guessOrientation,
-  identityTransform, imageDistancePx, imagePxToDisplayPercent, imageSpanMm, misalignmentMm,
+  calibrateFromTwoPoints, canCalibrate, clickErrorImagePx, estimatedErrorMm, guessOrientation,
+  identityTransform, imageDistancePx, imageSpanMm, misalignmentMm,
   originForAnchor, type CalibOrientation, type UnderlayTransform,
 } from '@/lib/konva/underlay';
+import { imagePxToView } from '@/lib/konva/imageViewport';
+import { useImageViewport } from './useImageViewport';
 import { prepareUnderlayImage, uploadUnderlay, type PreparedImage } from '@/lib/underlay/underlayStorage';
 import { forgetUnderlayImage } from '@/lib/underlay/underlayImage';
+import type { ImageView } from '@/lib/konva/imageViewport';
 import type { Point } from '@/types';
 
 type Step = 'load' | 'scale' | 'place' | 'verify';
 
-/** 打った点の印。 */
-function Marker({ p, w, h, label, tone }: {
-  p: Point; w: number; h: number; label: string; tone: string;
+/**
+ * 打った点の印。**画像の画素で保持**しているので、拡大・移動しても
+ * 図面上の同じ位置に留まる（表示のたびにビュー座標へ直すだけ）。
+ */
+function Marker({ p, view, label, tone }: {
+  p: Point; view: ImageView; label: string; tone: string;
 }) {
-  const { left, top } = imagePxToDisplayPercent(p, w, h);
+  const v = imagePxToView(view, p.x, p.y);
   return (
     <div
       className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2"
-      style={{ left: `${left}%`, top: `${top}%` }}
+      style={{ left: v.x, top: v.y }}
     >
       <div className="w-4 h-4 rounded-full border-2" style={{ borderColor: tone }} />
-      <div className="absolute left-5 top-0 text-[10px] font-bold" style={{ color: tone }}>{label}</div>
+      <div className="absolute left-5 -top-1 text-[10px] font-bold whitespace-nowrap"
+        style={{ color: tone }}>{label}</div>
     </div>
   );
 }
@@ -70,8 +77,6 @@ export default function UnderlayModal() {
   /** ずれの確認に打った 3 点目。 */
   const [checkPoint, setCheckPoint] = useState<Point | null>(null);
 
-  const imgRef = useRef<HTMLImageElement>(null);
-
   /** すべての下書きを捨てる（閉じる・やり直す）。 */
   const resetDraft = useCallback(() => {
     setStep('load'); setBusy(null); setError(null);
@@ -88,6 +93,28 @@ export default function UnderlayModal() {
 
   const nat = { w: prepared?.widthPx ?? 0, h: prepared?.heightPx ?? 0 };
 
+  /**
+   * 点を打つ（動かさずに離したとき）。座標は**画像の画素**で持つので、
+   * 拡大・移動しても図面上の同じ位置に留まる。
+   */
+  const pick = useCallback((p: Point) => {
+    setStepPick.current?.(p);
+  }, []);
+  /** step ごとの受け口。フックへ渡す関数を毎回作り直さないための箱。 */
+  const setStepPick = useRef<((p: Point) => void) | null>(null);
+  setStepPick.current = (p: Point) => {
+    if (step === 'scale') {
+      if (!p1 || (p1 && p2)) { setP1(p); setP2(null); setOrientation(null); return; }
+      setP2(p);
+      setOrientation(guessOrientation(p1, p));
+      return;
+    }
+    if (step === 'place') { setAnchor(p); return; }
+    if (step === 'verify') { setCheckPoint(p); }
+  };
+
+  const vp = useImageViewport({ naturalWidth: nat.w, naturalHeight: nat.h, onPick: pick });
+
   /** 2 点から決まる縮尺と回転（位置はまだ決まらない）。 */
   const calib = useMemo(() => {
     if (!p1 || !p2) return null;
@@ -96,11 +123,19 @@ export default function UnderlayModal() {
 
   const distPx = p1 && p2 ? imageDistancePx(p1, p2) : 0;
   const tooClose = !!p1 && !!p2 && !canCalibrate(p1, p2);
-  /** 図面の反対側での見込み誤差(mm)。 */
+  /**
+   * 図面の反対側での見込み誤差(mm)。
+   *
+   * 人が狙うときにずれるのは**表示上の px** なので、いまの表示倍率で
+   * 画像の画素へ直してから見積もる。縮小表示のままだと大きく、
+   * 拡大して打てば小さく出る＝実態どおりの数字になる。
+   */
   const errMm = useMemo(() => {
     if (!calib || !distPx) return null;
-    return estimatedErrorMm(distPx, imageSpanMm(nat.w, nat.h, calib.scale));
-  }, [calib, distPx, nat.w, nat.h]);
+    return estimatedErrorMm(
+      distPx, imageSpanMm(nat.w, nat.h, calib.scale), clickErrorImagePx(vp.displayScale),
+    );
+  }, [calib, distPx, nat.w, nat.h, vp.displayScale]);
 
   /** 位置まで決めた変換。 */
   const transform: UnderlayTransform | null = useMemo(() => {
@@ -133,23 +168,6 @@ export default function UnderlayModal() {
     } finally {
       setBusy(null);
     }
-  };
-
-  /** 画像の上のクリックを、元画像の px に直して受ける。 */
-  const onImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    const el = imgRef.current;
-    if (!el || !prepared) return;
-    const r = el.getBoundingClientRect();
-    const p = displayedToImagePx(e.clientX, e.clientY, r, prepared.widthPx, prepared.heightPx);
-    if (!p) return;
-    if (step === 'scale') {
-      if (!p1 || (p1 && p2)) { setP1(p); setP2(null); setOrientation(null); return; }
-      setP2(p);
-      setOrientation(guessOrientation(p1, p));
-      return;
-    }
-    if (step === 'place') { setAnchor(p); return; }
-    if (step === 'verify') { setCheckPoint(p); }
   };
 
   const confirm = async () => {
@@ -217,18 +235,41 @@ export default function UnderlayModal() {
         {/* --- 画像（2〜4 ステップ共通） --- */}
         {step !== 'load' && localUrl && (
           <>
-            <div className="relative inline-block w-full mb-3">
+            {/* 拡大・移動できる画像。狙って点を打つには縮小表示のままでは足りない
+                （A3 を 700px で見ると表示上の 1px が図面の 5.7px にあたる）。 */}
+            <div
+              ref={vp.containerRef}
+              {...vp.handlers}
+              className="relative w-full h-[46vh] min-h-[240px] mb-2 overflow-hidden rounded-lg border border-dark-border bg-black/20 cursor-crosshair select-none"
+              style={{ touchAction: 'none' }}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                ref={imgRef} src={localUrl} alt="下図"
-                onClick={onImageClick}
-                className="w-full h-auto cursor-crosshair select-none rounded-lg border border-dark-border"
+                src={localUrl} alt="下図"
+                width={nat.w} height={nat.h}
+                className="absolute left-0 top-0 max-w-none pointer-events-none"
+                style={{
+                  width: nat.w, height: nat.h, transformOrigin: '0 0',
+                  transform: `translate(${vp.view.tx}px, ${vp.view.ty}px) scale(${vp.view.scale})`,
+                }}
                 draggable={false}
               />
-              {p1 && <Marker p={p1} w={nat.w} h={nat.h} label="1" tone="#F59E0B" />}
-              {p2 && <Marker p={p2} w={nat.w} h={nat.h} label="2" tone="#F59E0B" />}
-              {anchor && <Marker p={anchor} w={nat.w} h={nat.h} label="基準" tone="#2563EB" />}
-              {checkPoint && <Marker p={checkPoint} w={nat.w} h={nat.h} label="確認" tone="#10B981" />}
+              {p1 && <Marker p={p1} view={vp.view} label="1" tone="#F59E0B" />}
+              {p2 && <Marker p={p2} view={vp.view} label="2" tone="#F59E0B" />}
+              {anchor && <Marker p={anchor} view={vp.view} label="基準" tone="#2563EB" />}
+              {checkPoint && <Marker p={checkPoint} view={vp.view} label="確認" tone="#10B981" />}
+            </div>
+
+            {/* 拡大の操作（ホイールが使えない環境のため、ボタンも置く） */}
+            <div className="flex items-center gap-2 mb-3 text-[11px] text-dimension flex-wrap">
+              <button type="button" onClick={() => vp.zoomByButton(false)}
+                className="px-3 py-1 rounded-lg bg-dark-border text-canvas font-bold">−</button>
+              <button type="button" onClick={() => vp.zoomByButton(true)}
+                className="px-3 py-1 rounded-lg bg-dark-border text-canvas font-bold">＋</button>
+              <button type="button" onClick={vp.fit}
+                className="px-3 py-1 rounded-lg bg-dark-border text-canvas font-bold">全体を表示</button>
+              <span>表示倍率 <b className="text-canvas">{(vp.displayScale * 100).toFixed(0)}%</b></span>
+              <span className="opacity-70">ホイール（ピンチ）で拡大 / ドラッグで移動 / 動かさずに離すと点を打つ</span>
             </div>
 
             {/* --- 2. 縮尺と回転 --- */}
@@ -250,9 +291,21 @@ export default function UnderlayModal() {
                       {tooClose && <span className="text-red-300 ml-2">近すぎます（{UNDERLAY_MIN_CALIB_PX}px 以上離してください）</span>}
                     </div>
                     {errMm != null && Number.isFinite(errMm) && (
-                      <div className={errMm > 50 ? 'text-red-300' : errMm > 20 ? 'text-amber-300' : 'text-emerald-300'}>
-                        この 2 点だと、図面の反対側で <b>約 {Math.round(errMm)}mm</b> ずれる見込みです
-                      </div>
+                      <>
+                        <div className={errMm > 50 ? 'text-red-300' : errMm > 20 ? 'text-amber-300' : 'text-emerald-300'}>
+                          この 2 点だと、図面の反対側で <b>約 {Math.round(errMm)}mm</b> ずれる見込みです
+                          <span className="opacity-70">（表示倍率 {(vp.displayScale * 100).toFixed(0)}% で狙った場合）</span>
+                        </div>
+                        {errMm > 20 && (
+                          <div className="text-amber-300">
+                            拡大してから打ち直すと精度が上がります。
+                            {vp.displayScale < 1 && (
+                              <>いま原寸より小さく表示しているので、
+                                <b> 100% まで拡大すれば約 {Math.round(errMm * vp.displayScale)}mm</b> まで下がります。</>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                     <div className="text-dimension">
                       向き:

@@ -29,10 +29,33 @@ import type { Point } from '@/types';
 // 決めごとの数値（実機で調整しうるもの）
 // ============================================================
 
-/** 2 点が近すぎると精度が出ない。これ未満（画像 px）では確定させない。 */
+/**
+ * 2 点が近すぎると精度が出ない。これ未満では確定させない。
+ * **単位は画像の画素**（表示の拡大率に依らない）。基準線が画像に対してどれだけ
+ * 長いかが、図面の反対側への外挿の倍率をそのまま決めるため。
+ */
 export const UNDERLAY_MIN_CALIB_PX = 500;
-/** クリックの誤差の見積もり(px)。推定誤差の表示に使う。 */
+/**
+ * クリックの誤差の見積もり。**単位は「表示上の px」**。
+ *
+ * 人が点を狙うときにずれるのは、画像の画素ではなく**画面で見えている px**。
+ * 4000px の図面を 700px で表示していれば、表示上の 1.5px は画像では約 8.6px に
+ * あたる。ここを取り違えると、推定誤差が実態の 1/6 の楽観的な数字になる。
+ * 画像の画素へ直すのは clickErrorImagePx。
+ */
 export const UNDERLAY_CLICK_ERROR_PX = 1.5;
+
+/**
+ * 表示上のクリック誤差を、画像の画素に直す。
+ * displayScale = 表示している幅 ÷ 画像の幅（拡大していれば 1 を超える）。
+ * 拡大するほど画像の画素での誤差は小さくなる＝推定誤差も小さく出る。
+ */
+export function clickErrorImagePx(
+  displayScale: number, displayErrorPx = UNDERLAY_CLICK_ERROR_PX,
+): number {
+  if (!(displayScale > 0)) return Infinity;
+  return displayErrorPx / displayScale;
+}
 /** 保存する画像の長辺の上限(px)。これを超えたらブラウザ側で縮めてから上げる。 */
 export const UNDERLAY_MAX_LONG_EDGE_PX = 4000;
 /** 読み込める元ファイルの上限(byte)。 */
@@ -226,12 +249,15 @@ export function misalignmentMm(
  *
  * 角度誤差はおよそ e/L(ラジアン)。基準点から spanMm 離れた場所では
  * spanMm × e/L のずれになる。「もっと離して選んだ方がいい」を数字で示すのに使う。
+ *
+ * **calibDistancePx と clickErrorImagePx は、どちらも画像の画素で渡すこと。**
+ * 表示上の誤差しか手元に無いときは clickErrorImagePx() で直してから渡す。
  */
 export function estimatedErrorMm(
-  calibDistancePx: number, spanMm: number, clickErrorPx = UNDERLAY_CLICK_ERROR_PX,
+  calibDistancePx: number, spanMm: number, clickErrorImagePx = UNDERLAY_CLICK_ERROR_PX,
 ): number {
   if (!(calibDistancePx > 0)) return Infinity;
-  return (spanMm * clickErrorPx) / calibDistancePx;
+  return (spanMm * clickErrorImagePx) / calibDistancePx;
 }
 
 /** 画像の対角の実寸(mm)＝「図面の反対側」の目安。 */
