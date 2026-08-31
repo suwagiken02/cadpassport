@@ -239,7 +239,6 @@ export default function UnderlayModal() {
                 （A3 を 700px で見ると表示上の 1px が図面の 5.7px にあたる）。 */}
             <div
               ref={vp.containerRef}
-              {...vp.handlers}
               className="relative w-full h-[46vh] min-h-[240px] mb-2 overflow-hidden rounded-lg border border-dark-border bg-black/20 cursor-crosshair select-none"
               style={{ touchAction: 'none' }}
             >
