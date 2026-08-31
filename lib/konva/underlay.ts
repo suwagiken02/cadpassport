@@ -274,23 +274,33 @@ export const clampOpacity = (v: number): number => {
 
 /**
  * Storage のパス (= U-1)。
- *   1 段目 userId    … RLS の判定（自分のフォルダだけ読み書きできる）
- *   2 段目 projectId … 物件を消したときの一括削除
- *   3 段目 drawingId … ページを消したときの一括削除
+ *   1 段目 projectId … **RLS の判定**（その物件の持ち主か）と、物件削除の一括削除
+ *   2 段目 drawingId … ページ削除の一括削除
+ *
+ * 先頭をユーザー ID ではなく物件 ID にしてあるのが要点。RLS は projects テーブルへ
+ * 問い合わせて「その物件の持ち主か」を見るので、**持ち主が変わっても会社共有を
+ * 入れても、ポリシーが自動的に追従する**。ユーザー ID をパスに埋めると、その時点の
+ * 持ち主が固定されてしまう。
+ *
  * canvasData が持つのはこのパスだけで、公開 URL は持たない
- * （表示は認証つきで取得した Blob から作る）。
+ * （他社の図面＝機密情報。表示は認証つきで取得した Blob から作る）。
  */
 export function underlayStoragePath(
-  userId: string, projectId: string, drawingId: string, underlayId: string, ext: string,
+  projectId: string, drawingId: string, underlayId: string, ext: string,
 ): string {
-  return `${userId}/${projectId}/${drawingId}/${underlayId}.${ext}`;
+  return `${projectId}/${drawingId}/${underlayId}.${ext}`;
 }
 
 /** その物件ぶんをまとめて消すときのプレフィックス。 */
-export const underlayProjectPrefix = (userId: string, projectId: string): string =>
-  `${userId}/${projectId}`;
+export const underlayProjectPrefix = (projectId: string): string => projectId;
 
 /** そのページぶんをまとめて消すときのプレフィックス。 */
-export const underlayDrawingPrefix = (
-  userId: string, projectId: string, drawingId: string,
-): string => `${userId}/${projectId}/${drawingId}`;
+export const underlayDrawingPrefix = (projectId: string, drawingId: string): string =>
+  `${projectId}/${drawingId}`;
+
+/** 画像のファイル名から拡張子を決める（許すのは JPEG と PNG だけ）。 */
+export function underlayExtFor(mimeType: string): 'jpg' | 'png' | null {
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') return 'jpg';
+  if (mimeType === 'image/png') return 'png';
+  return null;
+}

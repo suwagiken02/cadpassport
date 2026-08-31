@@ -368,13 +368,13 @@ describe('濃さ', () => {
 
 // ============================================================
 describe('保存する場所（公開 URL を持たない）', () => {
-  it('1 段目がユーザー（RLS の判定に使う）', () => {
-    expect(underlayStoragePath('u1', 'p1', 'd1', 'x1', 'jpg')).toBe('u1/p1/d1/x1.jpg');
+  it('1 段目が物件（RLS が projects へ問い合わせて持ち主を見る）', () => {
+    expect(underlayStoragePath('p1', 'd1', 'x1', 'jpg')).toBe('p1/d1/x1.jpg');
   });
 
   it('物件・ページごとに一括で消せるプレフィックス', () => {
-    expect(underlayProjectPrefix('u1', 'p1')).toBe('u1/p1');
-    expect(underlayDrawingPrefix('u1', 'p1', 'd1')).toBe('u1/p1/d1');
+    expect(underlayProjectPrefix('p1')).toBe('p1');
+    expect(underlayDrawingPrefix('p1', 'd1')).toBe('p1/d1');
   });
 
   it('保存するのはパスだけ（公開 URL を持たない）', () => {

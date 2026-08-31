@@ -12,6 +12,7 @@ import {
   ZOOM_MAX,
 } from '@/lib/konva/gridUtils';
 import AidLayer from './AidLayer';
+import UnderlayLayer from './UnderlayLayer';
 import SiteLayer from './SiteLayer';
 import SiteStartGuideLayer from './SiteStartGuideLayer';
 import BuildingLayer from './BuildingLayer';
@@ -642,6 +643,10 @@ export default function GridCanvas({ width, height }: Props) {
           }
           return <Rect x={0} y={0} width={width} height={height} fill={colorCanvasBg} />;
         })()}
+        {/* 下図（U-1）。背景色の上・グリッド線の下。
+            グリッド線を下図の上に描くことで、「グリッドが図面の通り芯に重なるか」を
+            目で確かめられる（合わせ込みが合っているかの確認そのもの）。 */}
+        <UnderlayLayer />
         {gridLines()}
         {gridGuideLines()}
       </Layer>

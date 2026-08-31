@@ -503,6 +503,12 @@ type CanvasStore = {
   setUnderlayTransform: (t: import('@/lib/konva/underlay').UnderlayTransform) => void;
   /** 背景の濃さ。スライダーで連続的に呼ばれるので履歴は積まない。 */
   setUnderlayOpacity: (v: number) => void;
+  /**
+   * 画像の取得の状態 (= U-1)。図面データではないので canvasData には入れない
+   * （履歴にも保存にも乗せない）。「読み込み中」「読めませんでした」の案内に使う。
+   */
+  underlayStatus: import('@/lib/underlay/imageCache').UnderlayLoadStatus;
+  setUnderlayStatus: (s: import('@/lib/underlay/imageCache').UnderlayLoadStatus) => void;
   /** 足場系(手摺・支柱・アンチ)を全削除。建物・障害物・メモ・高さマーカーは残す。 */
   clearScaffold: () => void;
   addObstacle: (o: Obstacle) => void;
@@ -1561,6 +1567,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       canvasData: { ...canvasData, underlay: { ...canvasData.underlay, transform: t } },
       isDirty: true,
     });
+  },
+  underlayStatus: 'idle',
+  setUnderlayStatus: (v) => {
+    // 同じ値なら書かない（毎レンダーの set で再描画が回るのを防ぐ）。
+    if (get().underlayStatus !== v) set({ underlayStatus: v });
   },
   setUnderlayOpacity: (v) => {
     const { canvasData } = get();
