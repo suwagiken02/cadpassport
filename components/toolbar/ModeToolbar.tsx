@@ -7,6 +7,24 @@ import { MAX_BUILDING_FLOOR } from '@/lib/konva/floorLimits';
 import { shouldPromptFloor } from '@/lib/konva/floorScope';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
+/**
+ * 下メニュー（躯体・足場）の入れ物 — 唯一の定義。
+ *
+ * `bottom-20` で下端を固定して上へ伸びる作りなので、**項目が増えて行が折り返すと
+ * 上の行が画面の外へ出る**。躯体は 8 項目あり、狭い画面では 4 行になって
+ * 1 番目の「建物1F」が画面上へ消えていた（本番の不具合報告）。
+ * 高さの上限と、あふれたときのスクロールを必ず入れる。
+ *
+ * 100dvh（実際に見えている高さ）を使う。iOS はアドレスバーぶん 100vh が
+ * 実際より大きいので、100vh だけだと上限が甘くてはみ出しが残る。
+ * dvh に対応していない古い環境では class 側の 100vh が残る（劣化しても効く）。
+ */
+export const POPOVER_MENU_CLASS =
+  'fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border '
+  + 'rounded-2xl shadow-2xl p-4 flex gap-3 flex-wrap justify-center '
+  + 'max-w-[calc(100vw-32px)] max-h-[calc(100vh-96px)] overflow-y-auto';
+export const POPOVER_MENU_STYLE = { maxHeight: 'calc(100dvh - 96px)' } as const;
+
 export default function ModeToolbar() {
   const { mode, setMode, isMeasuring, toggleMeasuring, showPartSelector, canvasData, isMagnetPinMode, setMagnetPinMode, isReorderMode, toggleReorderMode, isHeightMarkerMode, setHeightMarkerMode, isRidgeLineMode, setRidgeLineMode, selectActive, setSelectActive, selectLock, setSelectLock } = useCanvasStore();
   const [showKutaiMenu, setShowKutaiMenu] = useState(false);
@@ -147,7 +165,7 @@ export default function ModeToolbar() {
       {showKutaiMenu && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setShowKutaiMenu(false)} />
-          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-2xl shadow-2xl p-4 flex gap-3 flex-wrap justify-center max-w-[calc(100vw-32px)]">
+          <div className={POPOVER_MENU_CLASS} style={POPOVER_MENU_STYLE}>
             <button
               data-tutorial-id="kutai-building1f"
               onClick={() => {
@@ -263,7 +281,7 @@ export default function ModeToolbar() {
       {showAshibaMenu && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setShowAshibaMenu(false)} />
-          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-dark-surface border border-dark-border rounded-2xl shadow-2xl p-4 flex gap-3 flex-wrap justify-center max-w-[calc(100vw-32px)]">
+          <div className={POPOVER_MENU_CLASS} style={POPOVER_MENU_STYLE}>
             {/* 足場開始（canvas 上の ★ アイコンと色統一: #FFD700 ゴールド系 = Tailwind yellow-400） */}
             <button
               data-tutorial-id="ashiba-start"
