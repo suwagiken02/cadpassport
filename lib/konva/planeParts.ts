@@ -10,6 +10,7 @@
 // 単管: 長さ自由・スナップ無し。既製品は 1〜6m。既定は 5m / 45°。
 // ============================================================
 import { mmToGrid } from './gridUtils';
+import { rectLeadingEdge } from './placement/snapSide';
 import { getHandrailEndpoints } from './snapUtils';
 import type { Stair, Pipe, Handrail } from '@/types';
 
@@ -149,15 +150,16 @@ export function snapStairToCell(
   for (const s of hor) {
     const d = distToSeg(cursor, s, true);
     if (d > bestD) continue;
-    // 上辺を乗せる（カーソルが下側）か、下辺を乗せる（カーソルが上側）か
-    const y = cursor.y >= s.at ? s.at : s.at - h;
+    // 上辺を乗せる（カーソルが下側）か、下辺を乗せる（カーソルが上側）か。
+    //   判定は rectLeadingEdge が唯一の定義（アンチと共有）。式は従来と同一。
+    const y = rectLeadingEdge(cursor.y, s.at, h);
     bestD = d;
     best = { x: alongRailPos(cursor.x, w, s.a, s.b), y };
   }
   for (const s of ver) {
     const d = distToSeg(cursor, s, false);
     if (d > bestD) continue;
-    const x = cursor.x >= s.at ? s.at : s.at - w;
+    const x = rectLeadingEdge(cursor.x, s.at, w);
     bestD = d;
     best = { x, y: alongRailPos(cursor.y, h, s.a, s.b) };
   }

@@ -22,7 +22,8 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { clearPlanePreviews, placePlanePart, updatePlanePreview } from '../planePlacement';
 import { antiRectGrid } from '@/lib/konva/antiShape';
 import { snapHandrailPlacement } from '@/lib/konva/snapUtils';
-import { INITIAL_GRID_PX } from '@/lib/konva/gridUtils';
+import { INITIAL_GRID_PX, mmToGrid } from '@/lib/konva/gridUtils';
+import { antiCornerAt, snapAntiPlacement } from '../antiSnap';
 import type { PlacePayload } from '@/components/toolbar/placePayload';
 import type { CanvasData, HandrailLengthMm, Point } from '@/types';
 
@@ -126,61 +127,80 @@ describe('アンチのシャドーが「アンチの姿」で出る (= P-3 A)', 
 });
 
 // ============================================================
-describe('アンチの吸着ルールは 1 ミリも変えていない (= P-3 A)', () => {
-  /** 配置に使われる吸着（変更前と同じ 1 本）。期待値はここから作る。 */
-  const expected = (cursor: Point, payload = ANTI): Point => {
-    const zoom = st().zoom;
-    const snapRadius = Math.max(Math.round(80 / (INITIAL_GRID_PX * zoom)), 5);
-    const p = payload as Extract<PlacePayload, { type: 'anti' }>;
-    const r = snapHandrailPlacement(
-      cursor, p.lengthMm as HandrailLengthMm, p.direction,
-      cv().handrails, snapRadius, cv().antis,
-    );
-    return r ? r.snappedStart : cursor;
-  };
+describe('アンチの吸着 (= P-4 で基点を四隅から選ぶ形に変えた)', () => {
+  // P-3 のときは「旧ルール（左上固定）と 1 ミリも変わらない」ことを固定していた。
+  // P-4 で**基点を四隅から選ぶ**ようにしたので、その固定は役目を終えた。
+  // ここでは新しいルールの不変条件を固定する。
+  //   ・ゴーストと配置は必ず一致する（同じ関数を通す）
+  //   ・吸着先は従来と同じ snapToHandrail が返す点
+  //   ・下から近づけたときは従来とまったく同じ位置
+  const snapRadius = () => Math.max(Math.round(80 / (INITIAL_GRID_PX * st().zoom)), 5);
 
-  it('手摺のまわり一帯で、置かれる位置が従来の計算と完全に一致する', () => {
+  it('ゴーストと配置が、手摺のまわり一帯でぴったり一致する', () => {
     for (let dx = -40; dx <= 40; dx += 8) {
       for (let dy = -40; dy <= 40; dy += 8) {
         st().setCanvasData(withHandrail());
         const cursor = { x: 100 + dx, y: 100 + dy };
-        const want = expected(cursor);
+        updatePlanePreview(ANTI, cursor);
+        const ghost = (st().planePartPreview as { kind: 'anti'; anti: Point }).anti;
         placePlanePart(ANTI, cursor);
-        expect({ x: cv().antis[0].x, y: cv().antis[0].y }, `${cursor.x},${cursor.y}`).toEqual(want);
+        expect({ x: cv().antis[0].x, y: cv().antis[0].y }, `${cursor.x},${cursor.y}`)
+          .toEqual({ x: ghost.x, y: ghost.y });
       }
     }
   });
 
-  it('ゴーストも同じ計算に従う（位置がずれない）', () => {
+  it('置かれた板のいずれかの隅が、必ず吸着先に乗る', () => {
+    const p = ANTI as Extract<PlacePayload, { type: 'anti' }>;
     for (let dx = -40; dx <= 40; dx += 8) {
-      st().setCanvasData(withHandrail());
-      const cursor = { x: 100 + dx, y: 104 };
-      const want = expected(cursor);
-      updatePlanePreview(ANTI, cursor);
-      const ghost = (st().planePartPreview as { kind: 'anti'; anti: Point }).anti;
-      expect({ x: ghost.x, y: ghost.y }, `${cursor.x}`).toEqual(want);
+      for (let dy = -40; dy <= 40; dy += 8) {
+        st().setCanvasData(withHandrail());
+        const cursor = { x: 100 + dx, y: 100 + dy };
+        const r = snapAntiPlacement(
+          cursor, p.lengthMm as HandrailLengthMm, p.antiWidth, p.direction,
+          cv().handrails, snapRadius(), cv().antis,
+        );
+        placePlanePart(ANTI, cursor);
+        const placed = { x: cv().antis[0].x, y: cv().antis[0].y };
+        if (!r) continue;                      // 吸着圏外はカーソルのまま（従来どおり）
+        expect(placed, `${cursor.x},${cursor.y}`).toEqual(r.topLeft);
+        const corner = antiCornerAt(r.topLeft, p.lengthMm, p.antiWidth, p.direction, r.anchor);
+        expect(corner.x).toBeCloseTo(r.snapIndicator.x, 9);
+        expect(corner.y).toBeCloseTo(r.snapIndicator.y, 9);
+      }
     }
   });
 
-  it('縦置き・別サイズでも一致する', () => {
-    const payload: PlacePayload = { type: 'anti', lengthMm: 900, direction: 'vertical', antiWidth: 250 };
-    for (const cursor of [{ x: 100, y: 100 }, { x: 103, y: 98 }, { x: 250, y: 300 }]) {
-      st().setCanvasData(withHandrail());
-      const want = expected(cursor, payload);
-      placePlanePart(payload, cursor);
-      expect({ x: cv().antis[0].x, y: cv().antis[0].y }).toEqual(want);
-    }
-  });
-
-  it('吸着したときはスナップ印も従来どおり出る', () => {
+  it('下から近づけたときは、従来（左上を吸着先に合わせる）と同じ位置', () => {
     st().setCanvasData(withHandrail());
-    updatePlanePreview(ANTI, { x: 102, y: 101 });
-    expect(st().snapPoint).toEqual({ x: 100, y: 100 });
+    const p = ANTI as Extract<PlacePayload, { type: 'anti' }>;
+    const cursor = { x: 102, y: 103 };         // 左上が端点 (100,100) の近く
+    const r = snapAntiPlacement(
+      cursor, p.lengthMm as HandrailLengthMm, p.antiWidth, p.direction,
+      cv().handrails, snapRadius(), cv().antis,
+    )!;
+    expect(r.anchor).toBe('topLeft');
+    expect(r.topLeft).toEqual(r.snapIndicator);
   });
 
-  it('置いた中身（幅・長さ・向き）は従来どおり', () => {
-    placePlanePart({ type: 'anti', lengthMm: 1200, direction: 'vertical', antiWidth: 250 }, { x: 5, y: 6 });
-    expect(cv().antis[0]).toMatchObject({ lengthMm: 1200, direction: 'vertical', width: 250 });
+  it('★ 上から近づけると、下辺が吸着先に乗る（P-4 で できるようになったこと）', () => {
+    st().setCanvasData(withHandrail());
+    const p = ANTI as Extract<PlacePayload, { type: 'anti' }>;
+    const h = mmToGrid(p.antiWidth);           // 横向きアンチの高さ
+    const cursor = { x: 102, y: 100 - h + 3 }; // 下辺が端点 (100,100) の近く
+    const r = snapAntiPlacement(
+      cursor, p.lengthMm as HandrailLengthMm, p.antiWidth, p.direction,
+      cv().handrails, snapRadius(), cv().antis,
+    )!;
+    expect(r.anchor).toBe('bottomLeft');
+    expect(r.topLeft.y + h).toBeCloseTo(r.snapIndicator.y, 9);
+    expect(r.topLeft.y).toBeLessThan(r.snapIndicator.y);   // 板は線の上
+  });
+
+  it('手摺が無ければ吸着せず、カーソルのまま（従来どおり）', () => {
+    st().setCanvasData(blank());
+    placePlanePart(ANTI, { x: 33, y: 44 });
+    expect({ x: cv().antis[0].x, y: cv().antis[0].y }).toEqual({ x: 33, y: 44 });
   });
 });
 

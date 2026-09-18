@@ -22,6 +22,7 @@ import {
 } from '@/lib/konva/snapUtils';
 import { getHandrailColor } from '@/lib/konva/handrailColors';
 import { snapStairToCell } from '@/lib/konva/planeParts';
+import { snapAntiPlacement } from '@/lib/konva/placement/antiSnap';
 import type { PlacePayload } from '@/components/toolbar/placePayload';
 import type { HandrailLengthMm, Point } from '@/types';
 
@@ -142,27 +143,35 @@ export function updatePlanePreview(drag: PlacePayload, gridPos: Point | null): v
     return;
   }
 
-  // 手摺・アンチ: 吸着は同じ 1 本（snapHandrailPlacement）。placePlanePart と
-  //   **同じ関数・同じ引数**なので、ゴーストの位置と置かれる位置は必ず一致する。
+  // P-4: アンチは専用の 1 本（snapAntiPlacement）。吸着**先**は手摺と同じだが、
+  //   その点に合わせる隅をカーソルの側で選ぶので、線の上にも下にも置ける。
+  //   placePlanePart と同じ関数・同じ引数なので、ゴーストと置かれる位置は必ず一致する。
+  if (drag.type === 'anti') {
+    const anti = snapAntiPlacement(
+      gridPos, drag.lengthMm as HandrailLengthMm, drag.antiWidth, drag.direction,
+      canvasData.handrails, snapRadius, canvasData.antis,
+    );
+    // 吸着しないときは従来どおりカーソルがそのまま左上（手触りを変えない）。
+    const topLeft = anti ? anti.topLeft : gridPos;
+    s.setSnapPoint(anti ? anti.snapIndicator : null);
+    // P-3: アンチは手摺の細線ではなく**アンチの板**でゴーストを出す。
+    s.setPlanePartPreview({
+      kind: 'anti',
+      anti: {
+        x: topLeft.x, y: topLeft.y,
+        width: drag.antiWidth, lengthMm: drag.lengthMm, direction: drag.direction,
+      },
+    });
+    return;
+  }
+
+  // 手摺: 吸着は従来どおり snapHandrailPlacement。
   const result = snapHandrailPlacement(
     gridPos, drag.lengthMm as HandrailLengthMm, drag.direction,
     canvasData.handrails, snapRadius, canvasData.antis
   );
   const at = result ? result.snappedStart : gridPos;
   s.setSnapPoint(result ? result.snapIndicator : null);
-
-  if (drag.type === 'anti') {
-    // P-3: アンチは手摺の細線ではなく**アンチの板**でゴーストを出す。
-    //   吸着の計算は上の 1 本のまま＝置かれる位置は 1 ミリも変わらない。
-    s.setPlanePartPreview({
-      kind: 'anti',
-      anti: {
-        x: at.x, y: at.y,
-        width: drag.antiWidth, lengthMm: drag.lengthMm, direction: drag.direction,
-      },
-    });
-    return;
-  }
 
   s.setHandrailPreview({
     x: at.x, y: at.y,
@@ -194,10 +203,14 @@ export function placePlanePart(drag: PlacePayload, gridPos: Point): void {
         //   activeFloor=1(単一階/既定)では従来と同一（h.floor ?? 1）。
         s.addHandrail({ id: uuidv4(), x: dropPos.x, y: dropPos.y, lengthMm: drag.lengthMm as HandrailLengthMm, direction: drag.direction, color: getHandrailColor(drag.lengthMm as HandrailLengthMm), floor: activeFloor });
       } else if (drag.type === 'anti') {
+        // P-4: ゴースト（updatePlanePreview）とまったく同じ関数・同じ引数。
         const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
-        const result = snapHandrailPlacement(gridPos, drag.lengthMm as HandrailLengthMm, drag.direction, canvasData.handrails, snapRadius, canvasData.antis);
-        const dropPos = result ? result.snappedStart : gridPos;
-        if (result) { s.setSnapPoint(result.snapIndicator); setTimeout(() => s.setSnapPoint(null), 400); }
+        const anti = snapAntiPlacement(
+          gridPos, drag.lengthMm as HandrailLengthMm, drag.antiWidth, drag.direction,
+          canvasData.handrails, snapRadius, canvasData.antis,
+        );
+        const dropPos = anti ? anti.topLeft : gridPos;
+        if (anti) { s.setSnapPoint(anti.snapIndicator); setTimeout(() => s.setSnapPoint(null), 400); }
         s.addAnti({ id: uuidv4(), x: dropPos.x, y: dropPos.y, width: drag.antiWidth, lengthMm: drag.lengthMm, direction: drag.direction });
       } else if (drag.type === 'post') {
         const snapRadius = Math.max(Math.round(SNAP_PX / (INITIAL_GRID_PX * zoom)), 5);
