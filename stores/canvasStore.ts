@@ -42,6 +42,7 @@ import { facePartsForCanvas } from '@/lib/konva/elevation/faceElevationForCanvas
 import { defaultPartSize, hasLegacyFullWidthParts } from '@/lib/konva/elevation/elevationParts';
 import { moveFreePart } from '@/lib/konva/freeParts';
 import { buildingsSitePolygons } from '@/lib/konva/siteAutoGenerate';
+import { canUsePartSelector } from '@/lib/konva/toolMode';
 import { insertPointAfterEdge } from '@/lib/konva/siteShape';
 import { clampOpacity } from '@/lib/konva/underlay';
 import { v4 as uuidv4 } from 'uuid';
@@ -138,6 +139,8 @@ type CanvasStore = {
   // Mode
   mode: ModeType;
   setMode: (mode: ModeType) => void;
+  /** 内部用: 部材を使えないモードから抜ける（武装の前に呼ぶ）。 */
+  _escapeBlockingMode: () => Partial<{ mode: ModeType; selectedIds: string[] }>;
   buildingInputMethod: BuildingInputMethod;
   setBuildingInputMethod: (m: BuildingInputMethod) => void;
   /** マグネットピン配置モード（M-3a）: ModeType とは独立した副次フラグ */
@@ -784,11 +787,33 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // R-1k: 建物モードを離れるときは方向入力の対象種別を既定へ戻す。屋根描きを他ボタンで中断すると
   //   pendingTargetType が 'roof' のまま残り、以後の選択モードで屋根点線が触れなくなる/非 active 階が
   //   減光したままになる、といった「モード抜けの取りこぼし」が起きていた。
-  setMode: (mode) => set(
-    mode === 'building'
+  /**
+   * 武装（部材を選ぶ）ときに、部材パレットを使えないモードなら選択へ抜ける。
+   * これで「消去のまま武装する」という状態そのものが作れなくなる
+   * （モードバーは既に同じことをしているので、画面の挙動は変わらない）。
+   */
+  _escapeBlockingMode: () => {
+    const m = get().mode;
+    return canUsePartSelector(m) ? {} : { mode: 'select' as const, selectedIds: [] };
+  },
+  setMode: (mode) => set(() => {
+    const base = mode === 'building'
       ? { mode, selectedIds: [] }
-      : { mode, selectedIds: [], pendingTargetType: 'building' as const },
-  ),
+      : { mode, selectedIds: [], pendingTargetType: 'building' as const };
+    // 部材パレットを使えないモード（消去・建物）へ入るときは、**必ず**武装も
+    //   点灯も落とす。ここが唯一の関門で、各ボタンのハンドラには書かない。
+    //   落とさないと「見た目のパレットは消えたのに武装が残り、1 タップで
+    //   削除（作図）と配置の両方が走る」状態になる。
+    if (canUsePartSelector(mode)) return base;
+    return {
+      ...base,
+      showPartSelector: false,
+      planeAddTool: null,
+      elevationAddTool: null,
+      planePartPreview: null,
+      handrailPreview: null,
+    };
+  }),
   buildingInputMethod: 'template',
   setBuildingInputMethod: (m) => set({ buildingInputMethod: m }),
   isMagnetPinMode: false,
@@ -854,7 +879,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   planePartPreview: null,
   setPlanePartPreview: (p) => set({ planePartPreview: p }),
   planeAddTool: null,
-  setPlaneAddTool: (p) => set({ planeAddTool: p }),
+  setPlaneAddTool: (p) => set(p ? { planeAddTool: p, ...get()._escapeBlockingMode() } : { planeAddTool: null }),
 
   obstaclePreview: null,
   setObstaclePreview: (p) => set({ obstaclePreview: p }),
@@ -1011,7 +1036,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   togglePartSelector: () => {
     const open = !get().showPartSelector;
     set(open
-      ? { showPartSelector: true }
+      ? { showPartSelector: true, ...get()._escapeBlockingMode() }
       : {
         showPartSelector: false,
         elevationAddTool: null,
@@ -1916,6 +1941,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
   elevationAddTool: null,
   setElevationAddTool: (t) => set({
+    ...(t ? get()._escapeBlockingMode() : {}),
     elevationAddTool: t,
     elevationEditSelectedId: null,
     // E-8-v5c: 種類を変えたら補助線の引きかけは捨てる（別の種類の線が生まれない）。

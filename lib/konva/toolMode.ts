@@ -63,3 +63,47 @@ export function isToolActive(s: CanvasToolFlags): boolean {
 export function isPlainSelectMode(s: CanvasToolFlags): boolean {
   return s.mode === 'select' && !isToolActive(s);
 }
+
+// ============================================================
+// 部材パレットを使えるモードか — 唯一の定義。
+//
+// ■ なぜ要るか（実機の不具合）
+// 部材を選んだ（武装した）まま「消去」を押すと、パレットの見た目は消えるのに
+// 武装（planeAddTool）と点灯（showPartSelector）が残り、**キャンバスを 1 回
+// タップすると削除と配置の両方が走っていた**。
+// 見た目を消していたのは PartSelector の `return null` だけで、状態は残っていた。
+//
+// ■ 対応表にしてある理由
+// 「使えるモードを列挙」でも「使えないモードを列挙」でもなく、**全モードを
+// 網羅した Record** にしてある。ModeType にモードを 1 つ足すと、この表に
+// キーが足りず**型エラーで気づける**（更新漏れが起きない）。
+//
+// ■ 値は現状の挙動そのまま
+// erase / building だけ false。obstacle でパレットが出るのは意図した併存
+// （障害物はパレットからのドラッグでしか置かず、キャンバスのタップでは
+// 作図が走らない＝ useCanvasInteraction の起点タップは building 限定）。
+// ============================================================
+
+/** モードごとに、部材パレット（と武装）を使ってよいか。 */
+const PART_SELECTOR_BY_MODE: Record<ModeType, boolean> = {
+  view: true,
+  select: true,
+  handrail: true,
+  post: true,
+  anti: true,
+  memo: true,
+  obstacle: true,
+  'move-select': true,
+  stair: true,
+  pipe: true,
+  // ここだけ false。どちらも「タップが別の処理に使われる」モード。
+  erase: false,      // タップ＝削除。武装が残ると 1 タップで削除と配置が同時に走る
+  building: false,   // タップ＝作図の起点。同上
+};
+
+/**
+ * そのモードで部材パレットを使えるか。
+ * **ストアの setMode・パレットの表示・配置の受け口の 3 か所がこれを見る。**
+ * どこか 1 つでも見落とすと、また「見た目は消えたのに動く」状態に戻る。
+ */
+export const canUsePartSelector = (mode: ModeType): boolean => PART_SELECTOR_BY_MODE[mode];

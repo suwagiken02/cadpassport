@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { canUsePartSelector } from '@/lib/konva/toolMode';
 import ElevationPartPalette from '@/components/elevation/ElevationPartPalette';
 import ElevationPartActions from '@/components/elevation/ElevationPartActions';
 import FloatingPanel from '@/components/ui/FloatingPanel';
@@ -381,7 +382,10 @@ export default function PartSelector() {
 
   // --- 選んでおいてクリックで置く（立面と同じ操作感・P-2） ---
   useEffect(() => {
-    if (!planeAddTool || toolbarDrag) return;
+    // 表示の早期 return より前に useEffect は走る。**ここでモードを見ないと、
+    //   パレットが見えていないのに window の配置リスナーだけが生き残る**
+    //   （消去モードで 1 タップすると削除と配置が同時に走っていた原因）。
+    if (!planeAddTool || toolbarDrag || !canUsePartSelector(mode)) return;
     let down: { x: number; y: number; placeable: boolean } | null = null;
     const onMove = (e: PointerEvent) => updatePreview(planeAddTool, e.clientX, e.clientY);
     const onDown = (e: PointerEvent) => {
@@ -407,14 +411,15 @@ export default function PartSelector() {
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [planeAddTool, toolbarDrag, updatePreview, placeAt, canPlaceAt]);
+  }, [planeAddTool, toolbarDrag, mode, updatePreview, placeAt, canPlaceAt]);
 
   // 武装が解けたらシャドーも消す。
   useEffect(() => {
     if (!planeAddTool && !toolbarDrag) clearPreviews();
   }, [planeAddTool, toolbarDrag, clearPreviews]);
 
-  if (mode === 'erase' || mode === 'building') return null;
+  // 表示も同じ 1 本で判定する（状態・表示・受け口が食い違わない）。
+  if (!canUsePartSelector(mode)) return null;
 
   // E-8-v3c-fix2: 平面／立面の切替はタブで明示する。
   //   文脈の推測（立面を選択中か）だけに頼ると、何も選んでいない状態で「部材」を開いたときに
