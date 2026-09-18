@@ -800,18 +800,35 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const base = mode === 'building'
       ? { mode, selectedIds: [] }
       : { mode, selectedIds: [], pendingTargetType: 'building' as const };
-    // 部材パレットを使えないモード（消去・建物）へ入るときは、**必ず**武装も
-    //   点灯も落とす。ここが唯一の関門で、各ボタンのハンドラには書かない。
-    //   落とさないと「見た目のパレットは消えたのに武装が残り、1 タップで
-    //   削除（作図）と配置の両方が走る」状態になる。
+    // ■ 置ける状態（武装）を落とす — パレットを使えないモード全部
+    //   落とさないと「パレットの見た目は消えたのに武装が残り、1 タップで
+    //   削除（作図）と配置の両方が走る」状態になる。**入れ物が複数あるので
+    //   1 つでも残すと同じ症状が戻る**（障害物はシャドーを別に持っていた）。
     if (canUsePartSelector(mode)) return base;
-    return {
+    const disarmed = {
       ...base,
       showPartSelector: false,
       planeAddTool: null,
       elevationAddTool: null,
       planePartPreview: null,
       handrailPreview: null,
+      obstaclePreview: null,
+    };
+    // ■ 描きかけを捨てる — **消去だけ**
+    //   建物モードは「これから描く」ためのモードなので捨ててはいけない。
+    //   障害物の壁方向入力は setPendingObstacleType → setMode('building') の順で
+    //   呼ばれるため、ここで消すと障害物が二度と作られなくなる。
+    //   消去へ入る時点では作図を続ける意思が無いので、そこだけ捨てる。
+    if (mode !== 'erase') return disarmed;
+    return {
+      ...disarmed,
+      pendingObstacleType: null,
+      directionPoints: [],
+      directionPointsHistory: [],
+      directionCursor: null,
+      siteStartCursor: null,
+      noWallMode: false,
+      showDirectionInputModal: false,
     };
   }),
   buildingInputMethod: 'template',

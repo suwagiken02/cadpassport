@@ -37,6 +37,31 @@ function armPart() {
 }
 
 /**
+ * 障害物モードで障害物を選んだ状態（＝武装）。
+ * 障害物もパレットの arm() を通るので、武装の入れ物は planeAddTool で同じ。
+ * **最初のテストではここが網羅から漏れていた**（手摺だけで確かめていた）。
+ */
+function armObstacle() {
+  const s = st();
+  s.setMode('obstacle');
+  s.setPendingObstacleType('ecocute');
+  s.setPlaneAddTool({
+    type: 'obstacle', obstacleType: 'ecocute', widthMm: 900, heightMm: 600, rotation: 0,
+  });
+  s.setObstaclePreview({ x: 0, y: 0, widthGrid: 90, heightGrid: 60, type: 'ecocute' });
+}
+
+/** 障害物を「壁方向入力」で描いている最中の状態。 */
+function armObstacleByDirection() {
+  const s = st();
+  s.setPendingTargetType('obstacle');
+  s.setPendingObstacleType('carport');
+  s.setBuildingInputMethod('direction');
+  s.setMode('building');
+  s.clearDirectionPoints();
+}
+
+/**
  * いま点灯しているモードボタン（ModeToolbar の isActive と同じ判定）。
  * ここが排他の唯一の物差し。
  */
@@ -139,7 +164,9 @@ describe('3) 総当たり — 削除と配置が同時に点かない', () => {
     ['躯体(障害物)', () => st().setMode('obstacle')],
     ['躯体(高さ)', () => st().setHeightMarkerMode(true)],
     ['躯体(棟)', () => st().setRidgeLineMode(true)],
-    ['部材', () => armPart()],
+    ['部材(手摺)', () => armPart()],
+    ['部材(障害物)', () => armObstacle()],
+    ['障害物(壁方向)', () => armObstacleByDirection()],
     ['メモ', () => st().setMode('memo')],
     ['消去', () => st().setMode('erase')],
   ];
@@ -231,5 +258,82 @@ describe('消去を抜けたら選択へ戻る（B）', () => {
 
   it('直前のモードを復元する仕組みは持たない', () => {
     expect(read('stores/canvasStore.ts')).not.toMatch(/previousMode|lastMode/);
+  });
+});
+
+// ============================================================
+describe('★ 障害物を選んだ状態で消去に入る（実機で報告されたペア）', () => {
+  it('障害物の武装は planeAddTool に入る（手摺と同じ入れ物）', () => {
+    armObstacle();
+    expect(st().planeAddTool).toMatchObject({ type: 'obstacle', obstacleType: 'ecocute' });
+  });
+
+  it('消去に入ると、障害物の武装が落ちる', () => {
+    armObstacle();
+    st().setMode('erase');
+    expect(st().planeAddTool).toBeNull();
+  });
+
+  it('消去モードで「削除する」と「障害物を置ける」が同時に成り立たない', () => {
+    armObstacle();
+    st().setMode('erase');
+    expect(isErasing() && isArmed()).toBe(false);
+  });
+
+  it('障害物のシャドーも消える（置けそうに見えたまま残らない）', () => {
+    armObstacle();
+    expect(st().obstaclePreview).not.toBeNull();   // 前提
+    st().setMode('erase');
+    expect(st().obstaclePreview).toBeNull();
+  });
+
+  it('障害物の種類の選択（pendingObstacleType）も落ちる', () => {
+    armObstacle();
+    st().setMode('erase');
+    expect(st().pendingObstacleType).toBeNull();
+  });
+
+  it('壁方向入力で描いている最中に消去へ入っても、作図が進まない', () => {
+    armObstacleByDirection();
+    useCanvasStore.setState({ directionPoints: [{ x: 0, y: 0 }] });
+    st().setMode('erase');
+    // 描きかけが残っていると、消去中に確定して障害物が生まれうる
+    expect(st().directionPoints).toHaveLength(0);
+    expect(st().pendingObstacleType).toBeNull();
+    expect(st().showDirectionInputModal).toBe(false);
+  });
+});
+
+// ============================================================
+describe('描きかけを捨てるのは消去だけ（建物モードは捨てない）', () => {
+  it('壁方向入力の障害物が、これまでどおり作れる', () => {
+    // 壁方向ボタンは setPendingObstacleType → setMode('building') の順で呼ぶ。
+    //   ここで消すと、描き終わっても障害物が生まれない。
+    armObstacleByDirection();
+    expect(st().mode).toBe('building');
+    expect(st().pendingObstacleType).toBe('carport');
+    expect(st().pendingTargetType).toBe('obstacle');
+  });
+
+  it('建物モードでは描きかけの点を捨てない', () => {
+    st().setMode('building');
+    useCanvasStore.setState({ directionPoints: [{ x: 0, y: 0 }, { x: 10, y: 0 }] });
+    st().setMode('building');   // 同じモードへ入り直しても消えない
+    expect(st().directionPoints).toHaveLength(2);
+  });
+
+  it('建物モードでも武装だけは落ちる（タップが作図に使われるため）', () => {
+    armPart();
+    st().setMode('building');
+    expect(st().planeAddTool).toBeNull();
+    expect(st().showPartSelector).toBe(false);
+  });
+
+  it('消去へ入るときだけ描きかけを捨てる', () => {
+    armObstacleByDirection();
+    useCanvasStore.setState({ directionPoints: [{ x: 0, y: 0 }] });
+    st().setMode('erase');
+    expect(st().directionPoints).toHaveLength(0);
+    expect(st().pendingObstacleType).toBeNull();
   });
 });
