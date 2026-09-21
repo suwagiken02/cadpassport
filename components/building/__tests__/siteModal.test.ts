@@ -134,3 +134,51 @@ describe('モーダルの開閉', () => {
     expect(modal).toMatch(/if \(!show\) return null;/);
   });
 });
+
+// ============================================================
+describe('S-10: 文言が実態を表している（数値で入力できることが読み取れる）', () => {
+  // 有料のお客様から「敷地数字を直接入力したい」という要望が来た。
+  // 調べると**距離の mm 入力も角度の指定も最初からできていた**が、
+  // 「手で描く／キャラを方向で動かして外形を描く」という文言からは
+  // 数値で入力できることが 1 ミリも読み取れなかった。機能ではなく文言の問題。
+  const src = fs.readFileSync(
+    path.resolve(__dirname, '../../../components/building/SiteModal.tsx'), 'utf8');
+
+  it('「寸法を入力」と書いてある', () => {
+    expect(src).toContain('寸法を入力して描く');
+  });
+
+  it('mm で 1 辺ずつ入れることが書いてある', () => {
+    expect(src).toMatch(/測量図の辺の長さ\(mm\)を1辺ずつ入力/);
+  });
+
+  it('★ 斜めの辺に角度を指定できることが書いてある（敷地だけの強み）', () => {
+    expect(src).toMatch(/斜めの辺は角度も指定できます/);
+  });
+
+  it('「手で描く」という誤解を招く言い方をやめている', () => {
+    // コメントには経緯として残してあるので、**画面に出る文言だけ**を見る。
+    const jsx = src.slice(src.indexOf('<h2 className="font-bold text-lg">敷地境界線'));
+    expect(jsx).not.toContain('手で描く');
+    expect(jsx).not.toContain('キャラを方向で動かして外形を描く');
+  });
+
+  it('自動生成の側も、数値を入れることが読み取れる（対比が成立する）', () => {
+    expect(src).toContain('建物から自動で作る');
+    expect(src).toMatch(/外壁からの距離\(mm\)を1つ入力/);
+  });
+
+  it('見出しで「どちらも数値」と分かる', () => {
+    expect(src).toContain('どちらも数値で入力して作ります。');
+  });
+
+  it('起動する処理は変えていない（文言だけの変更）', () => {
+    expect(src).toMatch(/s\.setPendingTargetType\('site'\)/);
+    expect(src).toMatch(/s\.setBuildingInputMethod\('direction'\)/);
+    expect(src).toMatch(/s\.setMode\('building'\)/);
+  });
+
+  it('入口の数は 2 つのまま（カードを増やしていない）', () => {
+    expect((src.match(/data-tutorial-id="site-(draw|auto)"/g) ?? [])).toHaveLength(2);
+  });
+});

@@ -4,7 +4,10 @@
 // 敷地の入口 (= S-4、 自動生成の中身は S-3)。
 //
 // 躯体メニューのボタンは「敷地」ひとつ。押すとまずここで
-//   ・手で描く   … 方向入力（turtle）を敷地として起動する。以降は従来のまま
+//   ・寸法を入力して描く … 方向入力（turtle）を敷地として起動する。以降は従来のまま
+//     （S-10: 名前を「手で描く」から変えた。中身は最初から**距離を mm で打つ**
+//      入力で、敷地だけ 8 方向＋角度も指定できる。それが文言から読み取れず、
+//      「数字で入力したい」という要望として返ってきたため）
 //   ・自動生成   … 建物の外周から一定距離の敷地を作る
 // を選ばせる。どちらを選んだあとの流れも S-1〜S-3 から変えていない。
 //
@@ -58,22 +61,26 @@ export default function SiteModal() {
         {step === 'choose' ? (
           <>
             <h2 className="font-bold text-lg">敷地境界線</h2>
-            <p className="text-xs text-dimension">どちらで作りますか。</p>
+            <p className="text-xs text-dimension">どちらも数値で入力して作ります。</p>
             <div className="space-y-2">
               <button data-tutorial-id="site-draw" onClick={startDrawing}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-dark-bg border border-dark-border text-left hover:border-accent transition-colors">
-                <span className="text-2xl">✏️</span>
+                <span className="text-2xl">📐</span>
                 <span>
-                  <span className="block text-sm font-bold text-canvas">手で描く</span>
-                  <span className="block text-[10px] text-dimension">キャラを方向で動かして外形を描く</span>
+                  <span className="block text-sm font-bold text-canvas">寸法を入力して描く</span>
+                  <span className="block text-[10px] text-dimension leading-relaxed">
+                    測量図の辺の長さ(mm)を1辺ずつ入力。斜めの辺は角度も指定できます
+                  </span>
                 </span>
               </button>
               <button data-tutorial-id="site-auto" onClick={() => setStep('auto')}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-dark-bg border border-dark-border text-left hover:border-accent transition-colors">
                 <span className="text-2xl">⧉</span>
                 <span>
-                  <span className="block text-sm font-bold text-canvas">自動生成</span>
-                  <span className="block text-[10px] text-dimension">建物の外壁から一定距離で作る</span>
+                  <span className="block text-sm font-bold text-canvas">建物から自動で作る</span>
+                  <span className="block text-[10px] text-dimension leading-relaxed">
+                    外壁からの距離(mm)を1つ入力。建物の形をなぞった敷地ができます
+                  </span>
                 </span>
               </button>
             </div>
